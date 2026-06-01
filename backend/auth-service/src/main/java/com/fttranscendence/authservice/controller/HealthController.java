@@ -1,4 +1,4 @@
-package com.yourteam.authservice.controller;
+package com.fttranscendence.authservice.controller;
 
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;

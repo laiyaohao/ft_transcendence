@@ -1,4 +1,4 @@
-package com.fttranscendence.auth_service;
+package com.fttranscendence.authservice;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
