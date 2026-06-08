@@ -1,0 +1,24 @@
+{
+  "auth": {
+    "emailPrompt": "Email",
+    "passwordPrompt": "Password",
+    "forgotPassword": "Forgot your password?",
+    "login": "Sign In",
+    "signInWithGoogle": "Sign in with Google",
+    "signInWithFacebook": "Sign in with Facebook",
+    "noAccount": "Don't have an account? ",
+    "register": "Sign Up",
+    "rememberMe": "Remember me",
+    "validation": {
+      "emailInvalid": "Please enter a valid email address",
+      "passwordMinLength": "Password must be at least 6 characters"
+    },
+    "reset": {
+      "title": "Reset Password",
+      "emailPrompt": "Enter your email address to receive a password reset link.",
+      "sendButton": "Send Reset Link",
+      "successMessage": "If an account with that email exists, a reset link has been sent.",
+      "cancelButton": "Cancel"
+    }
+  }
+}
