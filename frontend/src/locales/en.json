@@ -7,9 +7,14 @@
     "signInWithGoogle": "Sign in with Google",
     "signInWithFacebook": "Sign in with Facebook",
     "noAccount": "Don't have an account? ",
-    "register": "Sign Up",
+    "haveAccount": "Already have an account? ",
+    "signup": "Sign Up",
     "rememberMe": "Remember me",
+    "continueWithGoogle": "Continue with Google",
+    "continueWithFacebook": "Continue with Facebook",
+    "namePrompt": "Full name",
     "validation": {
+      "nameInvalid": "Please enter a valid name",
       "emailInvalid": "Please enter a valid email address",
       "passwordMinLength": "Password must be at least 6 characters"
     },

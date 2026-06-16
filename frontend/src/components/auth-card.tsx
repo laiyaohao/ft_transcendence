@@ -1,3 +1,4 @@
+'use client';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Divider from '@mui/material/Divider';
@@ -8,44 +9,53 @@ import FormLabel from '@mui/material/FormLabel';
 import Link from '@mui/material/Link';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
-import ForgotPassword from './forgot-password';
 import StyledCard from "./styled-card";
 import { GoogleIcon, FacebookIcon } from '../utils/icons';
 
 interface AuthCardInt {
   cardTitle: string;
   handleSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+  namePrompt?: string;
+  nameRef?: React.RefObject<HTMLInputElement | null>;
+  nameError?: boolean | undefined;
+  nameErrorMessage?: string;
   emailPrompt: string;
+  emailRef: React.RefObject<HTMLInputElement | null>;
   emailError: boolean | undefined;
   emailErrorMessage: string;
   passwordPrompt: string;
+  passwordRef: React.RefObject<HTMLInputElement | null>;
   passwordError: boolean | undefined;
   passwordErrorMessage: string;
-  rememberMe: string;
-  open: boolean;
-  handleClose: () => void;
+  rememberMe?: string;
   validateInputs: () => boolean;
   submitButtonCaption: string;
-  handleClickOpen: () => void;
-  forgotPassword: string;
+  handleClickOpen?: () => void;
+  forgotPassword?: string;
   signInWithGoogle: string;
   signInWithFacebook: string;
-  noAccount: string;
-  register: string;
+  noAccount?: string;
+  register?: string;
+  haveAccount?: string;
+  login?: string;
 }
 
 const AuthCard = ({ 
   cardTitle,
   handleSubmit,
+  namePrompt,
+  nameRef,
+  nameError,
+  nameErrorMessage,
   emailPrompt,
+  emailRef,
   emailError,
   emailErrorMessage,
   passwordPrompt,
+  passwordRef,
   passwordError,
   passwordErrorMessage,
   rememberMe,
-  open,
-  handleClose,
   validateInputs,
   submitButtonCaption,
   handleClickOpen,
@@ -53,10 +63,12 @@ const AuthCard = ({
   signInWithGoogle,
   signInWithFacebook,
   noAccount,
-  register
+  register,
+  haveAccount,
+  login,
 } : AuthCardInt) => {
   return (
-    <StyledCard variant="outlined">
+    <StyledCard variant="outlined" data-testid="auth-card">
       <Typography
         component="h1"
         variant="h4"
@@ -75,9 +87,28 @@ const AuthCard = ({
           gap: 2,
         }}
       >
+        {namePrompt && <FormControl>
+          <FormLabel htmlFor="name">{namePrompt}</FormLabel>
+          <TextField
+            inputRef={nameRef}
+            error={nameError}
+            helperText={nameErrorMessage}
+            id="name"
+            type="name"
+            name="name"
+            placeholder="John Doe"
+            autoComplete="name"
+            autoFocus
+            required
+            fullWidth
+            variant="outlined"
+            color={nameError ? 'error' : 'primary'}
+          />
+        </FormControl>}
         <FormControl>
           <FormLabel htmlFor="email">{emailPrompt}</FormLabel>
           <TextField
+            inputRef={emailRef}
             error={emailError}
             helperText={emailErrorMessage}
             id="email"
@@ -95,6 +126,7 @@ const AuthCard = ({
         <FormControl>
           <FormLabel htmlFor="password">{passwordPrompt}</FormLabel>
           <TextField
+            inputRef={passwordRef}
             error={passwordError}
             helperText={passwordErrorMessage}
             name="password"
@@ -109,11 +141,10 @@ const AuthCard = ({
             color={passwordError ? 'error' : 'primary'}
           />
         </FormControl>
-        <FormControlLabel
+        {rememberMe && <FormControlLabel
           control={<Checkbox value="remember" color="primary" />}
           label={rememberMe}
-        />
-        <ForgotPassword open={open} handleClose={handleClose} />
+        />}
         <Button
           type="submit"
           fullWidth
@@ -122,7 +153,7 @@ const AuthCard = ({
         >
           {submitButtonCaption}
         </Button>
-        <Link
+        {forgotPassword && handleClickOpen && <Link
           component="button"
           type="button"
           onClick={handleClickOpen}
@@ -130,7 +161,7 @@ const AuthCard = ({
           sx={{ alignSelf: 'center' }}
         >
           {forgotPassword}
-        </Link>
+        </Link>}
       </Box>
       <Divider>or</Divider>
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -150,7 +181,7 @@ const AuthCard = ({
         >
           {signInWithFacebook}
         </Button>
-        <Typography sx={{ textAlign: 'center' }}>
+        {(register && noAccount) && <Typography sx={{ textAlign: 'center' }}>
           {noAccount}
           <Link
             href="/signup"
@@ -159,7 +190,17 @@ const AuthCard = ({
           >
             {register}
           </Link>
-        </Typography>
+        </Typography>}
+        {(haveAccount && login) && <Typography sx={{ textAlign: 'center' }}>
+          {haveAccount}
+          <Link
+            href="/login"
+            variant="body2"
+            sx={{ alignSelf: 'center' }}
+          >
+            {login}
+          </Link>
+        </Typography>}
       </Box>
     </StyledCard>
   )
