@@ -1,3 +1,4 @@
+'use client';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Divider from '@mui/material/Divider';
@@ -6,63 +7,62 @@ import FormControl from '@mui/material/FormControl';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import FormLabel from '@mui/material/FormLabel';
 import Link from '@mui/material/Link';
+import { styled } from '@mui/material/styles';
 import TextField from '@mui/material/TextField';
+import ToggleButton from '@mui/material/ToggleButton';
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
-import ForgotPassword from './forgot-password';
 import StyledCard from "./styled-card";
 import { GoogleIcon, FacebookIcon } from '../utils/icons';
+import strings from "../locales/en.json"
 
 interface AuthCardInt {
-  cardTitle: string;
   handleSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
-  emailPrompt: string;
+  nameRef?: React.RefObject<HTMLInputElement | null>;
+  nameError?: boolean | undefined;
+  nameErrorMessage?: string;
+  emailRef: React.RefObject<HTMLInputElement | null>;
   emailError: boolean | undefined;
   emailErrorMessage: string;
-  passwordPrompt: string;
+  passwordRef: React.RefObject<HTMLInputElement | null>;
   passwordError: boolean | undefined;
   passwordErrorMessage: string;
-  rememberMe: string;
-  open: boolean;
-  handleClose: () => void;
   validateInputs: () => boolean;
-  submitButtonCaption: string;
-  handleClickOpen: () => void;
-  forgotPassword: string;
-  signInWithGoogle: string;
-  signInWithFacebook: string;
-  noAccount: string;
-  register: string;
+  handleClickOpen?: () => void;
+  fromSignup: boolean;
+  role?: string | null;
+  handleRoleChange?: (event: React.MouseEvent<HTMLElement, MouseEvent>, newRole: string) => void
 }
 
-const AuthCard = ({ 
-  cardTitle,
+const StyledToggleButtonGroup = styled(ToggleButtonGroup)(({ theme }) => ({
+  width: 'fit-content'
+}));
+
+const AuthCard = ({
   handleSubmit,
-  emailPrompt,
+  nameRef,
+  nameError,
+  nameErrorMessage,
+  emailRef,
   emailError,
   emailErrorMessage,
-  passwordPrompt,
+  passwordRef,
   passwordError,
   passwordErrorMessage,
-  rememberMe,
-  open,
-  handleClose,
   validateInputs,
-  submitButtonCaption,
   handleClickOpen,
-  forgotPassword,
-  signInWithGoogle,
-  signInWithFacebook,
-  noAccount,
-  register
+  fromSignup,
+  role,
+  handleRoleChange
 } : AuthCardInt) => {
   return (
-    <StyledCard variant="outlined">
+    <StyledCard variant="outlined" data-testid="auth-card">
       <Typography
         component="h1"
         variant="h4"
         sx={{ width: '100%', fontSize: 'clamp(2rem, 10vw, 2.15rem)' }}
       >
-        {cardTitle}
+        {fromSignup ? strings.auth.signup : strings.auth.login}
       </Typography>
       <Box
         component="form"
@@ -75,9 +75,41 @@ const AuthCard = ({
           gap: 2,
         }}
       >
-        <FormControl>
-          <FormLabel htmlFor="email">{emailPrompt}</FormLabel>
+        {fromSignup && <FormControl>
+          <FormLabel htmlFor="role">{strings.auth.rolePrompt}</FormLabel>
+          <StyledToggleButtonGroup
+            color="primary"
+            exclusive
+            value={role}
+            onChange={handleRoleChange}
+          >
+            <ToggleButton value="tutor">{strings.auth.roles.tutor}</ToggleButton>
+            <ToggleButton value="student">{strings.auth.roles.student}</ToggleButton>
+            <ToggleButton value="parent">{strings.auth.roles.parent}</ToggleButton>
+          </StyledToggleButtonGroup>
+        </FormControl>}
+        {fromSignup && <FormControl>
+          <FormLabel htmlFor="name">{strings.auth.namePrompt}</FormLabel>
           <TextField
+            inputRef={nameRef}
+            error={nameError}
+            helperText={nameErrorMessage}
+            id="name"
+            type="name"
+            name="name"
+            placeholder="John Doe"
+            autoComplete="name"
+            autoFocus
+            required
+            fullWidth
+            variant="outlined"
+            color={nameError ? 'error' : 'primary'}
+          />
+        </FormControl>}
+        <FormControl>
+          <FormLabel htmlFor="email">{strings.auth.emailPrompt}</FormLabel>
+          <TextField
+            inputRef={emailRef}
             error={emailError}
             helperText={emailErrorMessage}
             id="email"
@@ -93,8 +125,9 @@ const AuthCard = ({
           />
         </FormControl>
         <FormControl>
-          <FormLabel htmlFor="password">{passwordPrompt}</FormLabel>
+          <FormLabel htmlFor="password">{strings.auth.passwordPrompt}</FormLabel>
           <TextField
+            inputRef={passwordRef}
             error={passwordError}
             helperText={passwordErrorMessage}
             name="password"
@@ -109,28 +142,27 @@ const AuthCard = ({
             color={passwordError ? 'error' : 'primary'}
           />
         </FormControl>
-        <FormControlLabel
+        {!fromSignup && <FormControlLabel
           control={<Checkbox value="remember" color="primary" />}
-          label={rememberMe}
-        />
-        <ForgotPassword open={open} handleClose={handleClose} />
+          label={strings.auth.rememberMe}
+        />}
         <Button
           type="submit"
           fullWidth
           variant="contained"
           onClick={validateInputs}
         >
-          {submitButtonCaption}
+          {fromSignup ? strings.auth.signup : strings.auth.login}
         </Button>
-        <Link
+        {!fromSignup && <Link
           component="button"
           type="button"
           onClick={handleClickOpen}
           variant="body2"
           sx={{ alignSelf: 'center' }}
         >
-          {forgotPassword}
-        </Link>
+          {strings.auth.forgotPassword}
+        </Link>}
       </Box>
       <Divider>or</Divider>
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -140,7 +172,7 @@ const AuthCard = ({
           onClick={() => alert('Sign in with Google')}
           startIcon={<GoogleIcon />}
         >
-          {signInWithGoogle}
+          {fromSignup ? strings.auth.continueWithGoogle : strings.auth.signInWithGoogle}
         </Button>
         <Button
           fullWidth
@@ -148,18 +180,27 @@ const AuthCard = ({
           onClick={() => alert('Sign in with Facebook')}
           startIcon={<FacebookIcon />}
         >
-          {signInWithFacebook}
+          {fromSignup ? strings.auth.continueWithFacebook : strings.auth.signInWithFacebook}
         </Button>
-        <Typography sx={{ textAlign: 'center' }}>
-          {noAccount}
+        {!fromSignup ? <Typography sx={{ textAlign: 'center' }}>
+          {strings.auth.noAccount}
           <Link
             href="/signup"
             variant="body2"
             sx={{ alignSelf: 'center' }}
           >
-            {register}
+            {strings.auth.signup}
           </Link>
-        </Typography>
+        </Typography> : <Typography sx={{ textAlign: 'center' }}>
+          {strings.auth.haveAccount}
+          <Link
+            href="/login"
+            variant="body2"
+            sx={{ alignSelf: 'center' }}
+          >
+            {strings.auth.login}
+          </Link>
+        </Typography>}
       </Box>
     </StyledCard>
   )
