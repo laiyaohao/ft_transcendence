@@ -8,13 +8,20 @@ import FormControlLabel from '@mui/material/FormControlLabel';
 import FormLabel from '@mui/material/FormLabel';
 import Link from '@mui/material/Link';
 import TextField from '@mui/material/TextField';
+import ToggleButton from '@mui/material/ToggleButton';
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
+import { styled } from '@mui/material/styles';
 import StyledCard from "./styled-card";
+import strings from "../locales/en.json";
 import { GoogleIcon, FacebookIcon } from '../utils/icons';
 
 interface AuthCardInt {
   cardTitle: string;
   handleSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+  rolePrompt?: string;
+  role?: string | null;
+  handleRoleChange?: (event: React.MouseEvent<HTMLElement, MouseEvent>, newRole: string) => void;
   namePrompt?: string;
   nameRef?: React.RefObject<HTMLInputElement | null>;
   nameError?: boolean | undefined;
@@ -40,9 +47,16 @@ interface AuthCardInt {
   login?: string;
 }
 
+const StyledToggleButtonGroup = styled(ToggleButtonGroup)(({ theme }) => ({
+  width: 'fit-content'
+}));
+
 const AuthCard = ({ 
   cardTitle,
   handleSubmit,
+  rolePrompt,
+  role,
+  handleRoleChange,
   namePrompt,
   nameRef,
   nameError,
@@ -87,6 +101,19 @@ const AuthCard = ({
           gap: 2,
         }}
       >
+        {rolePrompt && <FormControl>
+          <FormLabel htmlFor="role">{rolePrompt}</FormLabel>
+          <StyledToggleButtonGroup
+            color='primary'
+            exclusive
+            value={role}
+            onChange={handleRoleChange}
+          >
+            <ToggleButton value="tutor">{strings.auth.roles.tutor}</ToggleButton>
+            <ToggleButton value="student">{strings.auth.roles.student}</ToggleButton>
+            <ToggleButton value="parent">{strings.auth.roles.parent}</ToggleButton>
+          </StyledToggleButtonGroup>
+        </FormControl>}
         {namePrompt && <FormControl>
           <FormLabel htmlFor="name">{namePrompt}</FormLabel>
           <TextField

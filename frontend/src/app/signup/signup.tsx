@@ -8,6 +8,7 @@ import strings from "../../locales/en.json";
 import Content from '@/components/content';
 
 export default function Signup() {
+  const [role, setRole] = React.useState<string | null>('');
   const nameRef = React.useRef<HTMLInputElement>(null);
   const [nameError, setNameError] = React.useState(false);
   const [nameErrorMessage, setNameErrorMessage] = React.useState('');
@@ -30,6 +31,10 @@ export default function Signup() {
       password: data.get('password'),
     });
   };
+
+  const handleRoleChange = (event: React.MouseEvent<HTMLElement>, newRole: string) => {
+    setRole(newRole);
+  }
 
   const validateInputs = () => {
     const name = nameRef.current;
@@ -94,6 +99,9 @@ export default function Signup() {
           <AuthCard
             cardTitle={strings.auth.signup}
             handleSubmit={handleSubmit}
+            rolePrompt={strings.auth.rolePrompt}
+            role={role}
+            handleRoleChange={handleRoleChange}
             namePrompt={strings.auth.namePrompt}
             nameRef={nameRef}
             nameError={nameError}
