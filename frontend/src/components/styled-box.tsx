@@ -8,7 +8,7 @@ const StyledBox = styled(Box)(({ theme }) => ({
   // Uses 90% screen height on mobile/tablet, caps at 650px on desktop
   height: '90dvh', // Ensures it doesn't exceed 90% of the viewport height
   [theme.breakpoints.up('md')]: {
-    height: '650px',
+    height: '850px',
   },
   overflowY: 'auto', // Enables vertical scrolling when content overflows
   display: 'flex',
