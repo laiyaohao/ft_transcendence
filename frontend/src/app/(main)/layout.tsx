@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-
-
+import AuthGuard from "./auth-guard";
 
 export default function MainLayout({
   children,
@@ -8,6 +7,9 @@ export default function MainLayout({
   children: React.ReactNode;
 }>) {
   return (
+    // <AuthGuard>
+    //   {children}
+    // </AuthGuard>
     <>{children}</>
   );
 }

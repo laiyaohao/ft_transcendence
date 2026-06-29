@@ -1,0 +1,50 @@
+// frontend/lib/api.ts
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081';
+
+export async function apiRequest(endpoint: string, options: RequestInit = {}) {
+  const token = localStorage.getItem('jwt_token');
+  const isAuthRoute = endpoint.startsWith('/api/auth/');
+
+  return fetch(`${API_URL}${endpoint}`, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...(!isAuthRoute && token ? { 'Authorization': `Bearer ${token}` } : {}),
+      ...options.headers,
+    },
+    ...options,
+  });
+}
+
+export async function getErrorMessage(response: Response) {
+  const contentType = response.headers.get('content-type') || '';
+
+  if (contentType.includes('application/json')) {
+    try {
+      const data = await response.json();
+      if (typeof data === 'object' && data !== null) {
+        if (typeof (data as { message?: string }).message === 'string') {
+          return (data as { message: string }).message;
+        }
+        if (typeof (data as { error?: string }).error === 'string') {
+          return (data as { error: string }).error;
+        }
+      }
+    } catch {
+      // Fall back to the plain-text response below.
+    }
+  }
+
+  const text = await response.text();
+  return text || `Request failed with status ${response.status}`;
+}
+
+// Usage:
+export async function register(email: string, password: string, fullName: string) {
+  const response = await apiRequest('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({ email, password, fullName }),
+  });
+  const jsonResponse = await response.json();
+  localStorage.setItem('jwt_token', jsonResponse.token);
+  return jsonResponse;
+}

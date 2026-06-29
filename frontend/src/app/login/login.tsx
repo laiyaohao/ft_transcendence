@@ -5,14 +5,18 @@ import ColorModeSelect from '../../theme/color-mode-select';
 import SignInContainer from "../../components/styled-stack"
 import ForgotPassword from '../../components/forgot-password';
 import strings from "../../locales/en.json";
+import { apiRequest, getErrorMessage } from '@/lib/api';
+import { useRouter } from 'next/navigation';
 
 export default function Login() {
+  const router = useRouter();
   const emailRef = React.useRef<HTMLInputElement>(null);
   const [emailError, setEmailError] = React.useState(false);
   const [emailErrorMessage, setEmailErrorMessage] = React.useState('');
   const passwordRef = React.useRef<HTMLInputElement>(null);
   const [passwordError, setPasswordError] = React.useState(false);
   const [passwordErrorMessage, setPasswordErrorMessage] = React.useState('');
+  const [submitErrorMessage, setSubmitErrorMessage] = React.useState('');
   const [open, setOpen] = React.useState(false);
 
   const handleClickOpen = () => {
@@ -23,16 +27,31 @@ export default function Login() {
     setOpen(false);
   };
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     if (emailError || passwordError) {
       event.preventDefault();
       return;
     }
+    event.preventDefault();
     const data = new FormData(event.currentTarget);
-    console.log({
-      email: data.get('email'),
-      password: data.get('password'),
+    const email = data.get('email');
+    const password = data.get('password');
+    const response = await apiRequest('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
     });
+
+    if (!response.ok) {
+      const message = await getErrorMessage(response);
+      setSubmitErrorMessage(message);
+      return;
+    }
+
+    setSubmitErrorMessage('');
+    const jsonResponse = await response.json();
+    localStorage.setItem('jwt_token', jsonResponse.token);
+    document.cookie = `auth_token=${jsonResponse.token}; path=/; max-age=86400; SameSite=Lax`;
+    router.push('/classes');
   };
 
   const validateInputs = () => {
@@ -77,6 +96,7 @@ export default function Login() {
         validateInputs={validateInputs}
         handleClickOpen={handleClickOpen}
         fromSignup={false}
+        submitErrorMessage={submitErrorMessage}
       />
     </SignInContainer>
   );
