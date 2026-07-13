@@ -6,8 +6,11 @@ import ColorModeSelect from '../../theme/color-mode-select';
 import SignInContainer from "../../components/styled-stack"
 import strings from "../../locales/en.json";
 import Content from '@/components/content';
+import { apiRequest, getErrorMessage } from '@/lib/api';
+import { useRouter } from 'next/navigation';
 
 export default function Signup() {
+  const router = useRouter();
   const [role, setRole] = React.useState<string | null>('tutor');
   const nameRef = React.useRef<HTMLInputElement>(null);
   const [nameError, setNameError] = React.useState(false);
@@ -18,18 +21,40 @@ export default function Signup() {
   const passwordRef = React.useRef<HTMLInputElement>(null);
   const [passwordError, setPasswordError] = React.useState(false);
   const [passwordErrorMessage, setPasswordErrorMessage] = React.useState('');
+  const [submitErrorMessage, setSubmitErrorMessage] = React.useState('');
 
-
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     if (nameError || emailError || passwordError ) {
       event.preventDefault();
       return;
     }
+    event.preventDefault();
     const data = new FormData(event.currentTarget);
-    console.log({
-      email: data.get('email'),
-      password: data.get('password'),
+    const email = data.get('email');
+    const password = data.get('password');
+    const fullName = data.get('fullName');
+    // console.log({
+    //   email: data.get('email'),
+    //   password: data.get('password'),
+    //   fullName: data.get('fullName'),
+    //   role: role,
+    // });
+    const response = await apiRequest('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ email, password, fullName, role }),
     });
+
+    if (!response.ok) {
+      const message = await getErrorMessage(response);
+      setSubmitErrorMessage(message);
+      return;
+    }
+
+    setSubmitErrorMessage('');
+    const jsonResponse = await response.json();
+    localStorage.setItem('jwt_token', jsonResponse.token);
+    document.cookie = `auth_token=${jsonResponse.token}; path=/; max-age=86400; SameSite=Lax`;
+    router.push('/login');
   };
 
   const handleRoleChange = (event: React.MouseEvent<HTMLElement>, newRole: string) => {
@@ -113,6 +138,7 @@ export default function Signup() {
             passwordErrorMessage={passwordErrorMessage}
             validateInputs={validateInputs}
             fromSignup={true}
+            submitErrorMessage={submitErrorMessage}
             />
         </Stack>
       </Stack>

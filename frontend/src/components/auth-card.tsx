@@ -1,4 +1,5 @@
 'use client';
+import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Divider from '@mui/material/Divider';
@@ -31,7 +32,8 @@ interface AuthCardInt {
   handleClickOpen?: () => void;
   fromSignup: boolean;
   role?: string | null;
-  handleRoleChange?: (event: React.MouseEvent<HTMLElement, MouseEvent>, newRole: string) => void
+  handleRoleChange?: (event: React.MouseEvent<HTMLElement, MouseEvent>, newRole: string) => void;
+  submitErrorMessage?: string;
 }
 
 const StyledToggleButtonGroup = styled(ToggleButtonGroup)(({ theme }) => ({
@@ -53,7 +55,8 @@ const AuthCard = ({
   handleClickOpen,
   fromSignup,
   role,
-  handleRoleChange
+  handleRoleChange,
+  submitErrorMessage
 } : AuthCardInt) => {
   return (
     <StyledCard variant="outlined" data-testid="auth-card">
@@ -82,6 +85,7 @@ const AuthCard = ({
             exclusive
             value={role}
             onChange={handleRoleChange}
+            id="role"
           >
             <ToggleButton value="tutor">{strings.auth.roles.tutor}</ToggleButton>
             <ToggleButton value="student">{strings.auth.roles.student}</ToggleButton>
@@ -89,14 +93,14 @@ const AuthCard = ({
           </StyledToggleButtonGroup>
         </FormControl>}
         {fromSignup && <FormControl>
-          <FormLabel htmlFor="name">{strings.auth.namePrompt}</FormLabel>
+          <FormLabel htmlFor="fullName">{strings.auth.namePrompt}</FormLabel>
           <TextField
             inputRef={nameRef}
             error={nameError}
             helperText={nameErrorMessage}
-            id="name"
+            id="fullName"
             type="name"
-            name="name"
+            name="fullName"
             placeholder="John Doe"
             autoComplete="name"
             autoFocus
@@ -146,6 +150,11 @@ const AuthCard = ({
           control={<Checkbox value="remember" color="primary" />}
           label={strings.auth.rememberMe}
         />}
+        {submitErrorMessage ? (
+          <Alert severity="error" sx={{ width: '100%' }}>
+            {submitErrorMessage}
+          </Alert>
+        ) : null}
         <Button
           type="submit"
           fullWidth
