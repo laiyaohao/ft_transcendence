@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import AuthGuard from "./auth-guard";
+import Wrapper from './wrapper';
 
 export default function MainLayout({
   children,
@@ -8,8 +9,7 @@ export default function MainLayout({
 }>) {
   return (
     // <AuthGuard>
-    //   {children}
+    <Wrapper>{children}</Wrapper>
     // </AuthGuard>
-    <>{children}</>
   );
 }

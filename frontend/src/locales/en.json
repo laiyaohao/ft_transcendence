@@ -1,4 +1,9 @@
 {
+  "common": {
+    "topbarTitle": "Lumina Tutor",
+    "sidebarTitle": "Lumina Academy",
+    "sidebarSubtitle": "Student Workspace"
+  },
   "auth": {
     "emailPrompt": "Email",
     "passwordPrompt": "Password",
