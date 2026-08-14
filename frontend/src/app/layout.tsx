@@ -4,6 +4,8 @@ import { AppRouterCacheProvider } from '@mui/material-nextjs/v16-appRouter';
 import InitColorSchemeScript from '@mui/material/InitColorSchemeScript';
 import CssBaseline from '@mui/material/CssBaseline';
 import ThemeProvider from './theme-provider'
+import SidebarProvider from '../providers/sidebar-provider'
+import ViewportProvider from "@/providers/viewport-provider";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -33,9 +35,13 @@ export default function RootLayout({
           <ThemeProvider>
             <InitColorSchemeScript attribute="class" />
             <CssBaseline enableColorScheme />
-            <main style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-              {children}
-            </main>
+            <ViewportProvider>
+              <SidebarProvider>
+                <main style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+                  {children}
+                </main>
+              </SidebarProvider>
+            </ViewportProvider>
           </ThemeProvider>
         </AppRouterCacheProvider>
       </body>
