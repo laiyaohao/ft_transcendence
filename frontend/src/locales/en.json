@@ -2,7 +2,7 @@
   "common": {
     "topbarTitle": "Lumina Tutor",
     "sidebarTitle": "Lumina Academy",
-    "sidebarSubtitle": "Student Workspace"
+    "sidebarSubtitle": "Lead Instructor"
   },
   "auth": {
     "emailPrompt": "Email",
