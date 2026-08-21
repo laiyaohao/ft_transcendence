@@ -16,6 +16,10 @@ import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
+
+import java.util.HashMap;
+import java.util.Map;
+
 import org.springframework.dao.DataIntegrityViolationException;
 
 @Service
@@ -25,6 +29,14 @@ public class AuthService {
   private final PasswordEncoder passwordEncoder;
   private final JwtService jwtService;
   private final AuthenticationManager authenticationManager;
+
+  private String generateToken(User user) {
+    Map<String, Object> claims = new HashMap<>();
+    claims.put("userId", user.getId());
+    claims.put("role", user.getRole());
+
+    return jwtService.generateToken(claims, user);
+  }
 
   public AuthResponse register(RegisterRequest request) {
     if (userRepository.existsByEmail(request.getEmail())) {
@@ -43,7 +55,7 @@ public class AuthService {
       throw new ResponseStatusException(HttpStatus.CONFLICT, "Email already registered");
     }
 
-    var jwtToken = jwtService.generateToken(user);
+    var jwtToken = generateToken(user);
     return AuthResponse.builder()
         .token(jwtToken)
         .email(user.getEmail())
@@ -64,7 +76,7 @@ public class AuthService {
     var user = userRepository.findByEmail(request.getEmail())
         .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid email or password"));
 
-    var jwtToken = jwtService.generateToken(user);
+    var jwtToken = generateToken(user);
     return AuthResponse.builder()
         .token(jwtToken)
         .email(user.getEmail())
