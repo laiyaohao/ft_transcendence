@@ -37,6 +37,10 @@ fclean: clean
 # Stop and remove containers, and then build and start them again
 re: fclean up
 
+# Run the frontend and backend test suites.
+test:
+	npm test
+
 # Display help message
 help:
 	@echo "Available commands:"
@@ -46,7 +50,8 @@ help:
 	@echo "  make clean    - Stop and remove all services, networks, and volumes"
 	@echo "  make fclean   - Stop and remove all stopped containers, all unused networks, all unused images, and all unused volumes"
 	@echo "  make re       - Rebuild and restart all services"
+	@echo "  make test     - Run all automated test suites"
 	@echo "  make help     - Display this help message"
 
 # Declare phony targets to ensure they always run
-.PHONY: all build up down clean fclean re help
+.PHONY: all build up down clean fclean re test help
