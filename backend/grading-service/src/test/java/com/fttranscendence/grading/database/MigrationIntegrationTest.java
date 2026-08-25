@@ -12,7 +12,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
 import java.util.Properties;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -25,10 +29,11 @@ class MigrationIntegrationTest {
 
     @BeforeEach
     void clearSubmissions() {
+        jdbcTemplate.update("DELETE FROM answer_reviews");
         jdbcTemplate.update("DELETE FROM submission_pages");
-        jdbcTemplate.update("DELETE FROM submission_documents");
         jdbcTemplate.update("DELETE FROM submission_missing_keywords");
         jdbcTemplate.update("DELETE FROM submissions");
+        jdbcTemplate.update("DELETE FROM submission_documents");
     }
 
     @Test
@@ -37,8 +42,9 @@ class MigrationIntegrationTest {
         assertEquals(1, tableCount("submission_missing_keywords"));
         assertEquals(1, tableCount("submission_documents"));
         assertEquals(1, tableCount("submission_pages"));
-        assertEquals(2, versionedMigrationCount());
-        assertEquals("2", flyway.info().current().getVersion().getVersion());
+        assertEquals(1, tableCount("answer_reviews"));
+        assertEquals(3, versionedMigrationCount());
+        assertEquals("3", flyway.info().current().getVersion().getVersion());
     }
 
     @Test
@@ -52,12 +58,62 @@ class MigrationIntegrationTest {
         assertEquals(1, tableCount("submission_missing_keywords"));
         assertEquals(1, tableCount("submission_documents"));
         assertEquals(1, tableCount("submission_pages"));
+        assertEquals(1, tableCount("answer_reviews"));
+    }
+
+    @Test
+    void v3PreservesExistingAiDiagnosticsAsPendingLegacyRecords() throws Exception {
+        String databaseUrl = "jdbc:h2:mem:grading-upgrade-" + UUID.randomUUID()
+            + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1";
+        Flyway versionTwo = Flyway.configure()
+            .dataSource(databaseUrl, "sa", "")
+            .schemas("PUBLIC")
+            .defaultSchema("PUBLIC")
+            .locations("classpath:db/migration")
+            .target("2")
+            .load();
+        assertEquals(2, versionTwo.migrate().migrationsExecuted);
+
+        try (Connection connection = DriverManager.getConnection(databaseUrl, "sa", "")) {
+            connection.createStatement().executeUpdate(
+                "INSERT INTO submissions ("
+                    + "student_id, question_id, student_answer, correctness, feedback"
+                    + ") VALUES (42, 'legacy-question', 'Legacy answer', "
+                    + "'Partially Correct', 'Legacy AI feedback')"
+            );
+        }
+
+        Flyway latest = Flyway.configure()
+            .dataSource(databaseUrl, "sa", "")
+            .schemas("PUBLIC")
+            .defaultSchema("PUBLIC")
+            .locations("classpath:db/migration")
+            .load();
+        assertEquals(1, latest.migrate().migrationsExecuted);
+
+        try (Connection connection = DriverManager.getConnection(databaseUrl, "sa", "");
+             ResultSet result = connection.createStatement().executeQuery(
+                 "SELECT legacy_question_reference, extracted_answer, "
+                     + "ai_suggested_outcome, ai_suggested_feedback, "
+                     + "review_status, legacy_record, approved_marks "
+                     + "FROM submissions WHERE student_id = 42")) {
+            assertEquals(true, result.next());
+            assertEquals("legacy-question", result.getString("legacy_question_reference"));
+            assertEquals("Legacy answer", result.getString("extracted_answer"));
+            assertEquals("Partially Correct", result.getString("ai_suggested_outcome"));
+            assertEquals("Legacy AI feedback", result.getString("ai_suggested_feedback"));
+            assertEquals("PENDING_REVIEW", result.getString("review_status"));
+            assertEquals(true, result.getBoolean("legacy_record"));
+            assertEquals(null, result.getBigDecimal("approved_marks"));
+        }
     }
 
     @Test
     void missingKeywordsAreRemovedWhenTheirSubmissionIsDeleted() {
         jdbcTemplate.update(
-            "INSERT INTO submissions (student_id, question_id, correctness) VALUES (?, ?, ?)",
+            "INSERT INTO submissions ("
+                + "student_id, legacy_question_reference, ai_suggested_outcome, legacy_record"
+                + ") VALUES (?, ?, ?, TRUE)",
             42L,
             "question-1",
             "Incorrect"
