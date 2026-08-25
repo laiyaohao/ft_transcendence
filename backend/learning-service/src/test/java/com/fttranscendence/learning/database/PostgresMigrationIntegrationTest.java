@@ -27,16 +27,18 @@ class PostgresMigrationIntegrationTest {
             .locations("classpath:db/migration")
             .load();
 
-        assertEquals(5, flyway.migrate().migrationsExecuted);
+        assertEquals(6, flyway.migrate().migrationsExecuted);
         assertEquals(0, flyway.migrate().migrationsExecuted);
 
         try (Connection connection = POSTGRES.createConnection("");
              ResultSet result = connection.createStatement().executeQuery(
                  "SELECT COUNT(*) FROM information_schema.tables "
                      + "WHERE table_schema = 'learning' "
-                     + "AND table_name IN ('tutor_classes', 'student_profiles', 'syllabus_topics')")) {
+                     + "AND table_name IN ("
+                     + "'tutor_classes', 'student_profiles', 'syllabus_topics', "
+                     + "'questions', 'marking_components', 'question_keywords')")) {
             result.next();
-            assertEquals(3, result.getInt(1));
+            assertEquals(6, result.getInt(1));
         }
 
         try (Connection connection = POSTGRES.createConnection("");
