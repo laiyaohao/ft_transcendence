@@ -39,14 +39,19 @@ class MigrationIntegrationTest {
         assertEquals(1, tableCount("class_schedules"));
         assertEquals(1, tableCount("student_profiles"));
         assertEquals(1, tableCount("class_memberships"));
-        assertEquals("3", flyway.info().current().getVersion().getVersion());
-        assertEquals(3, versionedMigrationCount());
+        assertEquals(1, tableCount("syllabus_topics"));
+        assertEquals("5", flyway.info().current().getVersion().getVersion());
+        assertEquals(5, versionedMigrationCount());
 
         long appliedBefore = versionedMigrationCount();
         flyway.migrate();
 
         assertEquals(appliedBefore, versionedMigrationCount());
         assertEquals(1, tableCount("tutor_classes"));
+        assertEquals(24, jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM syllabus_topics",
+            Integer.class
+        ));
     }
 
     @Test
