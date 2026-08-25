@@ -1,6 +1,7 @@
 package com.fttranscendence.authservice.security;
 
 import com.fttranscendence.authservice.model.User;
+import com.fttranscendence.authservice.model.UserRole;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -30,7 +31,7 @@ class JwtServiceTest {
         user.setEmail("student@example.com");
         user.setPassword("encoded-password");
         user.setFullName("Test Student");
-        user.setRole("STUDENT");
+        user.setRole(UserRole.STUDENT);
     }
 
     @Test
@@ -42,13 +43,11 @@ class JwtServiceTest {
     }
 
     @Test
-    void generatedTokenCanCarryAdditionalClaims() {
-        String token = jwtService.generateToken(Map.of("role", "STUDENT"), user);
+    void generatedTokenAlwaysCarriesTheValidatedUserRole() {
+        String token = jwtService.generateToken(Map.of("role", "TUTOR", "tenant", "academy-1"), user);
 
-        assertEquals(
-            "STUDENT",
-            jwtService.extractClaim(token, claims -> claims.get("role", String.class))
-        );
+        assertEquals(UserRole.STUDENT, jwtService.extractRole(token));
+        assertEquals("academy-1", jwtService.extractClaim(token, claims -> claims.get("tenant", String.class)));
     }
 
     @Test
@@ -58,8 +57,33 @@ class JwtServiceTest {
         otherUser.setEmail("someone-else@example.com");
         otherUser.setPassword("encoded-password");
         otherUser.setFullName("Someone Else");
-        otherUser.setRole("STUDENT");
+        otherUser.setRole(UserRole.STUDENT);
 
         assertFalse(jwtService.isTokenValid(token, otherUser));
+    }
+
+    @Test
+    void tokenIsInvalidWhenThePersistedRoleDoesNotMatchTheClaim() {
+        String token = jwtService.generateToken(user);
+        User promotedUser = new User();
+        promotedUser.setEmail(user.getEmail());
+        promotedUser.setPassword("encoded-password");
+        promotedUser.setFullName("Test Student");
+        promotedUser.setRole(UserRole.TUTOR);
+
+        assertFalse(jwtService.isTokenValid(token, promotedUser));
+    }
+
+    @Test
+    void expiredTokenIsRejected() {
+        ReflectionTestUtils.setField(jwtService, "jwtExpiration", -1L);
+        String token = jwtService.generateToken(user);
+
+        assertFalse(jwtService.isTokenValid(token, user));
+    }
+
+    @Test
+    void malformedTokenIsRejected() {
+        assertFalse(jwtService.isTokenValid("not-a-jwt", user));
     }
 }

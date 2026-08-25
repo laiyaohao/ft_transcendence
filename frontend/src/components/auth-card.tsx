@@ -8,10 +8,7 @@ import FormControl from '@mui/material/FormControl';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import FormLabel from '@mui/material/FormLabel';
 import Link from '@mui/material/Link';
-import { styled } from '@mui/material/styles';
 import TextField from '@mui/material/TextField';
-import ToggleButton from '@mui/material/ToggleButton';
-import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
 import StyledCard from "./styled-card";
 import { GoogleIcon, FacebookIcon } from '../utils/icons';
@@ -31,14 +28,8 @@ interface AuthCardInt {
   validateInputs: () => boolean;
   handleClickOpen?: () => void;
   fromSignup: boolean;
-  role?: string | null;
-  handleRoleChange?: (event: React.MouseEvent<HTMLElement, MouseEvent>, newRole: string) => void;
   submitErrorMessage?: string;
 }
-
-const StyledToggleButtonGroup = styled(ToggleButtonGroup)(({ theme }) => ({
-  width: 'fit-content'
-}));
 
 const AuthCard = ({
   handleSubmit,
@@ -54,8 +45,6 @@ const AuthCard = ({
   validateInputs,
   handleClickOpen,
   fromSignup,
-  role,
-  handleRoleChange,
   submitErrorMessage
 } : AuthCardInt) => {
   return (
@@ -78,20 +67,6 @@ const AuthCard = ({
           gap: 2,
         }}
       >
-        {fromSignup && <FormControl>
-          <FormLabel htmlFor="role">{strings.auth.rolePrompt}</FormLabel>
-          <StyledToggleButtonGroup
-            color="primary"
-            exclusive
-            value={role}
-            onChange={handleRoleChange}
-            id="role"
-          >
-            <ToggleButton value="tutor">{strings.auth.roles.tutor}</ToggleButton>
-            <ToggleButton value="student">{strings.auth.roles.student}</ToggleButton>
-            <ToggleButton value="parent">{strings.auth.roles.parent}</ToggleButton>
-          </StyledToggleButtonGroup>
-        </FormControl>}
         {fromSignup && <FormControl>
           <FormLabel htmlFor="fullName">{strings.auth.namePrompt}</FormLabel>
           <TextField
@@ -138,7 +113,7 @@ const AuthCard = ({
             placeholder="••••••"
             type="password"
             id="password"
-            autoComplete="current-password"
+            autoComplete={fromSignup ? 'new-password' : 'current-password'}
             autoFocus
             required
             fullWidth

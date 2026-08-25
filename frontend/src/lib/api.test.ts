@@ -90,10 +90,16 @@ describe("getErrorMessage", () => {
 
 describe("register", () => {
   it("stores the token returned by the registration endpoint", async () => {
+    const expires = Math.floor(Date.now() / 1000) + 3600;
+    const token = `${btoa(JSON.stringify({ alg: "HS256" }))}.${btoa(JSON.stringify({
+      sub: "student@example.com",
+      role: "STUDENT",
+      exp: expires,
+    }))}.signature`;
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ token: "new-token", email: "tutor@example.com" }), {
+        new Response(JSON.stringify({ token, email: "student@example.com", role: "STUDENT" }), {
           status: 200,
           headers: { "content-type": "application/json" },
         }),
@@ -101,12 +107,23 @@ describe("register", () => {
     );
 
     const result = await register(
-      "tutor@example.com",
-      "password-123",
-      "Test Tutor",
+      "student@example.com",
+      "StrongPassword1!",
+      "Test Student",
     );
 
-    expect(result.token).toBe("new-token");
-    expect(localStorage.getItem("jwt_token")).toBe("new-token");
+    expect(result.token).toBe(token);
+    expect(localStorage.getItem("jwt_token")).toBe(token);
+    expect(fetch).toHaveBeenCalledWith(
+      "http://localhost:8081/api/auth/register",
+      expect.objectContaining({
+        body: JSON.stringify({
+          email: "student@example.com",
+          password: "StrongPassword1!",
+          fullName: "Test Student",
+          role: "STUDENT",
+        }),
+      }),
+    );
   });
 });

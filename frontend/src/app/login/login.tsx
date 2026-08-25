@@ -7,6 +7,7 @@ import ForgotPassword from '../../components/forgot-password';
 import strings from "../../locales/en.json";
 import { apiRequest, getErrorMessage } from '@/lib/api';
 import { useRouter } from 'next/navigation';
+import { getRoleHome, saveAuthSession, type AuthResponsePayload } from '@/lib/auth';
 
 export default function Login() {
   const router = useRouter();
@@ -47,10 +48,13 @@ export default function Login() {
     }
 
     setSubmitErrorMessage('');
-    const jsonResponse = await response.json();
-    localStorage.setItem('jwt_token', jsonResponse.token);
-    document.cookie = `auth_token=${jsonResponse.token}; path=/; max-age=86400; SameSite=Lax`;
-    router.push('/classes');
+    try {
+      const jsonResponse = await response.json() as AuthResponsePayload;
+      const session = saveAuthSession(jsonResponse);
+      router.replace(getRoleHome(session.role));
+    } catch {
+      setSubmitErrorMessage('Unable to establish a secure session. Please try again.');
+    }
   };
 
   const validateInputs = () => {
@@ -59,7 +63,7 @@ export default function Login() {
 
     let isValid = true;
 
-    if (!email?.value || !/\S+@\S+\.\S+/.test(email.value)) {
+    if (!email?.value || email.value.length > 254 || !/\S+@\S+\.\S+/.test(email.value)) {
       setEmailError(true);
       setEmailErrorMessage(strings.auth.validation.emailInvalid);
       isValid = false;
@@ -68,7 +72,7 @@ export default function Login() {
       setEmailErrorMessage('');
     }
 
-    if (!password?.value || password.value.length < 6) {
+    if (!password?.value || password.value.length > 128) {
       setPasswordError(true);
       setPasswordErrorMessage(strings.auth.validation.passwordMinLength);
       isValid = false;

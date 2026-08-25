@@ -1,6 +1,7 @@
+'use client';
+
 import * as React from 'react';
-import { styled, useTheme } from '@mui/material/styles';
-import Box from '@mui/material/Box';
+import { styled } from '@mui/material/styles';
 import MuiAppBar from '@mui/material/AppBar';
 import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
@@ -8,6 +9,10 @@ import Stack from '@mui/material/Stack';
 import Link from 'next/link';
 import ColorModeSelect from '@/theme/color-mode-select';
 import strings from "../locales/en.json";
+import Button from '@mui/material/Button';
+import LogoutOutlinedIcon from '@mui/icons-material/LogoutOutlined';
+import { useRouter } from 'next/navigation';
+import { clearAuthSession } from '@/lib/auth';
 
 const AppBar = styled(MuiAppBar)(({ theme }) => ({
   borderWidth: 0,
@@ -18,11 +23,13 @@ const AppBar = styled(MuiAppBar)(({ theme }) => ({
   zIndex: theme.zIndex.drawer + 1,
 }));
 
-export interface TopbarProps {
-}
+export default function Topbar() {
+  const router = useRouter();
 
-export default function Topbar({
-}: TopbarProps) {
+  const handleLogout = () => {
+    clearAuthSession();
+    router.replace('/login');
+  };
 
   return (
     <AppBar position="relative" sx={{ displayPrint: 'none' }} data-testid="topbar">
@@ -61,7 +68,13 @@ export default function Topbar({
             <Stack direction="row" sx={{ alignItems: 'center' }}>
               {/* <ThemeSwitcher /> */}
               <ColorModeSelect />
-              
+              <Button
+                color="inherit"
+                startIcon={<LogoutOutlinedIcon />}
+                onClick={handleLogout}
+              >
+                Logout
+              </Button>
             </Stack>
           </Stack>
         </Stack>

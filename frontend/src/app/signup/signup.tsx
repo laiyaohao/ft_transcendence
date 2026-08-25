@@ -8,10 +8,10 @@ import strings from "../../locales/en.json";
 import Content from '@/components/content';
 import { apiRequest, getErrorMessage } from '@/lib/api';
 import { useRouter } from 'next/navigation';
+import { getRoleHome, saveAuthSession, type AuthResponsePayload } from '@/lib/auth';
 
 export default function Signup() {
   const router = useRouter();
-  const [role, setRole] = React.useState<string | null>('tutor');
   const nameRef = React.useRef<HTMLInputElement>(null);
   const [nameError, setNameError] = React.useState(false);
   const [nameErrorMessage, setNameErrorMessage] = React.useState('');
@@ -32,15 +32,9 @@ export default function Signup() {
     const email = data.get('email');
     const password = data.get('password');
     const fullName = data.get('fullName');
-    // console.log({
-    //   email: data.get('email'),
-    //   password: data.get('password'),
-    //   fullName: data.get('fullName'),
-    //   role: role,
-    // });
     const response = await apiRequest('/api/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ email, password, fullName, role }),
+      body: JSON.stringify({ email, password, fullName, role: 'STUDENT' }),
     });
 
     if (!response.ok) {
@@ -50,17 +44,14 @@ export default function Signup() {
     }
 
     setSubmitErrorMessage('');
-    const jsonResponse = await response.json();
-    localStorage.setItem('jwt_token', jsonResponse.token);
-    document.cookie = `auth_token=${jsonResponse.token}; path=/; max-age=86400; SameSite=Lax`;
-    router.push('/login');
-  };
-
-  const handleRoleChange = (event: React.MouseEvent<HTMLElement>, newRole: string) => {
-    if (newRole !== null) {
-      setRole(newRole);
+    try {
+      const jsonResponse = await response.json() as AuthResponsePayload;
+      const session = saveAuthSession(jsonResponse);
+      router.replace(getRoleHome(session.role));
+    } catch {
+      setSubmitErrorMessage('Unable to establish a secure session. Please try again.');
     }
-  }
+  };
 
   const validateInputs = () => {
     const name = nameRef.current;
@@ -69,7 +60,7 @@ export default function Signup() {
 
     let isValid = true;
 
-    if (!name?.value || name.value.length < 1) {
+    if (!name?.value || name.value.length < 2 || name.value.length > 100) {
       setNameError(true);
       setNameErrorMessage(strings.auth.validation.nameInvalid);
       isValid = false;
@@ -78,7 +69,7 @@ export default function Signup() {
       setNameErrorMessage('');
     }
 
-    if (!email?.value || !/\S+@\S+\.\S+/.test(email.value)) {
+    if (!email?.value || email.value.length > 254 || !/\S+@\S+\.\S+/.test(email.value)) {
       setEmailError(true);
       setEmailErrorMessage(strings.auth.validation.emailInvalid);
       isValid = false;
@@ -87,7 +78,12 @@ export default function Signup() {
       setEmailErrorMessage('');
     }
 
-    if (!password?.value || password.value.length < 6) {
+    if (
+      !password?.value
+      || password.value.length < 12
+      || password.value.length > 128
+      || !/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9])/.test(password.value)
+    ) {
       setPasswordError(true);
       setPasswordErrorMessage(strings.auth.validation.passwordMinLength);
       isValid = false;
@@ -124,8 +120,6 @@ export default function Signup() {
           <Content />
           <AuthCard
             handleSubmit={handleSubmit}
-            role={role}
-            handleRoleChange={handleRoleChange}
             nameRef={nameRef}
             nameError={nameError}
             nameErrorMessage={nameErrorMessage}

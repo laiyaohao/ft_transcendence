@@ -4,39 +4,39 @@ import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
-
-const PROTECTED_PATHS = ['/classes', '/students', '/upload'];
+import { getBrowserSession, getRoleHome, isPathAllowed } from '@/lib/auth';
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [showMessage, setShowMessage] = useState(false);
+  const [authorized, setAuthorized] = useState(false);
 
   useEffect(() => {
-    const token = document.cookie
-      .split('; ')
-      .find((cookie) => cookie.startsWith('auth_token='));
-
-    const isProtectedPath = PROTECTED_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
-
-    if (isProtectedPath && !token) {
-      setShowMessage(true);
-      const timer = window.setTimeout(() => {
+    const timer = window.setTimeout(() => {
+      const session = getBrowserSession();
+      if (!session) {
+        setAuthorized(false);
         router.replace('/login');
-      }, 1500);
+        return;
+      }
 
-      return () => window.clearTimeout(timer);
-    }
+      if (!isPathAllowed(session.role, pathname)) {
+        setAuthorized(false);
+        router.replace(getRoleHome(session.role));
+        return;
+      }
+
+      setAuthorized(true);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
   }, [pathname, router]);
 
+  if (authorized) return children;
+
   return (
-    <>
-      {showMessage ? (
-        <Box sx={{ p: 2 }}>
-          <Alert severity="info">Please log in to continue. You will be redirected shortly.</Alert>
-        </Box>
-      ) : null}
-      {children}
-    </>
+    <Box sx={{ p: 2 }}>
+      <Alert severity="info">Checking your access…</Alert>
+    </Box>
   );
 }

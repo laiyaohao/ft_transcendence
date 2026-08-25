@@ -3,6 +3,7 @@ package com.fttranscendence.authservice.service;
 import com.fttranscendence.authservice.dto.AuthRequest;
 import com.fttranscendence.authservice.dto.RegisterRequest;
 import com.fttranscendence.authservice.model.User;
+import com.fttranscendence.authservice.model.UserRole;
 import com.fttranscendence.authservice.repository.UserRepository;
 import com.fttranscendence.authservice.security.JwtService;
 import org.junit.jupiter.api.BeforeEach;
@@ -95,6 +96,21 @@ class AuthServiceTest {
     }
 
     @Test
+    void publicRegistrationRejectsTutorPrivilegeEscalation() {
+        RegisterRequest request = registrationRequest();
+        request.setRole(UserRole.TUTOR);
+
+        ResponseStatusException exception = assertThrows(
+            ResponseStatusException.class,
+            () -> authService.register(request)
+        );
+
+        assertEquals(HttpStatus.FORBIDDEN, exception.getStatusCode());
+        verify(userRepository, never()).save(any());
+        verify(passwordEncoder, never()).encode(any());
+    }
+
+    @Test
     void loginAuthenticatesAndReturnsThePersistedUser() {
         AuthRequest request = loginRequest();
         User user = user();
@@ -143,16 +159,16 @@ class AuthServiceTest {
     private RegisterRequest registrationRequest() {
         RegisterRequest request = new RegisterRequest();
         request.setEmail("tutor@example.com");
-        request.setPassword("password-123");
+        request.setPassword("StrongPassword1!");
         request.setFullName("Test Tutor");
-        request.setRole("TUTOR");
+        request.setRole(UserRole.STUDENT);
         return request;
     }
 
     private AuthRequest loginRequest() {
         AuthRequest request = new AuthRequest();
         request.setEmail("tutor@example.com");
-        request.setPassword("password-123");
+        request.setPassword("StrongPassword1!");
         return request;
     }
 
@@ -161,7 +177,7 @@ class AuthServiceTest {
         user.setEmail("tutor@example.com");
         user.setPassword("encoded-password");
         user.setFullName("Test Tutor");
-        user.setRole("TUTOR");
+        user.setRole(UserRole.TUTOR);
         return user;
     }
 }

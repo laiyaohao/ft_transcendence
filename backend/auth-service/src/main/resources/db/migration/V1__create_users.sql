@@ -3,6 +3,7 @@ CREATE TABLE users (
     email VARCHAR(255) NOT NULL,
     password VARCHAR(255) NOT NULL,
     fullname VARCHAR(255) NOT NULL,
-    role VARCHAR(255) NOT NULL,
+    role VARCHAR(32) NOT NULL,
+    CONSTRAINT ck_users_role CHECK (role IN ('TUTOR', 'STUDENT')),
     CONSTRAINT uk_users_email UNIQUE (email)
 );

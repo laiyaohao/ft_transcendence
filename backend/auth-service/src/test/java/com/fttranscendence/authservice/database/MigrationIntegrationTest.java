@@ -53,7 +53,7 @@ class MigrationIntegrationTest {
             "duplicate@example.com",
             "encoded-password",
             "First User",
-            "student"
+            "STUDENT"
         );
 
         assertThrows(
@@ -63,7 +63,7 @@ class MigrationIntegrationTest {
                 "duplicate@example.com",
                 "another-encoded-password",
                 "Second User",
-                "tutor"
+                "TUTOR"
             )
         );
     }

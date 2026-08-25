@@ -1,7 +1,7 @@
 'use client'
 import * as React from 'react';
 import { usePathname } from 'next/navigation';
-import { useTheme, type Theme } from '@mui/material/styles';
+import { type Theme } from '@mui/material/styles';
 import Box from '@mui/material/Box';
 import Drawer from '@mui/material/Drawer';
 import List from '@mui/material/List';
@@ -10,8 +10,6 @@ import type {} from '@mui/material/themeCssVarsAugmentation';
 import PersonIcon from '@mui/icons-material/Person';
 import SidebarContext from '../context/sidebar-context';
 import SidebarPageItem from './sidebar-page-item';
-import SidebarHeaderItem from './sidebar-header-item';
-import SidebarDividerItem from './sidebar-divider-item';
 import getDrawerSxTransitionMixin from '@/utils/mixins';
 import { DRAWER_WIDTH, MINI_DRAWER_WIDTH } from '@/utils/constants';
 import ViewportContext from '@/context/viewport-context';
@@ -25,6 +23,9 @@ import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined';
 import TrendingUpOutlinedIcon from '@mui/icons-material/TrendingUpOutlined';
 import TopicOutlinedIcon from '@mui/icons-material/TopicOutlined';
 import SubjectOutlinedIcon from '@mui/icons-material/SubjectOutlined';
+import SchoolOutlinedIcon from '@mui/icons-material/SchoolOutlined';
+import GroupsOutlinedIcon from '@mui/icons-material/GroupsOutlined';
+import { getBrowserSession, type AuthRole } from '@/lib/auth';
 
 
 export interface SidebarProps {
@@ -46,7 +47,6 @@ export default function Sidebar({
     throw new Error('Sidebar context was used without a provider.');
   }
   const { 
-    expandedItemIds,
     handleSetSidebarExpanded,
     mini,
     isFullyExpanded,
@@ -54,6 +54,14 @@ export default function Sidebar({
    } = sidebarContext;
 
   const pathname = usePathname();
+  const [role, setRole] = React.useState<AuthRole | null>(null);
+
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setRole(getBrowserSession()?.role ?? null);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
 
   
@@ -115,6 +123,39 @@ export default function Sidebar({
               flexGrow: 1,
             }}
           >
+            {role === 'TUTOR' ? (
+              <>
+                <SidebarPageItem
+                  id="classes"
+                  title="Classes"
+                  icon={<SchoolOutlinedIcon />}
+                  href="/classes"
+                  selected={pathname === '/classes'}
+                />
+                <SidebarPageItem
+                  id="students"
+                  title="Students"
+                  icon={<GroupsOutlinedIcon />}
+                  href="/students"
+                  selected={pathname === '/students'}
+                />
+                <SidebarPageItem
+                  id="upload"
+                  title="Upload"
+                  icon={<FileUploadOutlinedIcon />}
+                  href="/upload"
+                  selected={pathname === '/upload'}
+                />
+                <SidebarPageItem
+                  id="profile"
+                  title="Profile"
+                  icon={<PersonIcon />}
+                  href="/profile"
+                  selected={pathname === '/profile'}
+                />
+              </>
+            ) : role === 'STUDENT' ? (
+              <>
             <SidebarPageItem
               id="home"
               title="Home"
@@ -171,6 +212,8 @@ export default function Sidebar({
               href="/profile"
               selected={pathname === '/profile'}
             />
+              </>
+            ) : null}
             {/* <SidebarDividerItem /> */}
             {/* <SidebarHeaderItem>Example items</SidebarHeaderItem> */}
             {/* <SidebarPageItem
@@ -236,7 +279,7 @@ export default function Sidebar({
         </Box>
       </React.Fragment>
     ),
-    [mini, hasDrawerTransitions, isFullyExpanded, expandedItemIds, pathname],
+    [mini, hasDrawerTransitions, isFullyExpanded, pathname, role],
   );
 
   const getDrawerSharedSx = React.useCallback(

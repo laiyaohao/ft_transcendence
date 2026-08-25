@@ -1,7 +1,10 @@
 // src/main/java/com/fttranscendence/authservice/security/JwtService.java
 package com.fttranscendence.authservice.security;
 
+import com.fttranscendence.authservice.model.User;
+import com.fttranscendence.authservice.model.UserRole;
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
@@ -10,6 +13,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 
 import java.security.Key;
+import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
@@ -27,6 +31,14 @@ public class JwtService {
     return extractClaim(token, Claims::getSubject);
   }
 
+  public UserRole extractRole(String token) {
+    String role = extractClaim(token, claims -> claims.get("role", String.class));
+    if (role == null) {
+      throw new IllegalArgumentException("Token is missing the role claim");
+    }
+    return UserRole.valueOf(role);
+  }
+
   public <T> T extractClaim(String token, Function<Claims, T> claimsResolver) {
     final Claims claims = extractAllClaims(token);
     return claimsResolver.apply(claims);
@@ -37,8 +49,14 @@ public class JwtService {
   }
 
   public String generateToken(Map<String, Object> extraClaims, UserDetails userDetails) {
+    if (!(userDetails instanceof User user) || user.getRole() == null) {
+      throw new IllegalArgumentException("A persisted user role is required to issue a token");
+    }
+    Map<String, Object> claims = new HashMap<>(extraClaims);
+    claims.put("role", user.getRole().name());
+    claims.put("userId", user.getId());
     return Jwts.builder()
-        .setClaims(extraClaims)
+        .setClaims(claims)
         .setSubject(userDetails.getUsername())
         .setIssuedAt(new Date(System.currentTimeMillis()))
         .setExpiration(new Date(System.currentTimeMillis() + jwtExpiration))
@@ -47,8 +65,18 @@ public class JwtService {
   }
 
   public boolean isTokenValid(String token, UserDetails userDetails) {
-    final String email = extractEmail(token);
-    return (email.equals(userDetails.getUsername())) && !isTokenExpired(token);
+    try {
+      if (!(userDetails instanceof User user) || user.getRole() == null) {
+        return false;
+      }
+      final String email = extractEmail(token);
+      final UserRole role = extractRole(token);
+      return email.equalsIgnoreCase(userDetails.getUsername())
+          && role == user.getRole()
+          && !isTokenExpired(token);
+    } catch (JwtException | IllegalArgumentException ex) {
+      return false;
+    }
   }
 
   private boolean isTokenExpired(String token) {
@@ -68,7 +96,7 @@ public class JwtService {
   }
 
   private Key getSigningKey() {
-    byte[] keyBytes = secretKey.getBytes();
+    byte[] keyBytes = secretKey.getBytes(StandardCharsets.UTF_8);
     return Keys.hmacShaKeyFor(keyBytes);
   }
 }

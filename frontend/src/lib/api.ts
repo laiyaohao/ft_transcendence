@@ -1,4 +1,6 @@
 // frontend/lib/api.ts
+import { saveAuthSession, type AuthResponsePayload } from './auth';
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081';
 
 export async function apiRequest(endpoint: string, options: RequestInit = {}) {
@@ -42,9 +44,9 @@ export async function getErrorMessage(response: Response) {
 export async function register(email: string, password: string, fullName: string) {
   const response = await apiRequest('/api/auth/register', {
     method: 'POST',
-    body: JSON.stringify({ email, password, fullName }),
+    body: JSON.stringify({ email, password, fullName, role: 'STUDENT' }),
   });
-  const jsonResponse = await response.json();
-  localStorage.setItem('jwt_token', jsonResponse.token);
+  const jsonResponse = await response.json() as AuthResponsePayload;
+  saveAuthSession(jsonResponse);
   return jsonResponse;
 }

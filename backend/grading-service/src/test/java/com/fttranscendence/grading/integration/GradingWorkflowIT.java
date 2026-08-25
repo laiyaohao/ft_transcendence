@@ -1,16 +1,23 @@
 package com.fttranscendence.grading.integration;
 
 import com.fttranscendence.grading.repository.SubmissionRepository;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.SignatureAlgorithm;
+import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.client.RestTemplate;
+
+import java.nio.charset.StandardCharsets;
+import java.util.Date;
 
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.client.ExpectedCount.once;
@@ -60,6 +67,7 @@ class GradingWorkflowIT {
                 """, MediaType.APPLICATION_JSON));
 
         mockMvc.perform(post("/api/grading/analyze")
+                .header(HttpHeaders.AUTHORIZATION, bearerToken("TUTOR"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {
@@ -74,7 +82,8 @@ class GradingWorkflowIT {
             .andExpect(jsonPath("$.missing_keywords[0]").value("conduction"))
             .andExpect(jsonPath("$.feedback").value("Explain transfer to the hand."));
 
-        mockMvc.perform(get("/api/grading/submissions"))
+        mockMvc.perform(get("/api/grading/submissions")
+                .header(HttpHeaders.AUTHORIZATION, bearerToken("TUTOR")))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$", hasSize(1)))
             .andExpect(jsonPath("$[0].studentId").value(42))
@@ -102,6 +111,7 @@ class GradingWorkflowIT {
                 """, MediaType.APPLICATION_JSON));
 
         mockMvc.perform(multipart("/api/grading/ocr")
+                .header(HttpHeaders.AUTHORIZATION, bearerToken("STUDENT"))
                 .file("file", "page-bytes".getBytes()))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.extracted_text").value("Force = mass x acceleration"));
@@ -115,6 +125,7 @@ class GradingWorkflowIT {
             .andRespond(withServerError());
 
         mockMvc.perform(post("/api/grading/analyze")
+                .header(HttpHeaders.AUTHORIZATION, bearerToken("TUTOR"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {
@@ -127,11 +138,27 @@ class GradingWorkflowIT {
             .andExpect(jsonPath("$.error_category").value("Unclassified"))
             .andExpect(jsonPath("$.feedback").value("System error."));
 
-        mockMvc.perform(get("/api/grading/submissions"))
+        mockMvc.perform(get("/api/grading/submissions")
+                .header(HttpHeaders.AUTHORIZATION, bearerToken("TUTOR")))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$[0].studentId").value(84))
             .andExpect(jsonPath("$[0].errorCategory").value("Unclassified"));
 
         aiServer.verify();
+    }
+
+    private String bearerToken(String role) {
+        String secret = "test-secret-key-that-is-at-least-thirty-two-bytes-long";
+        String token = Jwts.builder()
+            .setSubject(role.toLowerCase() + "@example.com")
+            .claim("role", role)
+            .setIssuedAt(new Date())
+            .setExpiration(new Date(System.currentTimeMillis() + 3_600_000))
+            .signWith(
+                Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8)),
+                SignatureAlgorithm.HS256
+            )
+            .compact();
+        return "Bearer " + token;
     }
 }

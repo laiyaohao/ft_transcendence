@@ -30,18 +30,19 @@ public class User implements UserDetails {
   private String fullname;
 
   @Column(nullable = false)
-  private String role;
+  @Enumerated(EnumType.STRING)
+  private UserRole role;
 
   @Override
   public Collection<? extends GrantedAuthority> getAuthorities() {
-    return List.of(new SimpleGrantedAuthority("ROLE_USER"));
+    return List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
   }
 
   public void setFullName(String newFullname) {
     this.fullname = newFullname;
   }
 
-  public void setRole(String newRole) {
+  public void setRole(UserRole newRole) {
     this.role = newRole;
   }
 
@@ -54,7 +55,7 @@ public class User implements UserDetails {
     return fullname;
   }
 
-  public String getRole() {
+  public UserRole getRole() {
     return role;
   }
 

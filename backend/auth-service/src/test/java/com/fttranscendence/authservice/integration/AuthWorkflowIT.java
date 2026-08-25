@@ -39,10 +39,10 @@ class AuthWorkflowIT {
     void registerThenLoginPersistsAHashedPasswordAndReturnsValidSessionData() throws Exception {
         String registrationBody = """
             {
-              "email": "tutor@example.com",
-              "password": "password-123",
-              "fullName": "Test Tutor",
-              "role": "tutor"
+              "email": "student@example.com",
+              "password": "StrongPassword1!",
+              "fullName": "Test Student",
+              "role": "STUDENT"
             }
             """;
 
@@ -50,17 +50,17 @@ class AuthWorkflowIT {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(registrationBody))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.email").value("tutor@example.com"))
-            .andExpect(jsonPath("$.fullName").value("Test Tutor"))
-            .andExpect(jsonPath("$.role").value("tutor"))
+            .andExpect(jsonPath("$.email").value("student@example.com"))
+            .andExpect(jsonPath("$.fullName").value("Test Student"))
+            .andExpect(jsonPath("$.role").value("STUDENT"))
             .andExpect(jsonPath("$.token").isNotEmpty())
             .andReturn()
             .getResponse()
             .getContentAsString();
 
-        User persistedUser = userRepository.findByEmail("tutor@example.com").orElseThrow();
-        assertFalse(persistedUser.getPassword().equals("password-123"));
-        assertTrue(passwordEncoder.matches("password-123", persistedUser.getPassword()));
+        User persistedUser = userRepository.findByEmail("student@example.com").orElseThrow();
+        assertFalse(persistedUser.getPassword().equals("StrongPassword1!"));
+        assertTrue(passwordEncoder.matches("StrongPassword1!", persistedUser.getPassword()));
 
         JsonNode registrationJson = objectMapper.readTree(registrationResponse);
         String registrationToken = registrationJson.get("token").asText();
@@ -72,13 +72,13 @@ class AuthWorkflowIT {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {
-                      "email": "tutor@example.com",
-                      "password": "password-123"
+                      "email": "student@example.com",
+                      "password": "StrongPassword1!"
                     }
                     """))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.email").value("tutor@example.com"))
-            .andExpect(jsonPath("$.role").value("tutor"))
+            .andExpect(jsonPath("$.email").value("student@example.com"))
+            .andExpect(jsonPath("$.role").value("STUDENT"))
             .andExpect(jsonPath("$.token").isNotEmpty());
     }
 
@@ -99,9 +99,9 @@ class AuthWorkflowIT {
         String validBody = """
             {
               "email": "student@example.com",
-              "password": "password-123",
+              "password": "StrongPassword1!",
               "fullName": "Test Student",
-              "role": "student"
+              "role": "STUDENT"
             }
             """;
         mockMvc.perform(post("/api/auth/register")

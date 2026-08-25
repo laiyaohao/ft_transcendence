@@ -13,6 +13,16 @@ vi.mock("next/navigation", () => ({
   useRouter: () => navigation,
 }));
 
+function authToken(role: "TUTOR" | "STUDENT", email: string) {
+  const encode = (value: object) =>
+    btoa(JSON.stringify(value)).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+  return `${encode({ alg: "HS256" })}.${encode({
+    sub: email,
+    role,
+    exp: Math.floor(Date.now() / 1000) + 3600,
+  })}.signature`;
+}
+
 describe("authentication form integration", () => {
   beforeEach(() => {
     navigation.push.mockReset();
@@ -21,13 +31,14 @@ describe("authentication form integration", () => {
   });
 
   it("submits login credentials through the API client and establishes the browser session", async () => {
+    const token = authToken("TUTOR", "tutor@example.com");
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
-          token: "login-token",
+          token,
           email: "tutor@example.com",
           fullName: "Test Tutor",
-          role: "tutor",
+          role: "TUTOR",
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       ),
@@ -51,9 +62,9 @@ describe("authentication form integration", () => {
         }),
       }),
     );
-    expect(localStorage.getItem("jwt_token")).toBe("login-token");
-    expect(document.cookie).toContain("auth_token=login-token");
-    expect(navigation.push).toHaveBeenCalledWith("/classes");
+    expect(localStorage.getItem("jwt_token")).toBe(token);
+    expect(document.cookie).toContain(`auth_token=${token}`);
+    expect(navigation.replace).toHaveBeenCalledWith("/classes");
   });
 
   it("renders a backend login rejection without creating a session", async () => {
@@ -75,17 +86,18 @@ describe("authentication form integration", () => {
 
     expect(await screen.findByText("Invalid email or password")).toBeVisible();
     expect(localStorage.getItem("jwt_token")).toBeNull();
-    expect(navigation.push).not.toHaveBeenCalled();
+    expect(navigation.replace).not.toHaveBeenCalled();
   });
 
-  it("submits the selected student role during registration", async () => {
+  it("registers only the Student role and redirects to the Student home", async () => {
+    const token = authToken("STUDENT", "student@example.com");
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
-          token: "registration-token",
+          token,
           email: "student@example.com",
           fullName: "Test Student",
-          role: "student",
+          role: "STUDENT",
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       ),
@@ -94,10 +106,9 @@ describe("authentication form integration", () => {
     const user = userEvent.setup();
 
     render(<Signup />);
-    await user.click(screen.getByRole("button", { name: "Student" }));
     await user.type(screen.getByLabelText("Full name"), "Test Student");
     await user.type(screen.getByLabelText("Email"), "student@example.com");
-    await user.type(screen.getByLabelText("Password"), "password-123");
+    await user.type(screen.getByLabelText("Password"), "StrongPassword1!");
     await user.click(screen.getByRole("button", { name: "Sign Up" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
@@ -107,14 +118,15 @@ describe("authentication form integration", () => {
         method: "POST",
         body: JSON.stringify({
           email: "student@example.com",
-          password: "password-123",
+          password: "StrongPassword1!",
           fullName: "Test Student",
-          role: "student",
+          role: "STUDENT",
         }),
       }),
     );
-    expect(localStorage.getItem("jwt_token")).toBe("registration-token");
-    expect(navigation.push).toHaveBeenCalledWith("/login");
+    expect(localStorage.getItem("jwt_token")).toBe(token);
+    expect(navigation.replace).toHaveBeenCalledWith("/");
+    expect(screen.queryByRole("button", { name: "Tutor" })).not.toBeInTheDocument();
   });
 
   it("blocks an empty registration form before it reaches the API", async () => {
@@ -126,7 +138,7 @@ describe("authentication form integration", () => {
 
     expect(await screen.findByText("Please enter a valid name")).toBeVisible();
     expect(screen.getByText("Please enter a valid email address")).toBeVisible();
-    expect(screen.getByText("Password must be at least 6 characters")).toBeVisible();
+    expect(screen.getByText("Use at least 12 characters with uppercase, lowercase, a number and a symbol")).toBeVisible();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

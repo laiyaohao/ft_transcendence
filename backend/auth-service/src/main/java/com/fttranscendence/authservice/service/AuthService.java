@@ -5,6 +5,7 @@ import com.fttranscendence.authservice.dto.AuthRequest;
 import com.fttranscendence.authservice.dto.AuthResponse;
 import com.fttranscendence.authservice.dto.RegisterRequest;
 import com.fttranscendence.authservice.model.User;
+import com.fttranscendence.authservice.model.UserRole;
 import com.fttranscendence.authservice.repository.UserRepository;
 import com.fttranscendence.authservice.security.JwtService;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +19,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.dao.DataIntegrityViolationException;
 
+import java.util.Locale;
+
 @Service
 @RequiredArgsConstructor
 public class AuthService {
@@ -27,15 +30,23 @@ public class AuthService {
   private final AuthenticationManager authenticationManager;
 
   public AuthResponse register(RegisterRequest request) {
-    if (userRepository.existsByEmail(request.getEmail())) {
+    if (request.getRole() != UserRole.STUDENT) {
+      throw new ResponseStatusException(
+          HttpStatus.FORBIDDEN,
+          "Tutor accounts cannot be created through public registration"
+      );
+    }
+
+    String normalizedEmail = normalizeEmail(request.getEmail());
+    if (userRepository.existsByEmail(normalizedEmail)) {
       throw new ResponseStatusException(HttpStatus.CONFLICT, "Email already registered");
     }
 
     var user = new User();
-    user.setEmail(request.getEmail());
+    user.setEmail(normalizedEmail);
     user.setPassword(passwordEncoder.encode(request.getPassword()));
-    user.setFullName(request.getFullName());
-    user.setRole(request.getRole());
+    user.setFullName(request.getFullName().trim());
+    user.setRole(UserRole.STUDENT);
 
     try {
       userRepository.save(user);
@@ -53,15 +64,15 @@ public class AuthService {
   }
 
   public AuthResponse login(AuthRequest request) {
+    String normalizedEmail = normalizeEmail(request.getEmail());
     try {
       authenticationManager.authenticate(
-          new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword()));
+          new UsernamePasswordAuthenticationToken(normalizedEmail, request.getPassword()));
     } catch (AuthenticationException ex) {
-      System.out.println("in this flow");
       throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid email or password");
     }
 
-    var user = userRepository.findByEmail(request.getEmail())
+    var user = userRepository.findByEmail(normalizedEmail)
         .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid email or password"));
 
     var jwtToken = jwtService.generateToken(user);
@@ -71,5 +82,9 @@ public class AuthService {
         .fullName(user.getFullName())
         .role(user.getRole())
         .build();
+  }
+
+  private String normalizeEmail(String email) {
+    return email.trim().toLowerCase(Locale.ROOT);
   }
 }
