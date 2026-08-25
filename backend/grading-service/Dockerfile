@@ -11,7 +11,9 @@ RUN apt-get update \
     && apt-get install --no-install-recommends -y curl \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system app \
-    && useradd --system --gid app --home-dir /app app
+    && useradd --system --gid app --home-dir /app app \
+    && mkdir -p /app/data/submissions \
+    && chown -R app:app /app
 COPY --from=build --chown=app:app /app/target/*.jar app.jar
 USER app
 EXPOSE 8082

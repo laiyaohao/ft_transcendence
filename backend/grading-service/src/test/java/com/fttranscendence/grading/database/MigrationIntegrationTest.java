@@ -25,6 +25,8 @@ class MigrationIntegrationTest {
 
     @BeforeEach
     void clearSubmissions() {
+        jdbcTemplate.update("DELETE FROM submission_pages");
+        jdbcTemplate.update("DELETE FROM submission_documents");
         jdbcTemplate.update("DELETE FROM submission_missing_keywords");
         jdbcTemplate.update("DELETE FROM submissions");
     }
@@ -33,8 +35,10 @@ class MigrationIntegrationTest {
     void cleanDatabaseContainsTheFlywayManagedGradingSchema() {
         assertEquals(1, tableCount("submissions"));
         assertEquals(1, tableCount("submission_missing_keywords"));
-        assertEquals(1, versionedMigrationCount());
-        assertEquals("1", flyway.info().current().getVersion().getVersion());
+        assertEquals(1, tableCount("submission_documents"));
+        assertEquals(1, tableCount("submission_pages"));
+        assertEquals(2, versionedMigrationCount());
+        assertEquals("2", flyway.info().current().getVersion().getVersion());
     }
 
     @Test
@@ -46,6 +50,8 @@ class MigrationIntegrationTest {
         assertEquals(appliedBefore, versionedMigrationCount());
         assertEquals(1, tableCount("submissions"));
         assertEquals(1, tableCount("submission_missing_keywords"));
+        assertEquals(1, tableCount("submission_documents"));
+        assertEquals(1, tableCount("submission_pages"));
     }
 
     @Test
@@ -99,6 +105,14 @@ class MigrationIntegrationTest {
         assertRequiredPlaceholder(properties, "ai.engine.model", "${AI_ENGINE_MODEL}");
         assertRequiredPlaceholder(properties, "ai.engine.api-key", "${AI_ENGINE_API_KEY}");
         assertRequiredPlaceholder(properties, "ai.vision.model", "${AI_VISION_MODEL}");
+        assertEquals(
+            "${DOCUMENT_STORAGE_ROOT:./data/submissions}",
+            properties.getProperty("document.storage.root")
+        );
+        assertEquals(
+            "${DOCUMENT_STORAGE_MAX_FILE_SIZE_BYTES:10485760}",
+            properties.getProperty("document.storage.max-file-size-bytes")
+        );
     }
 
     private int tableCount(String tableName) {
