@@ -28,11 +28,10 @@ export default function Login() {
   };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    if (emailError || passwordError) {
-      event.preventDefault();
+    event.preventDefault();
+    if (!validateInputs()) {
       return;
     }
-    event.preventDefault();
     const data = new FormData(event.currentTarget);
     const email = data.get('email');
     const password = data.get('password');

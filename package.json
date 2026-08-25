@@ -17,8 +17,12 @@
   "scripts": {
     "test": "npm run test:frontend && npm run test:auth && npm run test:grading",
     "test:frontend": "npm --prefix frontend test",
-    "test:auth": "./backend/auth-service/mvnw -f backend/auth-service/pom.xml test",
-    "test:grading": "./backend/grading-service/mvnw -f backend/grading-service/pom.xml test",
+    "test:auth": "./backend/auth-service/mvnw -f backend/auth-service/pom.xml verify",
+    "test:grading": "./backend/grading-service/mvnw -f backend/grading-service/pom.xml verify",
+    "test:integration": "npm run test:integration:frontend && npm run test:integration:auth && npm run test:integration:grading",
+    "test:integration:frontend": "npm --prefix frontend run test:integration",
+    "test:integration:auth": "./backend/auth-service/mvnw -f backend/auth-service/pom.xml verify -DskipUnitTests=true",
+    "test:integration:grading": "./backend/grading-service/mvnw -f backend/grading-service/pom.xml verify -DskipUnitTests=true",
     "prepare": "husky"
   },
   "devDependencies": {

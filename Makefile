@@ -41,6 +41,10 @@ re: fclean up
 test:
 	npm test
 
+# Run only the cross-layer MVP integration suites.
+test-integration:
+	npm run test:integration
+
 # Display help message
 help:
 	@echo "Available commands:"
@@ -51,7 +55,8 @@ help:
 	@echo "  make fclean   - Stop and remove all stopped containers, all unused networks, all unused images, and all unused volumes"
 	@echo "  make re       - Rebuild and restart all services"
 	@echo "  make test     - Run all automated test suites"
+	@echo "  make test-integration - Run MVP integration test suites"
 	@echo "  make help     - Display this help message"
 
 # Declare phony targets to ensure they always run
-.PHONY: all build up down clean fclean re test help
+.PHONY: all build up down clean fclean re test test-integration help

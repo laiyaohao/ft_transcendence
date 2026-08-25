@@ -24,11 +24,10 @@ export default function Signup() {
   const [submitErrorMessage, setSubmitErrorMessage] = React.useState('');
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    if (nameError || emailError || passwordError ) {
-      event.preventDefault();
+    event.preventDefault();
+    if (!validateInputs()) {
       return;
     }
-    event.preventDefault();
     const data = new FormData(event.currentTarget);
     const email = data.get('email');
     const password = data.get('password');

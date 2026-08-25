@@ -12,15 +12,11 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
+    include: ["src/**/*.integration.test.{ts,tsx}"],
     server: {
       deps: {
         inline: [/@mui\//, /react-transition-group/],
       },
-    },
-    coverage: {
-      provider: "v8",
-      reporter: ["text", "html"],
-      reportsDirectory: "coverage",
     },
   },
 });
