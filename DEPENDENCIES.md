@@ -63,7 +63,7 @@ The build stage must run `npm ci`, not `npm ci --only=production`, because `next
 | Stage | Required image | Included tooling |
 | --- | --- | --- |
 | Build | `maven:3.9-eclipse-temurin-17` | Maven 3.9 and a complete Temurin JDK 17. |
-| Runtime | `eclipse-temurin:17-jre` | Temurin Java 17 runtime only. |
+| Runtime | `eclipse-temurin:17-jre-jammy` | Temurin Java 17 runtime plus the Ubuntu package source used to install the health-check client. |
 
 ### Grading service
 
@@ -72,13 +72,13 @@ The grading service requires the same image types as the auth service:
 - Build: Maven 3.9 with Temurin JDK 17.
 - Runtime: Temurin Java 17 JRE.
 
-There is currently no `backend/grading-service/Dockerfile`; one must be added before this service can be built by Compose.
+The grading and learning services use the same Maven/JDK 17 build image and Temurin JRE 17 runtime image as auth-service. All backend runtime images include `curl` for Compose health checks and run as an unprivileged `app` user.
 
 ### Infrastructure
 
 | Service | Current image | Requirement |
 | --- | --- | --- |
-| PostgreSQL | `postgres:latest` | Runtime database and `pg_isready` health check. Pin a tested PostgreSQL major version before deployment. |
+| PostgreSQL | `postgres:18-alpine` | Runtime database and `pg_isready` health check; the volume mounts the PostgreSQL 18 parent data directory. |
 | Adminer | `adminer` | Optional database administration UI. Pin a tested image version before deployment. |
 
 No standalone OCR executable is currently required. OCR and grading are HTTP calls to the configured external AI provider.
@@ -147,6 +147,7 @@ The service uses Java 17 and Spring Boot parent 4.0.6.
 - Spring Boot validation test support
 - Spring Boot Web MVC test support
 - H2 in-memory database
+- Testcontainers JUnit Jupiter and PostgreSQL modules (real-PostgreSQL migration compatibility)
 
 ## 6. Grading-service Java dependencies
 
@@ -171,8 +172,13 @@ The service uses Java 17 and Spring Boot parent 4.1.0.
 - Spring Boot Web MVC test support
 - Spring Security test support
 - H2 in-memory database
+- Testcontainers JUnit Jupiter and PostgreSQL modules (real-PostgreSQL migration compatibility)
 
-## 7. Required configuration
+## 7. Learning-service Java dependencies
+
+The service uses Java 17 and Spring Boot parent 4.0.6. Its application dependencies are Spring Boot Data JPA, validation, Web MVC, Security, Actuator, Flyway, PostgreSQL JDBC, and JJWT 0.11.5. Its test dependencies provide Data JPA, validation, Web MVC and Security testing, H2, plus Testcontainers JUnit Jupiter and PostgreSQL modules.
+
+## 8. Required configuration
 
 The following values must be supplied through Compose or another secrets/configuration provider. Use `.env.example` as the template; do not bake real secrets into images.
 
@@ -187,19 +193,30 @@ The following values must be supplied through Compose or another secrets/configu
 - `AUTH_DB_URL`
 - `AUTH_DB_USERNAME`
 - `AUTH_DB_PASSWORD`
+- `AUTH_DB_SCHEMA`
 - `JWT_SECRET` containing at least 32 random bytes
 - `JWT_EXPIRATION_MS`
+- Optional first-account provisioning: `BOOTSTRAP_TUTOR_EMAIL`, `BOOTSTRAP_TUTOR_PASSWORD`, and `BOOTSTRAP_TUTOR_FULL_NAME` must be supplied together or all left blank.
 
 ### Grading service
 
 - `GRADING_DB_URL`
 - `GRADING_DB_USERNAME`
 - `GRADING_DB_PASSWORD`
+- `GRADING_DB_SCHEMA`
 - `JWT_SECRET`, identical to the auth-service value
 - `AI_ENGINE_URL`
 - `AI_ENGINE_MODEL`
 - `AI_ENGINE_API_KEY`
 - `AI_VISION_MODEL`
+
+### Learning service
+
+- `LEARNING_DB_URL`
+- `LEARNING_DB_USERNAME`
+- `LEARNING_DB_PASSWORD`
+- `LEARNING_DB_SCHEMA`
+- `JWT_SECRET`, identical to the auth-service value
 
 ### Frontend
 
@@ -207,7 +224,7 @@ The following values must be supplied through Compose or another secrets/configu
 
 `NEXT_PUBLIC_API_URL` is compiled into the browser bundle and must be available in the frontend build stage. It must be a URL reachable by the user's browser; `http://auth-service:8081` is only resolvable inside the Compose network and is not a valid browser-facing production value.
 
-## 8. Network, ports, and persistent storage
+## 9. Network, ports, and persistent storage
 
 | Component | Default port | Dependencies |
 | --- | ---: | --- |
@@ -215,33 +232,30 @@ The following values must be supplied through Compose or another secrets/configu
 | Adminer | 8080 | PostgreSQL. |
 | Auth service | 8081 | PostgreSQL and shared JWT secret. |
 | Grading service | 8082 | PostgreSQL, shared JWT secret, and external AI provider. |
+| Learning service | 8083 | PostgreSQL and shared JWT secret. |
 | PostgreSQL | 5432 | Persistent `postgres_data` volume. |
 
 Services must share a private Compose network. Only browser-facing services should need published host ports in production.
 
-## 9. Current container setup gaps
+## 10. Future container hardening
 
-The dependency inventory exposes the following work still required for a complete container build:
+The Issue 01–07 container foundation is complete. Later deployment work should still:
 
-1. Change the frontend builder from `npm ci --only=production` to `npm ci`.
-2. Add a multi-stage Dockerfile for grading-service using JDK 17 for compilation and JRE 17 for runtime.
-3. Add grading-service to Compose with database, JWT, and AI environment variables.
-4. Enable the frontend Compose service and pass `NEXT_PUBLIC_API_URL` as a build argument.
-5. Use a browser-reachable API URL or add a frontend reverse proxy; do not expose a Docker-only hostname to browser code.
-6. Pin PostgreSQL, Adminer, Maven, Node, and Java image versions or digests for reproducible builds.
-7. Add container build/test stages that run unit and integration tests instead of always using `-DskipTests`.
-8. Add service health checks and startup dependencies for auth-service and grading-service.
+1. Pin Adminer and all build/runtime base images to tested digests for release reproducibility.
+2. Run the complete unit and integration verification commands in CI before publishing images.
+3. Put TLS and a browser-facing reverse proxy in front of the services for deployment.
+4. Replace `.env` secrets with the target platform's secret manager.
 
-## 10. Verification commands
+## 11. Verification commands
 
 ```bash
 docker compose --env-file .env.example config
 npm ci
 npm --prefix frontend ci
 npm test
-npm --prefix frontend run build
-docker build backend/auth-service
-docker build frontend
+npm run lint
+npm run typecheck
+npm run build
+docker compose --env-file .env.example config --quiet
+docker compose --env-file .env.example build
 ```
-
-The grading-service Docker build command can be added after its Dockerfile exists.

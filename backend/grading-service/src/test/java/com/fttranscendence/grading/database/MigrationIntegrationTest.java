@@ -86,6 +86,14 @@ class MigrationIntegrationTest {
         assertRequiredPlaceholder(properties, "spring.datasource.url", "${GRADING_DB_URL}");
         assertRequiredPlaceholder(properties, "spring.datasource.username", "${GRADING_DB_USERNAME}");
         assertRequiredPlaceholder(properties, "spring.datasource.password", "${GRADING_DB_PASSWORD}");
+        assertEquals(
+            "${GRADING_DB_SCHEMA:grading}",
+            properties.getProperty("spring.jpa.properties.hibernate.default_schema")
+        );
+        assertEquals(
+            "${GRADING_DB_SCHEMA:grading}",
+            properties.getProperty("spring.flyway.default-schema")
+        );
         assertRequiredPlaceholder(properties, "jwt.secret", "${JWT_SECRET}");
         assertRequiredPlaceholder(properties, "ai.engine.url", "${AI_ENGINE_URL}");
         assertRequiredPlaceholder(properties, "ai.engine.model", "${AI_ENGINE_MODEL}");

@@ -22,34 +22,42 @@ export default function Signup() {
   const [passwordError, setPasswordError] = React.useState(false);
   const [passwordErrorMessage, setPasswordErrorMessage] = React.useState('');
   const [submitErrorMessage, setSubmitErrorMessage] = React.useState('');
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const submitInFlightRef = React.useRef(false);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!validateInputs()) {
+    if (submitInFlightRef.current || !validateInputs()) {
       return;
     }
+    submitInFlightRef.current = true;
+    setIsSubmitting(true);
+    setSubmitErrorMessage('');
     const data = new FormData(event.currentTarget);
     const email = data.get('email');
     const password = data.get('password');
     const fullName = data.get('fullName');
-    const response = await apiRequest('/api/auth/register', {
-      method: 'POST',
-      body: JSON.stringify({ email, password, fullName, role: 'STUDENT' }),
-    });
-
-    if (!response.ok) {
-      const message = await getErrorMessage(response);
-      setSubmitErrorMessage(message);
-      return;
-    }
-
-    setSubmitErrorMessage('');
     try {
-      const jsonResponse = await response.json() as AuthResponsePayload;
-      const session = saveAuthSession(jsonResponse);
-      router.replace(getRoleHome(session.role));
+      const response = await apiRequest('/api/auth/register', {
+        method: 'POST',
+        body: JSON.stringify({ email, password, fullName, role: 'STUDENT' }),
+      });
+      if (!response.ok) {
+        setSubmitErrorMessage(await getErrorMessage(response));
+        return;
+      }
+      try {
+        const jsonResponse = await response.json() as AuthResponsePayload;
+        const session = saveAuthSession(jsonResponse);
+        router.replace(getRoleHome(session.role));
+      } catch {
+        setSubmitErrorMessage('Unable to establish a secure session. Please try again.');
+      }
     } catch {
-      setSubmitErrorMessage('Unable to establish a secure session. Please try again.');
+      setSubmitErrorMessage('Unable to reach the authentication service. Please try again.');
+    } finally {
+      submitInFlightRef.current = false;
+      setIsSubmitting(false);
     }
   };
 
@@ -132,6 +140,7 @@ export default function Signup() {
             validateInputs={validateInputs}
             fromSignup={true}
             submitErrorMessage={submitErrorMessage}
+            isSubmitting={isSubmitting}
             />
         </Stack>
       </Stack>

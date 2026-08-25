@@ -5,10 +5,13 @@ WORKDIR /app
 # Copy dependency files and install them
 # This layer is cached unless package.json or lockfile changes, speeding up rebuilds
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm ci
 
 # Copy the rest of the application source code
 COPY . .
+
+ARG NEXT_PUBLIC_API_URL=http://localhost:8081
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 
 # Build the Next.js application, which will generate the .next/standalone output
 RUN npm run build

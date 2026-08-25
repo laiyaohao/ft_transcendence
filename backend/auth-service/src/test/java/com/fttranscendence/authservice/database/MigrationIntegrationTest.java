@@ -77,8 +77,28 @@ class MigrationIntegrationTest {
         assertRequiredPlaceholder(properties, "spring.datasource.url", "${AUTH_DB_URL}");
         assertRequiredPlaceholder(properties, "spring.datasource.username", "${AUTH_DB_USERNAME}");
         assertRequiredPlaceholder(properties, "spring.datasource.password", "${AUTH_DB_PASSWORD}");
+        assertEquals(
+            "${AUTH_DB_SCHEMA:auth}",
+            properties.getProperty("spring.jpa.properties.hibernate.default_schema")
+        );
+        assertEquals(
+            "${AUTH_DB_SCHEMA:auth}",
+            properties.getProperty("spring.flyway.default-schema")
+        );
         assertRequiredPlaceholder(properties, "jwt.secret", "${JWT_SECRET}");
         assertRequiredPlaceholder(properties, "jwt.expiration", "${JWT_EXPIRATION_MS}");
+        assertEquals(
+            "${BOOTSTRAP_TUTOR_EMAIL:}",
+            properties.getProperty("bootstrap.tutor.email")
+        );
+        assertEquals(
+            "${BOOTSTRAP_TUTOR_PASSWORD:}",
+            properties.getProperty("bootstrap.tutor.password")
+        );
+        assertEquals(
+            "${BOOTSTRAP_TUTOR_FULL_NAME:}",
+            properties.getProperty("bootstrap.tutor.full-name")
+        );
     }
 
     private int tableCount(String tableName) {

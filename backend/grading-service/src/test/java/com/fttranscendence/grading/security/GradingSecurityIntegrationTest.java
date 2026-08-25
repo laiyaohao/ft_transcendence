@@ -52,14 +52,30 @@ class GradingSecurityIntegrationTest {
     mockMvc.perform(get("/api/grading/submissions")
             .header(HttpHeaders.AUTHORIZATION, bearerToken("PARENT", 3_600_000)))
         .andExpect(status().isUnauthorized());
+
+    mockMvc.perform(get("/api/grading/submissions")
+            .header(HttpHeaders.AUTHORIZATION, bearerToken("TUTOR", 3_600_000, null)))
+        .andExpect(status().isUnauthorized());
+
+    mockMvc.perform(get("/api/grading/submissions")
+            .header(HttpHeaders.AUTHORIZATION, bearerToken("TUTOR", 3_600_000, 0L)))
+        .andExpect(status().isUnauthorized());
   }
 
   private String bearerToken(String role, long lifetimeMs) {
-    String token = Jwts.builder()
+    return bearerToken(role, lifetimeMs, 101L);
+  }
+
+  private String bearerToken(String role, long lifetimeMs, Long userId) {
+    var builder = Jwts.builder()
         .setSubject(role.toLowerCase() + "@example.com")
         .claim("role", role)
         .setIssuedAt(new Date())
-        .setExpiration(new Date(System.currentTimeMillis() + lifetimeMs))
+        .setExpiration(new Date(System.currentTimeMillis() + lifetimeMs));
+    if (userId != null) {
+      builder.claim("userId", userId);
+    }
+    String token = builder
         .signWith(
             Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8)),
             SignatureAlgorithm.HS256

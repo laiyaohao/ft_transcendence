@@ -19,10 +19,11 @@ export async function apiRequest(endpoint: string, options: RequestInit = {}) {
 
 export async function getErrorMessage(response: Response) {
   const contentType = response.headers.get('content-type') || '';
+  const body = await response.text();
 
   if (contentType.includes('application/json')) {
     try {
-      const data = await response.json();
+      const data = JSON.parse(body) as unknown;
       if (typeof data === 'object' && data !== null) {
         if (typeof (data as { message?: string }).message === 'string') {
           return (data as { message: string }).message;
@@ -36,8 +37,7 @@ export async function getErrorMessage(response: Response) {
     }
   }
 
-  const text = await response.text();
-  return text || `Request failed with status ${response.status}`;
+  return body || `Request failed with status ${response.status}`;
 }
 
 // Usage:

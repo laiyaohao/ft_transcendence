@@ -86,6 +86,15 @@ describe("getErrorMessage", () => {
       "Request failed with status 500",
     );
   });
+
+  it("returns malformed JSON as text without consuming the response twice", async () => {
+    const response = new Response("not-json", {
+      status: 502,
+      headers: { "content-type": "application/json" },
+    });
+
+    await expect(getErrorMessage(response)).resolves.toBe("not-json");
+  });
 });
 
 describe("register", () => {

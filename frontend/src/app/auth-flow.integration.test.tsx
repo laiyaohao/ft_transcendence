@@ -19,6 +19,7 @@ function authToken(role: "TUTOR" | "STUDENT", email: string) {
   return `${encode({ alg: "HS256" })}.${encode({
     sub: email,
     role,
+    userId: 101,
     exp: Math.floor(Date.now() / 1000) + 3600,
   })}.signature`;
 }
@@ -89,6 +90,33 @@ describe("authentication form integration", () => {
     expect(navigation.replace).not.toHaveBeenCalled();
   });
 
+  it("renders a recoverable network error and prevents duplicate login requests", async () => {
+    let rejectRequest!: (reason: Error) => void;
+    const fetchMock = vi.fn().mockImplementation(
+      () => new Promise<Response>((_resolve, reject) => {
+        rejectRequest = reject;
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    render(<Login />);
+    await user.type(screen.getByLabelText("Email"), "tutor@example.com");
+    await user.type(screen.getByLabelText("Password"), "password-123");
+    await user.click(screen.getByRole("button", { name: "Sign In" }));
+
+    const pendingButton = screen.getByRole("button", { name: "Signing in…" });
+    expect(pendingButton).toBeDisabled();
+    fireEvent.click(pendingButton);
+    expect(fetchMock).toHaveBeenCalledOnce();
+
+    rejectRequest(new TypeError("Failed to fetch"));
+    expect(await screen.findByText(
+      "Unable to reach the authentication service. Please try again.",
+    )).toBeVisible();
+    expect(screen.getByRole("button", { name: "Sign In" })).toBeEnabled();
+  });
+
   it("registers only the Student role and redirects to the Student home", async () => {
     const token = authToken("STUDENT", "student@example.com");
     const fetchMock = vi.fn().mockResolvedValue(
@@ -140,5 +168,20 @@ describe("authentication form integration", () => {
     expect(screen.getByText("Please enter a valid email address")).toBeVisible();
     expect(screen.getByText("Use at least 12 characters with uppercase, lowercase, a number and a symbol")).toBeVisible();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("handles a registration network failure without an unhandled rejection", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+    const user = userEvent.setup();
+
+    render(<Signup />);
+    await user.type(screen.getByLabelText("Full name"), "Test Student");
+    await user.type(screen.getByLabelText("Email"), "student@example.com");
+    await user.type(screen.getByLabelText("Password"), "StrongPassword1!");
+    await user.click(screen.getByRole("button", { name: "Sign Up" }));
+
+    expect(await screen.findByText(
+      "Unable to reach the authentication service. Please try again.",
+    )).toBeVisible();
   });
 });

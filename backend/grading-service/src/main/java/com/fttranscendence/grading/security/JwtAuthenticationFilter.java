@@ -24,10 +24,13 @@ import java.util.Set;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
   private static final Set<String> ALLOWED_ROLES = Set.of("TUTOR", "STUDENT");
-  private final String secret;
+  private final byte[] signingKey;
 
   public JwtAuthenticationFilter(@Value("${jwt.secret}") String secret) {
-    this.secret = secret;
+    if (secret == null || secret.getBytes(StandardCharsets.UTF_8).length < 32) {
+      throw new IllegalArgumentException("JWT_SECRET must contain at least 32 bytes");
+    }
+    this.signingKey = secret.getBytes(StandardCharsets.UTF_8);
   }
 
   @Override
@@ -44,18 +47,23 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     try {
       Claims claims = Jwts.parserBuilder()
-          .setSigningKey(Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8)))
+          .setSigningKey(Keys.hmacShaKeyFor(signingKey))
           .build()
           .parseClaimsJws(authorization.substring(7))
           .getBody();
       String subject = claims.getSubject();
       String role = claims.get("role", String.class);
+      Number userIdClaim = claims.get("userId", Number.class);
 
       if (StringUtils.hasText(subject)
           && ALLOWED_ROLES.contains(role)
+          && userIdClaim != null
+          && userIdClaim.longValue() > 0
           && SecurityContextHolder.getContext().getAuthentication() == null) {
+        AuthenticatedUser principal = new AuthenticatedUser(
+            userIdClaim.longValue(), subject, role);
         var authentication = new UsernamePasswordAuthenticationToken(
-            subject,
+            principal,
             null,
             List.of(new SimpleGrantedAuthority("ROLE_" + role))
         );

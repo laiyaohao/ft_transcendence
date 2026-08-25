@@ -29,6 +29,7 @@ interface AuthCardInt {
   handleClickOpen?: () => void;
   fromSignup: boolean;
   submitErrorMessage?: string;
+  isSubmitting?: boolean;
 }
 
 const AuthCard = ({
@@ -45,7 +46,8 @@ const AuthCard = ({
   validateInputs,
   handleClickOpen,
   fromSignup,
-  submitErrorMessage
+  submitErrorMessage,
+  isSubmitting = false,
 } : AuthCardInt) => {
   return (
     <StyledCard variant="outlined" data-testid="auth-card">
@@ -135,8 +137,12 @@ const AuthCard = ({
           fullWidth
           variant="contained"
           onClick={validateInputs}
+          disabled={isSubmitting}
+          aria-busy={isSubmitting}
         >
-          {fromSignup ? strings.auth.signup : strings.auth.login}
+          {isSubmitting
+            ? (fromSignup ? 'Creating account…' : 'Signing in…')
+            : (fromSignup ? strings.auth.signup : strings.auth.login)}
         </Button>
         {!fromSignup && <Link
           component="button"

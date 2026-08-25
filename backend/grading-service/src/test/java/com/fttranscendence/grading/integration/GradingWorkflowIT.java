@@ -152,6 +152,7 @@ class GradingWorkflowIT {
         String token = Jwts.builder()
             .setSubject(role.toLowerCase() + "@example.com")
             .claim("role", role)
+            .claim("userId", 101L)
             .setIssuedAt(new Date())
             .setExpiration(new Date(System.currentTimeMillis() + 3_600_000))
             .signWith(

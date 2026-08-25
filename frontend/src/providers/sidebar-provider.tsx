@@ -14,7 +14,7 @@ const SidebarProvider = ({ children }: SidebarProviderProps) => {
     throw new Error('Viewport context was used without a provider.');
   }
   const { theme, isOverSmViewport, isOverMdViewport, isNavigationExpanded, setIsNavigationExpanded } = viewportContext;
-  let disableCollapsibleSidebar = false;
+  const disableCollapsibleSidebar = false;
   const [expandedItemIds, setExpandedItemIds] = React.useState<string[]>([]);
   const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const shouldReduceDrawerMotion =
@@ -29,41 +29,19 @@ const SidebarProvider = ({ children }: SidebarProviderProps) => {
   const [isFullyExpanded, setIsFullyExpanded] = React.useState(isNavigationExpanded);
   const [isFullyCollapsed, setIsFullyCollapsed] = React.useState(!isNavigationExpanded);
   React.useEffect(() => {
-    if (isNavigationExpanded) {
-      if (drawerEnteringDuration === 0) {
-        setIsFullyExpanded(true);
-        return undefined;
-      }
-
-      const drawerWidthTransitionTimeout = setTimeout(() => {
-        setIsFullyExpanded(true);
-      }, drawerEnteringDuration);
-
-      return () => clearTimeout(drawerWidthTransitionTimeout);
-    }
-
-    setIsFullyExpanded(false);
-
-    return undefined;
+    const drawerWidthTransitionTimeout = setTimeout(
+      () => setIsFullyExpanded(isNavigationExpanded),
+      isNavigationExpanded ? drawerEnteringDuration : 0,
+    );
+    return () => clearTimeout(drawerWidthTransitionTimeout);
   }, [drawerEnteringDuration, isNavigationExpanded]);
   
   React.useEffect(() => {
-    if (!isNavigationExpanded) {
-      if (drawerLeavingDuration === 0) {
-        setIsFullyCollapsed(true);
-        return undefined;
-      }
-
-      const drawerWidthTransitionTimeout = setTimeout(() => {
-        setIsFullyCollapsed(true);
-      }, drawerLeavingDuration);
-
-      return () => clearTimeout(drawerWidthTransitionTimeout);
-    }
-
-    setIsFullyCollapsed(false);
-
-    return undefined;
+    const drawerWidthTransitionTimeout = setTimeout(
+      () => setIsFullyCollapsed(!isNavigationExpanded),
+      isNavigationExpanded ? 0 : drawerLeavingDuration,
+    );
+    return () => clearTimeout(drawerWidthTransitionTimeout);
   }, [drawerLeavingDuration, isNavigationExpanded]);
 
   const mini = !disableCollapsibleSidebar && !isNavigationExpanded;

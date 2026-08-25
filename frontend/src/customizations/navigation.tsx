@@ -9,7 +9,13 @@ import { tabClasses } from '@mui/material/Tab';
 import UnfoldMoreRoundedIcon from '@mui/icons-material/UnfoldMoreRounded';
 import { gray, brand } from '../theme/theme-primitives';
 
-/* eslint-disable import/prefer-default-export */
+const SelectExpandIcon = React.forwardRef<SVGSVGElement, SvgIconProps>(
+  (props, ref) => (
+    <UnfoldMoreRoundedIcon fontSize="small" {...props} ref={ref} />
+  ),
+);
+SelectExpandIcon.displayName = 'SelectExpandIcon';
+
 export const navigationCustomizations: Components<Theme> = {
   MuiMenuItem: {
     styleOverrides: {
@@ -58,9 +64,7 @@ export const navigationCustomizations: Components<Theme> = {
   },
   MuiSelect: {
     defaultProps: {
-      IconComponent: React.forwardRef<SVGSVGElement, SvgIconProps>((props, ref) => (
-        <UnfoldMoreRoundedIcon fontSize="small" {...props} ref={ref} />
-      )),
+      IconComponent: SelectExpandIcon,
     },
     styleOverrides: {
       root: ({ theme }) => ({

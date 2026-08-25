@@ -28,6 +28,7 @@ public class SecurityConfig {
             session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .authorizeHttpRequests(authorize -> authorize
             .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+            .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
             .requestMatchers(HttpMethod.GET, "/api/grading/submissions").hasRole("TUTOR")
             .requestMatchers(HttpMethod.POST, "/api/grading/analyze").hasRole("TUTOR")
             .requestMatchers(HttpMethod.POST, "/api/grading/ocr").hasAnyRole("TUTOR", "STUDENT")

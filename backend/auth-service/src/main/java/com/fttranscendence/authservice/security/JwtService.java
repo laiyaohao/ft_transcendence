@@ -39,6 +39,14 @@ public class JwtService {
     return UserRole.valueOf(role);
   }
 
+  public long extractUserId(String token) {
+    Number userId = extractClaim(token, claims -> claims.get("userId", Number.class));
+    if (userId == null || userId.longValue() <= 0) {
+      throw new IllegalArgumentException("Token is missing a valid userId claim");
+    }
+    return userId.longValue();
+  }
+
   public <T> T extractClaim(String token, Function<Claims, T> claimsResolver) {
     final Claims claims = extractAllClaims(token);
     return claimsResolver.apply(claims);
@@ -49,8 +57,10 @@ public class JwtService {
   }
 
   public String generateToken(Map<String, Object> extraClaims, UserDetails userDetails) {
-    if (!(userDetails instanceof User user) || user.getRole() == null) {
-      throw new IllegalArgumentException("A persisted user role is required to issue a token");
+    if (!(userDetails instanceof User user)
+        || user.getRole() == null
+        || user.getId() <= 0) {
+      throw new IllegalArgumentException("A persisted user identity and role are required to issue a token");
     }
     Map<String, Object> claims = new HashMap<>(extraClaims);
     claims.put("role", user.getRole().name());
@@ -71,8 +81,10 @@ public class JwtService {
       }
       final String email = extractEmail(token);
       final UserRole role = extractRole(token);
+      final long userId = extractUserId(token);
       return email.equalsIgnoreCase(userDetails.getUsername())
           && role == user.getRole()
+          && userId == user.getId()
           && !isTokenExpired(token);
     } catch (JwtException | IllegalArgumentException ex) {
       return false;

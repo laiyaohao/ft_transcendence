@@ -32,6 +32,7 @@ class JwtServiceTest {
         user.setPassword("encoded-password");
         user.setFullName("Test Student");
         user.setRole(UserRole.STUDENT);
+        user.setId(42L);
     }
 
     @Test
@@ -39,6 +40,7 @@ class JwtServiceTest {
         String token = jwtService.generateToken(user);
 
         assertEquals(user.getEmail(), jwtService.extractEmail(token));
+        assertEquals(42L, jwtService.extractUserId(token));
         assertTrue(jwtService.isTokenValid(token, user));
     }
 
@@ -58,6 +60,7 @@ class JwtServiceTest {
         otherUser.setPassword("encoded-password");
         otherUser.setFullName("Someone Else");
         otherUser.setRole(UserRole.STUDENT);
+        otherUser.setId(43L);
 
         assertFalse(jwtService.isTokenValid(token, otherUser));
     }
@@ -70,6 +73,7 @@ class JwtServiceTest {
         promotedUser.setPassword("encoded-password");
         promotedUser.setFullName("Test Student");
         promotedUser.setRole(UserRole.TUTOR);
+        promotedUser.setId(42L);
 
         assertFalse(jwtService.isTokenValid(token, promotedUser));
     }
@@ -85,5 +89,23 @@ class JwtServiceTest {
     @Test
     void malformedTokenIsRejected() {
         assertFalse(jwtService.isTokenValid("not-a-jwt", user));
+    }
+
+    @Test
+    void tokenCannotBeIssuedForAnUnpersistedIdentity() {
+        user.setId(0L);
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+            IllegalArgumentException.class,
+            () -> jwtService.generateToken(user)
+        );
+    }
+
+    @Test
+    void tokenIsInvalidWhenItsUserIdDoesNotMatchTheAccount() {
+        String token = jwtService.generateToken(user);
+        user.setId(99L);
+
+        assertFalse(jwtService.isTokenValid(token, user));
     }
 }

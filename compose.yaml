@@ -1,35 +1,33 @@
 services:
   postgres:
-    container_name: postgres
-    image: postgres:latest
+    image: postgres:18-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
       POSTGRES_PASSWORD: ${POSTGRES_PW:?POSTGRES_PW is required}
       POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
     ports:
       - "5432:5432"
-    restart: always
+    restart: unless-stopped
     volumes:
       - postgres_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB -h localhost -p 5432"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 12
 
   adminer:
-    container_name: adminer
     image: adminer
-    restart: always
+    restart: unless-stopped
     ports:
-      - 8080:8080
+      - "8080:8080"
     depends_on:
       postgres:
         condition: service_healthy
 
-
   auth-service:
     build: ./backend/auth-service
+    restart: unless-stopped
     ports:
       - "8081:8081"
     depends_on:
@@ -39,18 +37,92 @@ services:
       AUTH_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:?POSTGRES_DB is required}
       AUTH_DB_USERNAME: ${POSTGRES_USER:?POSTGRES_USER is required}
       AUTH_DB_PASSWORD: ${POSTGRES_PW:?POSTGRES_PW is required}
+      AUTH_DB_SCHEMA: ${AUTH_DB_SCHEMA:-auth}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS:?JWT_EXPIRATION_MS is required}
+      BOOTSTRAP_TUTOR_EMAIL: ${BOOTSTRAP_TUTOR_EMAIL:-}
+      BOOTSTRAP_TUTOR_PASSWORD: ${BOOTSTRAP_TUTOR_PASSWORD:-}
+      BOOTSTRAP_TUTOR_FULL_NAME: ${BOOTSTRAP_TUTOR_FULL_NAME:-}
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8081/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
 
-  # frontend:
-  #   build: ./frontend
-  #   ports:
-  #     - "3000:3000"
-  #   environment:
-  #     NEXT_PUBLIC_API_URL: http://auth-service:8081  # Connects to backend using Docker service name
-  #   depends_on:
-  #     auth-service:
-  #       condition: service_started
+  grading-service:
+    build: ./backend/grading-service
+    restart: unless-stopped
+    ports:
+      - "8082:8082"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+    environment:
+      GRADING_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:?POSTGRES_DB is required}
+      GRADING_DB_USERNAME: ${POSTGRES_USER:?POSTGRES_USER is required}
+      GRADING_DB_PASSWORD: ${POSTGRES_PW:?POSTGRES_PW is required}
+      GRADING_DB_SCHEMA: ${GRADING_DB_SCHEMA:-grading}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      AI_ENGINE_URL: ${AI_ENGINE_URL:?AI_ENGINE_URL is required}
+      AI_ENGINE_MODEL: ${AI_ENGINE_MODEL:?AI_ENGINE_MODEL is required}
+      AI_ENGINE_API_KEY: ${AI_ENGINE_API_KEY:?AI_ENGINE_API_KEY is required}
+      AI_VISION_MODEL: ${AI_VISION_MODEL:?AI_VISION_MODEL is required}
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8082/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  learning-service:
+    build: ./backend/learning-service
+    restart: unless-stopped
+    ports:
+      - "8083:8083"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+    environment:
+      LEARNING_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:?POSTGRES_DB is required}
+      LEARNING_DB_USERNAME: ${POSTGRES_USER:?POSTGRES_USER is required}
+      LEARNING_DB_PASSWORD: ${POSTGRES_PW:?POSTGRES_PW is required}
+      LEARNING_DB_SCHEMA: ${LEARNING_DB_SCHEMA:-learning}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8083/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8081}
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      grading-service:
+        condition: service_healthy
+      learning-service:
+        condition: service_healthy
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8081}
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:3000/login"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
 
 volumes:
   postgres_data:

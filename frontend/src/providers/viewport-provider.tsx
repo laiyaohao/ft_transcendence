@@ -1,6 +1,6 @@
 'use client';
 import React from 'react';
-import { useTheme, type Theme } from '@mui/material/styles';
+import { useTheme } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import ViewportContext from '../context/viewport-context';
 
