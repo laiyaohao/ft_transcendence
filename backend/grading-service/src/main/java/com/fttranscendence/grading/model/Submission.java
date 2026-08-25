@@ -117,6 +117,16 @@ public class Submission {
     @OrderBy("createdAt ASC, id ASC")
     private List<AnswerReview> reviews = new ArrayList<>();
 
+    @OneToMany(
+        mappedBy = "submission",
+        cascade = CascadeType.ALL,
+        orphanRemoval = true,
+        fetch = FetchType.LAZY
+    )
+    @OrderBy("createdAt ASC, id ASC")
+    @JsonIgnore
+    private List<MistakeRecord> mistakes = new ArrayList<>();
+
     @Column(name = "legacy_record", nullable = false)
     private boolean legacyRecord;
 
@@ -271,6 +281,32 @@ public class Submission {
             previousFeedback,
             aiSuggestedFeedback
         ));
+    }
+
+    /**
+     * Adds one controlled mistake to this answer.  A single answer may have
+     * multiple different mistake types, but the same type is recorded once;
+     * the same type on another answer remains a separate history event.
+     */
+    public MistakeRecord addMistake(
+        MistakeType mistakeType,
+        Long syllabusTopicId,
+        String syllabusTopicCode,
+        String description
+    ) {
+        requireCanonicalAnswer();
+        if (mistakes.stream().anyMatch(mistake -> mistake.getMistakeType() == mistakeType)) {
+            throw new IllegalArgumentException("This mistake type is already recorded for the answer");
+        }
+        MistakeRecord mistake = MistakeRecord.create(
+            this,
+            mistakeType,
+            syllabusTopicId,
+            syllabusTopicCode,
+            description
+        );
+        mistakes.add(mistake);
+        return mistake;
     }
 
     @PrePersist
@@ -495,6 +531,15 @@ public class Submission {
             )).thenComparing(AnswerReview::getId, Comparator.nullsLast(
                 Comparator.naturalOrder()
             )))
+            .toList();
+    }
+
+    public List<MistakeRecord> getMistakes() {
+        return mistakes.stream()
+            .sorted(Comparator.comparing(MistakeRecord::getCreatedAt,
+                Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(MistakeRecord::getId,
+                    Comparator.nullsLast(Comparator.naturalOrder())))
             .toList();
     }
 

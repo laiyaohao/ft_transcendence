@@ -29,6 +29,7 @@ class MigrationIntegrationTest {
 
     @BeforeEach
     void clearSubmissions() {
+        jdbcTemplate.update("DELETE FROM mistake_records");
         jdbcTemplate.update("DELETE FROM answer_reviews");
         jdbcTemplate.update("DELETE FROM submission_pages");
         jdbcTemplate.update("DELETE FROM submission_missing_keywords");
@@ -43,8 +44,9 @@ class MigrationIntegrationTest {
         assertEquals(1, tableCount("submission_documents"));
         assertEquals(1, tableCount("submission_pages"));
         assertEquals(1, tableCount("answer_reviews"));
-        assertEquals(3, versionedMigrationCount());
-        assertEquals("3", flyway.info().current().getVersion().getVersion());
+        assertEquals(1, tableCount("mistake_records"));
+        assertEquals(4, versionedMigrationCount());
+        assertEquals("4", flyway.info().current().getVersion().getVersion());
     }
 
     @Test
@@ -59,6 +61,7 @@ class MigrationIntegrationTest {
         assertEquals(1, tableCount("submission_documents"));
         assertEquals(1, tableCount("submission_pages"));
         assertEquals(1, tableCount("answer_reviews"));
+        assertEquals(1, tableCount("mistake_records"));
     }
 
     @Test
@@ -89,7 +92,7 @@ class MigrationIntegrationTest {
             .defaultSchema("PUBLIC")
             .locations("classpath:db/migration")
             .load();
-        assertEquals(1, latest.migrate().migrationsExecuted);
+        assertEquals(2, latest.migrate().migrationsExecuted);
 
         try (Connection connection = DriverManager.getConnection(databaseUrl, "sa", "");
              ResultSet result = connection.createStatement().executeQuery(
