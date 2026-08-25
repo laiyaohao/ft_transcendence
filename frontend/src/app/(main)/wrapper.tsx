@@ -1,33 +1,26 @@
-'use client'
+'use client';
 
 import * as React from 'react';
 import Box from '@mui/material/Box';
-import Toolbar from '@mui/material/Toolbar';
+
 import Sidebar from '@/components/sidebar';
 import Topbar from '@/components/topbar';
 
-const Wrapper = ({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) => {
-  
-  const layoutRef = React.useRef<HTMLDivElement>(null);
+export default function Wrapper({ children }: Readonly<{ children: React.ReactNode }>) {
+  const [layoutContainer, setLayoutContainer] = React.useState<HTMLDivElement | null>(null);
 
   return (
     <Box
-      ref={layoutRef}
+      ref={setLayoutContainer}
       sx={{
         position: 'relative',
         display: 'flex',
         overflow: 'hidden',
-        height: '100%',
+        minHeight: '100vh',
         width: '100%',
       }}
     >
-      <Sidebar
-        container={layoutRef?.current ?? undefined}
-      />
+      <Sidebar container={layoutContainer ?? undefined} />
       <Box
         sx={{
           display: 'flex',
@@ -39,19 +32,13 @@ const Wrapper = ({
         <Topbar />
         <Box
           component="main"
-          sx={{
-            display: 'flex',
-            flexDirection: 'column',
-            flex: 1,
-            overflow: 'auto',
-          }}
+          id="main-content"
+          tabIndex={-1}
+          sx={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'auto' }}
         >
-          {/* <Outlet /> */}
-					{children}
+          {children}
         </Box>
       </Box>
     </Box>
   );
 }
-
-export default Wrapper;

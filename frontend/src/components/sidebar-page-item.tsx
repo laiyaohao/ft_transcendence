@@ -128,7 +128,7 @@ export default function SidebarPageItem({
                       rel: 'noopener noreferrer',
                     }
                   : {}),
-                to: href,
+                href,
                 onClick: handleClick,
               }
             : {})}
