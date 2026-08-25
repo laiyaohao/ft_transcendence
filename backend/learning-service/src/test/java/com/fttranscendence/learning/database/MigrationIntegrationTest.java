@@ -27,6 +27,12 @@ class MigrationIntegrationTest {
 
     @BeforeEach
     void clearClasses() {
+        jdbcTemplate.update("DELETE FROM worksheet_assignments");
+        jdbcTemplate.update("DELETE FROM worksheet_questions");
+        jdbcTemplate.update("DELETE FROM worksheets");
+        jdbcTemplate.update("DELETE FROM question_keywords");
+        jdbcTemplate.update("DELETE FROM marking_components");
+        jdbcTemplate.update("DELETE FROM questions");
         jdbcTemplate.update("DELETE FROM class_memberships");
         jdbcTemplate.update("DELETE FROM student_profiles");
         jdbcTemplate.update("DELETE FROM tutor_classes");
@@ -43,8 +49,11 @@ class MigrationIntegrationTest {
         assertEquals(1, tableCount("questions"));
         assertEquals(1, tableCount("marking_components"));
         assertEquals(1, tableCount("question_keywords"));
-        assertEquals("6", flyway.info().current().getVersion().getVersion());
-        assertEquals(6, versionedMigrationCount());
+        assertEquals(1, tableCount("worksheets"));
+        assertEquals(1, tableCount("worksheet_questions"));
+        assertEquals(1, tableCount("worksheet_assignments"));
+        assertEquals("7", flyway.info().current().getVersion().getVersion());
+        assertEquals(7, versionedMigrationCount());
 
         long appliedBefore = versionedMigrationCount();
         flyway.migrate();
@@ -57,6 +66,10 @@ class MigrationIntegrationTest {
         ));
         assertEquals(0, jdbcTemplate.queryForObject(
             "SELECT COUNT(*) FROM questions",
+            Integer.class
+        ));
+        assertEquals(0, jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM worksheets",
             Integer.class
         ));
     }
