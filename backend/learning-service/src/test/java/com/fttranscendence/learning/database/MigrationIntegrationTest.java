@@ -27,6 +27,10 @@ class MigrationIntegrationTest {
 
     @BeforeEach
     void clearClasses() {
+        jdbcTemplate.update("DELETE FROM progress_reports");
+        jdbcTemplate.update("DELETE FROM tutor_alerts");
+        jdbcTemplate.update("DELETE FROM mastery_history");
+        jdbcTemplate.update("DELETE FROM mastery_records");
         jdbcTemplate.update("DELETE FROM worksheet_assignments");
         jdbcTemplate.update("DELETE FROM worksheet_questions");
         jdbcTemplate.update("DELETE FROM worksheets");
@@ -52,8 +56,12 @@ class MigrationIntegrationTest {
         assertEquals(1, tableCount("worksheets"));
         assertEquals(1, tableCount("worksheet_questions"));
         assertEquals(1, tableCount("worksheet_assignments"));
-        assertEquals("7", flyway.info().current().getVersion().getVersion());
-        assertEquals(7, versionedMigrationCount());
+        assertEquals(1, tableCount("mastery_records"));
+        assertEquals(1, tableCount("mastery_history"));
+        assertEquals(1, tableCount("tutor_alerts"));
+        assertEquals(1, tableCount("progress_reports"));
+        assertEquals("10", flyway.info().current().getVersion().getVersion());
+        assertEquals(10, versionedMigrationCount());
 
         long appliedBefore = versionedMigrationCount();
         flyway.migrate();
