@@ -46,4 +46,19 @@ public interface WorksheetRepository extends Repository<Worksheet, Long> {
         @Param("tutorId") Long tutorId,
         @Param("classId") Long classId
     );
+
+    @Query("""
+        SELECT DISTINCT worksheet
+        FROM Worksheet worksheet
+        JOIN FETCH worksheet.assignments assignment
+        WHERE worksheet.tutorId = :tutorId
+          AND worksheet.status = com.fttranscendence.learning.worksheet.Worksheet.Status.APPROVED
+          AND assignment.assignmentType = com.fttranscendence.learning.worksheet.Worksheet.AudienceType.STUDENT
+          AND assignment.studentProfileId = :studentProfileId
+        ORDER BY worksheet.title ASC, worksheet.id ASC
+        """)
+    List<Worksheet> findApprovedStudentAssignedWorksheetsByTutorId(
+        @Param("tutorId") Long tutorId,
+        @Param("studentProfileId") Long studentProfileId
+    );
 }

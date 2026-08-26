@@ -4,7 +4,9 @@ import {
   StudentApiError,
   createTutorStudent,
   fetchTutorStudents,
+  fetchTutorStudentProfile,
   parseTutorStudent,
+  parseTutorStudentProfile,
   parseTutorStudents,
   updateTutorStudent,
 } from "./students";
@@ -20,6 +22,24 @@ const students = [{
 }];
 
 const mutation = { fullName: "Bella Tan", classIds: [12] };
+
+const profile = {
+  id: 31,
+  fullName: "Bella Tan",
+  classes: [{ id: 12, className: "Primary 5 Science", subject: "Science", level: "Primary 5", status: "ACTIVE" }],
+  metrics: { averageMastery: 68, topicCount: 2, totalAttempts: 6, lastCalculatedAt: "2026-09-02T10:00:00" },
+  mastery: [{ topicId: 41, topicCode: "SCI-P5-01", topicName: "Adaptation", score: 68, status: "IMPROVING", attemptCount: 4, calculatedAt: "2026-09-02T10:00:00" }],
+  learningProfile: {
+    strengths: [{ topicId: 42, topicName: "Energy", score: 86, status: "MASTERED" }],
+    focusAreas: [{ topicId: 41, topicName: "Adaptation", score: 68, status: "IMPROVING" }],
+  },
+  history: [{ topicId: 41, topicName: "Adaptation", previousScore: 62, newScore: 68, previousStatus: "LEARNING", newStatus: "IMPROVING", reason: "Approved marking", occurredAt: "2026-09-02T10:00:00" }],
+  worksheets: [{ worksheetId: 9, title: "Adaptation practice", assignmentType: "CLASS", classId: 12, assignedAt: "2026-09-01T10:00:00", dueAt: "2026-09-08T10:00:00" }],
+  tutorOnly: {
+    activeAlerts: [{ id: 3, type: "MASTERY", severity: "MEDIUM", status: "OPEN", title: "Adaptation needs practice", createdAt: "2026-09-02T10:00:00" }],
+    reports: [{ id: 6, reportCode: "P5-SEP", status: "DRAFT", periodStart: "2026-09-01", periodEnd: "2026-09-30", generatedAt: null, finalizedAt: null }],
+  },
+};
 
 describe("tutor student service", () => {
   beforeEach(() => {
@@ -102,5 +122,29 @@ describe("tutor student service", () => {
   it("does not trust malformed successful mutation responses", async () => {
     vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ id: 31 }), { status: 200 }));
     await expect(createTutorStudent(mutation)).rejects.toThrow("invalid student");
+  });
+
+  it("requests the canonical owner-scoped profile and validates the full response", async () => {
+    localStorage.setItem("jwt_token", "stored-token");
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify(profile), { status: 200 }));
+
+    await expect(fetchTutorStudentProfile(31)).resolves.toEqual(profile);
+    expect(fetch).toHaveBeenCalledWith(
+      "http://localhost:8083/api/learning/tutor/students/31/profile",
+      expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer stored-token" }) }),
+    );
+  });
+
+  it("rejects invalid profile references and malformed canonical profile data", async () => {
+    await expect(fetchTutorStudentProfile(0)).rejects.toMatchObject({ status: 400 });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(parseTutorStudentProfile(profile)).toEqual(profile);
+    expect(() => parseTutorStudentProfile({ ...profile, metrics: { ...profile.metrics, averageMastery: 120 } })).toThrow("invalid student profile");
+    expect(() => parseTutorStudentProfile({ ...profile, tutorOnly: { activeAlerts: [], reports: [{ id: 6 }] } })).toThrow("invalid student profile");
+  });
+
+  it("preserves missing and cross-owner profile errors", async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ message: "Student profile was not found" }), { status: 404 }));
+    await expect(fetchTutorStudentProfile(31)).rejects.toMatchObject({ status: 404, message: "Student profile was not found" });
   });
 });

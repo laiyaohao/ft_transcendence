@@ -45,7 +45,10 @@ function StudentCard({ student, index }: { student: TutorStudent; index: number 
       </Box>
       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 1, mt: "auto" }}>
         <Typography sx={{ color: "#A09488", fontSize: 11.5 }}>Updated {new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric" }).format(new Date(student.updatedAt))}</Typography>
-        <Button component={Link} href={`/students/${student.id}/edit`} aria-label={`Edit ${student.fullName}`} endIcon={<ArrowForwardIcon aria-hidden="true" sx={{ fontSize: 17 }} />} sx={{ minHeight: 34, color: "#B4573F", textTransform: "none", fontSize: 12.5, fontWeight: 600, px: 0.5, "&:hover": { bgcolor: "#FDF6F3" } }}>Edit student</Button>
+        <Box sx={{ display: "flex", alignItems: "center", gap: .25 }}>
+          <Button component={Link} href={`/students/${student.id}`} aria-label={`View ${student.fullName}'s profile`} sx={{ minHeight: 34, color: "#B4573F", textTransform: "none", fontSize: 12.5, fontWeight: 600, px: 0.5, "&:hover": { bgcolor: "#FDF6F3" } }}>View profile</Button>
+          <Button component={Link} href={`/students/${student.id}/edit`} aria-label={`Edit ${student.fullName}`} endIcon={<ArrowForwardIcon aria-hidden="true" sx={{ fontSize: 17 }} />} sx={{ minHeight: 34, color: "#6F675E", textTransform: "none", fontSize: 12.5, fontWeight: 600, px: 0.5, "&:hover": { bgcolor: "#F4EFE6" } }}>Edit</Button>
+        </Box>
       </Box>
     </Card>
   );

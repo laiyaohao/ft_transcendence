@@ -19,6 +19,18 @@ public interface MasteryRecordRepository extends Repository<MasteryRecord, Long>
     List<MasteryRecord> findAllByStudentProfileIdOrderByScoreDesc(Long studentProfileId);
 
     @Query("""
+        select distinct mastery
+        from MasteryRecord mastery
+        join fetch mastery.syllabusTopic topic
+        left join fetch mastery.history history
+        where mastery.studentProfile.id = :studentProfileId
+        order by topic.name asc, topic.id asc
+        """)
+    List<MasteryRecord> findProfileRecordsByStudentProfileIdWithTopicAndHistory(
+        @Param("studentProfileId") Long studentProfileId
+    );
+
+    @Query("""
         select mastery
         from MasteryRecord mastery
         join fetch mastery.syllabusTopic topic

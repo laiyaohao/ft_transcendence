@@ -23,6 +23,96 @@ export interface StudentMutationRequest {
   classIds: number[];
 }
 
+export type MasteryStatus = "MASTERED" | "IMPROVING" | "PRACTISING" | "LEARNING" | "NEEDS_REVISION";
+
+export interface StudentProfileClass {
+  id: number;
+  className: string;
+  subject: string;
+  level: string;
+  status: "ACTIVE" | "INACTIVE";
+}
+
+export interface StudentProfileMetrics {
+  averageMastery: number | null;
+  topicCount: number;
+  totalAttempts: number;
+  lastCalculatedAt: string | null;
+}
+
+export interface StudentProfileTopic {
+  topicId: number;
+  topicName: string;
+  score: number;
+  status: MasteryStatus;
+}
+
+export interface StudentProfileMasteryTopic extends StudentProfileTopic {
+  topicCode: string;
+  attemptCount: number;
+  calculatedAt: string | null;
+}
+
+export interface StudentProfileHistoryItem {
+  topicId: number;
+  topicName: string;
+  previousScore: number | null;
+  newScore: number | null;
+  previousStatus: MasteryStatus | null;
+  newStatus: MasteryStatus | null;
+  reason: string | null;
+  occurredAt: string | null;
+}
+
+export interface StudentProfileWorksheet {
+  worksheetId: number;
+  title: string;
+  assignmentType: "CLASS" | "STUDENT";
+  classId: number | null;
+  assignedAt: string | null;
+  dueAt: string | null;
+}
+
+export interface StudentProfileAlert {
+  id: number;
+  type: string;
+  severity: string;
+  status: string;
+  title: string;
+  createdAt: string | null;
+}
+
+export interface StudentProfileReport {
+  id: number;
+  reportCode: string;
+  status: string;
+  periodStart: string | null;
+  periodEnd: string | null;
+  generatedAt: string | null;
+  finalizedAt: string | null;
+}
+
+export interface TutorOnlyStudentProfile {
+  activeAlerts: StudentProfileAlert[];
+  reports: StudentProfileReport[];
+}
+
+export interface TutorStudentProfile {
+  id: number;
+  fullName: string;
+  classes: StudentProfileClass[];
+  metrics: StudentProfileMetrics;
+  mastery: StudentProfileMasteryTopic[];
+  learningProfile: {
+    strengths: StudentProfileTopic[];
+    focusAreas: StudentProfileTopic[];
+  };
+  history: StudentProfileHistoryItem[];
+  worksheets: StudentProfileWorksheet[];
+  /** Null is returned by the student self-profile endpoint, never by the tutor endpoint. */
+  tutorOnly: TutorOnlyStudentProfile | null;
+}
+
 export class StudentApiError extends Error {
   readonly status: number;
   readonly fields: Record<string, string>;
@@ -54,6 +144,31 @@ function isDateTime(value: unknown): value is string {
   return isNonEmptyString(value);
 }
 
+function isOptionalDateTime(value: unknown): value is string | null {
+  return value === null || isDateTime(value);
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isPercentage(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100;
+}
+
+function isOptionalPercentage(value: unknown): value is number | null {
+  return value === null || isPercentage(value);
+}
+
+function isMasteryStatus(value: unknown): value is MasteryStatus {
+  return value === "MASTERED" || value === "IMPROVING" || value === "PRACTISING"
+    || value === "LEARNING" || value === "NEEDS_REVISION";
+}
+
+function isOptionalMasteryStatus(value: unknown): value is MasteryStatus | null {
+  return value === null || isMasteryStatus(value);
+}
+
 function isStudentClassMembership(value: unknown): value is StudentClassMembership {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
@@ -76,6 +191,122 @@ function isTutorStudent(value: unknown): value is TutorStudent {
     && isDateTime(candidate.updatedAt);
 }
 
+function isStudentProfileClass(value: unknown): value is StudentProfileClass {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return isPositiveNumber(candidate.id)
+    && isNonEmptyString(candidate.className)
+    && isNonEmptyString(candidate.subject)
+    && isNonEmptyString(candidate.level)
+    && (candidate.status === "ACTIVE" || candidate.status === "INACTIVE");
+}
+
+function isStudentProfileMetrics(value: unknown): value is StudentProfileMetrics {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return isOptionalPercentage(candidate.averageMastery)
+    && isNonNegativeInteger(candidate.topicCount)
+    && isNonNegativeInteger(candidate.totalAttempts)
+    && isOptionalDateTime(candidate.lastCalculatedAt);
+}
+
+function isStudentProfileTopic(value: unknown): value is StudentProfileTopic {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return isPositiveNumber(candidate.topicId)
+    && isNonEmptyString(candidate.topicName)
+    && isPercentage(candidate.score)
+    && isMasteryStatus(candidate.status);
+}
+
+function isStudentProfileMasteryTopic(value: unknown): value is StudentProfileMasteryTopic {
+  if (!isStudentProfileTopic(value)) return false;
+  const candidate = value as unknown as Record<string, unknown>;
+  return isNonEmptyString(candidate.topicCode)
+    && isNonNegativeInteger(candidate.attemptCount)
+    && isOptionalDateTime(candidate.calculatedAt);
+}
+
+function isStudentProfileHistoryItem(value: unknown): value is StudentProfileHistoryItem {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return isPositiveNumber(candidate.topicId)
+    && isNonEmptyString(candidate.topicName)
+    && isOptionalPercentage(candidate.previousScore)
+    && isOptionalPercentage(candidate.newScore)
+    && isOptionalMasteryStatus(candidate.previousStatus)
+    && isOptionalMasteryStatus(candidate.newStatus)
+    && (candidate.reason === null || isNonEmptyString(candidate.reason))
+    && isOptionalDateTime(candidate.occurredAt);
+}
+
+function isStudentProfileWorksheet(value: unknown): value is StudentProfileWorksheet {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return isPositiveNumber(candidate.worksheetId)
+    && isNonEmptyString(candidate.title)
+    && (candidate.assignmentType === "CLASS" || candidate.assignmentType === "STUDENT")
+    && isOptionalPositiveNumber(candidate.classId)
+    && isOptionalDateTime(candidate.assignedAt)
+    && isOptionalDateTime(candidate.dueAt);
+}
+
+function isStudentProfileAlert(value: unknown): value is StudentProfileAlert {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return isPositiveNumber(candidate.id)
+    && isNonEmptyString(candidate.type)
+    && isNonEmptyString(candidate.severity)
+    && isNonEmptyString(candidate.status)
+    && isNonEmptyString(candidate.title)
+    && isOptionalDateTime(candidate.createdAt);
+}
+
+function isStudentProfileReport(value: unknown): value is StudentProfileReport {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return isPositiveNumber(candidate.id)
+    && isNonEmptyString(candidate.reportCode)
+    && isNonEmptyString(candidate.status)
+    && isOptionalDateTime(candidate.periodStart)
+    && isOptionalDateTime(candidate.periodEnd)
+    && isOptionalDateTime(candidate.generatedAt)
+    && isOptionalDateTime(candidate.finalizedAt);
+}
+
+function isTutorOnlyStudentProfile(value: unknown): value is TutorOnlyStudentProfile {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return Array.isArray(candidate.activeAlerts)
+    && candidate.activeAlerts.every(isStudentProfileAlert)
+    && Array.isArray(candidate.reports)
+    && candidate.reports.every(isStudentProfileReport);
+}
+
+function isTutorStudentProfile(value: unknown): value is TutorStudentProfile {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  const learningProfile = candidate.learningProfile;
+  return isPositiveNumber(candidate.id)
+    && isNonEmptyString(candidate.fullName)
+    && Array.isArray(candidate.classes)
+    && candidate.classes.every(isStudentProfileClass)
+    && isStudentProfileMetrics(candidate.metrics)
+    && Array.isArray(candidate.mastery)
+    && candidate.mastery.every(isStudentProfileMasteryTopic)
+    && typeof learningProfile === "object" && learningProfile !== null
+    && Array.isArray((learningProfile as Record<string, unknown>).strengths)
+    && (learningProfile as Record<string, unknown>).strengths instanceof Array
+    && ((learningProfile as Record<string, unknown>).strengths as unknown[]).every(isStudentProfileTopic)
+    && Array.isArray((learningProfile as Record<string, unknown>).focusAreas)
+    && ((learningProfile as Record<string, unknown>).focusAreas as unknown[]).every(isStudentProfileTopic)
+    && Array.isArray(candidate.history)
+    && candidate.history.every(isStudentProfileHistoryItem)
+    && Array.isArray(candidate.worksheets)
+    && candidate.worksheets.every(isStudentProfileWorksheet)
+    && (candidate.tutorOnly === null || isTutorOnlyStudentProfile(candidate.tutorOnly));
+}
+
 export function parseTutorStudent(payload: unknown): TutorStudent {
   if (!isTutorStudent(payload)) {
     throw new Error("The learning service returned an invalid student. Please try again.");
@@ -86,6 +317,13 @@ export function parseTutorStudent(payload: unknown): TutorStudent {
 export function parseTutorStudents(payload: unknown): TutorStudent[] {
   if (!Array.isArray(payload) || !payload.every(isTutorStudent)) {
     throw new Error("The learning service returned an invalid student list. Please try again.");
+  }
+  return payload;
+}
+
+export function parseTutorStudentProfile(payload: unknown): TutorStudentProfile {
+  if (!isTutorStudentProfile(payload)) {
+    throw new Error("The learning service returned an invalid student profile. Please try again.");
   }
   return payload;
 }
@@ -135,6 +373,15 @@ export async function fetchTutorStudent(studentId: number): Promise<TutorStudent
   const response = await fetch(`${LEARNING_API_URL}${STUDENT_LIST_PATH}/${studentId}`, { headers: authHeaders() });
   if (!response.ok) throw await responseError(response);
   return parseTutorStudent(await response.json());
+}
+
+export async function fetchTutorStudentProfile(studentId: number): Promise<TutorStudentProfile> {
+  if (!Number.isSafeInteger(studentId) || studentId <= 0) {
+    throw new StudentApiError("The student reference is invalid.", 400);
+  }
+  const response = await fetch(`${LEARNING_API_URL}${STUDENT_LIST_PATH}/${studentId}/profile`, { headers: authHeaders() });
+  if (!response.ok) throw await responseError(response);
+  return parseTutorStudentProfile(await response.json());
 }
 
 async function mutateTutorStudent(

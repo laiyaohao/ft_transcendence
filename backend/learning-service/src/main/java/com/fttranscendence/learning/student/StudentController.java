@@ -28,7 +28,7 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping(value = "/api/learning/tutor/students", produces = MediaType.APPLICATION_JSON_VALUE)
+@RequestMapping(produces = MediaType.APPLICATION_JSON_VALUE)
 public class StudentController {
 
     private final StudentService studentService;
@@ -37,7 +37,7 @@ public class StudentController {
         this.studentService = studentService;
     }
 
-    @GetMapping
+    @GetMapping("/api/learning/tutor/students")
     public List<StudentRequest.StudentResponse> list(
         @AuthenticationPrincipal AuthenticatedUser user,
         @RequestParam(required = false) @Positive Long classId
@@ -45,7 +45,7 @@ public class StudentController {
         return studentService.listOwnedStudents(user.userId(), classId);
     }
 
-    @GetMapping("/{studentId}")
+    @GetMapping("/api/learning/tutor/students/{studentId}")
     public StudentRequest.StudentResponse detail(
         @AuthenticationPrincipal AuthenticatedUser user,
         @PathVariable @Positive long studentId
@@ -53,7 +53,7 @@ public class StudentController {
         return studentService.getOwnedStudent(user.userId(), studentId);
     }
 
-    @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
+    @PostMapping(value = "/api/learning/tutor/students", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<StudentRequest.StudentResponse> create(
         @AuthenticationPrincipal AuthenticatedUser user,
         @Valid @RequestBody StudentRequest request
@@ -61,7 +61,7 @@ public class StudentController {
         return ResponseEntity.status(HttpStatus.CREATED).body(studentService.create(user.userId(), request));
     }
 
-    @PutMapping(value = "/{studentId}", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @PutMapping(value = "/api/learning/tutor/students/{studentId}", consumes = MediaType.APPLICATION_JSON_VALUE)
     public StudentRequest.StudentResponse update(
         @AuthenticationPrincipal AuthenticatedUser user,
         @PathVariable @Positive long studentId,
@@ -70,9 +70,27 @@ public class StudentController {
         return studentService.update(user.userId(), studentId, request);
     }
 
+    @GetMapping("/api/learning/tutor/students/{studentId}/profile")
+    public StudentProfileResponse tutorProfile(
+        @AuthenticationPrincipal AuthenticatedUser user,
+        @PathVariable @Positive long studentId
+    ) {
+        return studentService.getOwnedStudentProfile(user.userId(), studentId);
+    }
+
+    @GetMapping("/api/learning/student/profile")
+    public StudentProfileResponse studentProfile(@AuthenticationPrincipal AuthenticatedUser user) {
+        return studentService.getLinkedStudentProfile(user.userId());
+    }
+
     @ExceptionHandler(StudentService.StudentNotFoundException.class)
     ResponseEntity<ClassController.ApiError> studentNotFound(StudentService.StudentNotFoundException error) {
         return error(HttpStatus.NOT_FOUND, "STUDENT_NOT_FOUND", error.getMessage(), Map.of());
+    }
+
+    @ExceptionHandler(StudentService.ProfileNotFoundException.class)
+    ResponseEntity<ClassController.ApiError> profileNotFound(StudentService.ProfileNotFoundException error) {
+        return error(HttpStatus.NOT_FOUND, "STUDENT_PROFILE_NOT_FOUND", "Student profile was not found", Map.of());
     }
 
     @ExceptionHandler(StudentService.ClassNotFoundException.class)

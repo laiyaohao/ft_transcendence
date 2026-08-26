@@ -2,6 +2,16 @@ package com.fttranscendence.learning.student;
 
 import com.fttranscendence.learning.classroom.TutorClass;
 import com.fttranscendence.learning.classroom.TutorClassRepository;
+import com.fttranscendence.learning.alert.TutorAlert;
+import com.fttranscendence.learning.alert.TutorAlertRepository;
+import com.fttranscendence.learning.mastery.MasteryHistory;
+import com.fttranscendence.learning.mastery.MasteryRecord;
+import com.fttranscendence.learning.mastery.MasteryRecordRepository;
+import com.fttranscendence.learning.report.ProgressReport;
+import com.fttranscendence.learning.report.ProgressReportRepository;
+import com.fttranscendence.learning.worksheet.Worksheet;
+import com.fttranscendence.learning.worksheet.WorksheetAssignment;
+import com.fttranscendence.learning.worksheet.WorksheetRepository;
 import jakarta.persistence.EntityManager;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -15,6 +25,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDateTime;
 
 @Service
 public class StudentService {
@@ -22,15 +35,27 @@ public class StudentService {
     private final StudentProfileRepository students;
     private final TutorClassRepository classes;
     private final EntityManager entityManager;
+    private final MasteryRecordRepository masteryRecords;
+    private final WorksheetRepository worksheets;
+    private final TutorAlertRepository alerts;
+    private final ProgressReportRepository reports;
 
     public StudentService(
         StudentProfileRepository students,
         TutorClassRepository classes,
-        EntityManager entityManager
+        EntityManager entityManager,
+        MasteryRecordRepository masteryRecords,
+        WorksheetRepository worksheets,
+        TutorAlertRepository alerts,
+        ProgressReportRepository reports
     ) {
         this.students = students;
         this.classes = classes;
         this.entityManager = entityManager;
+        this.masteryRecords = masteryRecords;
+        this.worksheets = worksheets;
+        this.alerts = alerts;
+        this.reports = reports;
     }
 
     @Transactional(readOnly = true)
@@ -53,6 +78,24 @@ public class StudentService {
         requireTutor(tutorId);
         StudentProfile student = requireOwnedStudent(tutorId, studentId);
         return StudentRequest.StudentResponse.from(student, ownedClassMap(tutorId));
+    }
+
+    @Transactional(readOnly = true)
+    public StudentProfileResponse getOwnedStudentProfile(long tutorId, long studentId) {
+        requireTutor(tutorId);
+        StudentProfile student = students.findByIdAndTutorId(studentId, tutorId)
+            .orElseThrow(ProfileNotFoundException::new);
+        return profileResponse(student, true);
+    }
+
+    @Transactional(readOnly = true)
+    public StudentProfileResponse getLinkedStudentProfile(long loginUserId) {
+        if (loginUserId <= 0) {
+            throw new ProfileNotFoundException();
+        }
+        StudentProfile student = students.findByLoginUserId(loginUserId)
+            .orElseThrow(ProfileNotFoundException::new);
+        return profileResponse(student, false);
     }
 
     @Transactional
@@ -148,6 +191,139 @@ public class StudentService {
         return result;
     }
 
+    private StudentProfileResponse profileResponse(StudentProfile student, boolean includeTutorOnly) {
+        List<MasteryRecord> records = masteryRecords
+            .findProfileRecordsByStudentProfileIdWithTopicAndHistory(student.getId());
+        Map<Long, TutorClass> classMap = ownedClassMap(student.getTutorId());
+        List<StudentProfileResponse.ClassSummary> classResponses = student.getMemberships().stream()
+            .map(ClassMembership::getClassId)
+            .map(classMap::get)
+            .filter(java.util.Objects::nonNull)
+            .map(item -> new StudentProfileResponse.ClassSummary(
+                item.getId(), item.getClassName(), item.getSubject(), item.getLevel(), item.getStatus()))
+            .sorted(Comparator.comparing(StudentProfileResponse.ClassSummary::className,
+                Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER))
+                .thenComparing(StudentProfileResponse.ClassSummary::id))
+            .toList();
+
+        BigDecimal total = records.stream().map(MasteryRecord::getScore)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+        int attempts = records.stream().mapToInt(MasteryRecord::getAttemptCount).sum();
+        LocalDateTime lastCalculatedAt = records.stream().map(MasteryRecord::getCalculatedAt)
+            .filter(java.util.Objects::nonNull)
+            .max(LocalDateTime::compareTo)
+            .orElse(null);
+        StudentProfileResponse.Metrics metrics = new StudentProfileResponse.Metrics(
+            records.isEmpty() ? null : average(total, records.size()), records.size(), attempts, lastCalculatedAt);
+        List<StudentProfileResponse.MasteryTopic> mastery = records.stream()
+            .map(record -> new StudentProfileResponse.MasteryTopic(
+                record.getSyllabusTopic().getId(), record.getSyllabusTopic().getCode(),
+                record.getSyllabusTopic().getName(), record.getScore(), record.getMasteryStatus(),
+                record.getAttemptCount(), record.getCalculatedAt()))
+            .toList();
+        List<StudentProfileResponse.TopicSummary> strengths = records.stream()
+            .filter(record -> record.getScore().compareTo(new BigDecimal("85.00")) >= 0)
+            .map(this::topicSummary)
+            .sorted(Comparator.comparing(StudentProfileResponse.TopicSummary::score).reversed()
+                .thenComparing(StudentProfileResponse.TopicSummary::topicName)
+                .thenComparing(StudentProfileResponse.TopicSummary::topicId))
+            .toList();
+        List<StudentProfileResponse.TopicSummary> focusAreas = records.stream()
+            .filter(record -> record.getScore().compareTo(new BigDecimal("70.00")) < 0
+                || record.getMasteryStatus() == MasteryRecord.MasteryStatus.NEEDS_REVISION)
+            .map(this::topicSummary)
+            .sorted(Comparator.comparing(StudentProfileResponse.TopicSummary::score)
+                .thenComparing(StudentProfileResponse.TopicSummary::topicName)
+                .thenComparing(StudentProfileResponse.TopicSummary::topicId))
+            .toList();
+        List<StudentProfileResponse.HistoryItem> history = records.stream()
+            .flatMap(record -> record.getHistory().stream().map(item -> historyItem(record, item)))
+            .sorted(Comparator.comparing(StudentProfileResponse.HistoryItem::occurredAt,
+                Comparator.nullsLast(Comparator.reverseOrder()))
+                .thenComparing(StudentProfileResponse.HistoryItem::topicId)
+                .limit(50)
+            .toList();
+
+        List<StudentProfileResponse.WorksheetAssignmentSummary> worksheetAssignments = effectiveWorksheets(
+            student, classResponses.stream().map(StudentProfileResponse.ClassSummary::id).toList());
+        StudentProfileResponse.TutorOnly tutorOnly = includeTutorOnly
+            ? tutorOnly(student)
+            : null;
+        return new StudentProfileResponse(student.getId(), student.getFullName(), classResponses,
+            metrics, mastery, new StudentProfileResponse.LearningProfile(strengths, focusAreas),
+            history, worksheetAssignments, tutorOnly);
+    }
+
+    private List<StudentProfileResponse.WorksheetAssignmentSummary> effectiveWorksheets(
+        StudentProfile student,
+        List<Long> classIds
+    ) {
+        List<StudentProfileResponse.WorksheetAssignmentSummary> result = new ArrayList<>();
+        for (Worksheet worksheet : worksheets.findApprovedStudentAssignedWorksheetsByTutorId(
+            student.getTutorId(), student.getId())) {
+            worksheet.getAssignments().stream()
+                .filter(assignment -> assignment.getAssignmentType() == Worksheet.AudienceType.STUDENT)
+                .filter(assignment -> student.getId().equals(assignment.getStudentProfileId()))
+                .forEach(assignment -> result.add(assignmentSummary(worksheet, assignment)));
+        }
+        for (Long classId : classIds) {
+            for (Worksheet worksheet : worksheets.findClassAssignedWorksheetsByTutorId(student.getTutorId(), classId)) {
+                if (worksheet.getStatus() != Worksheet.Status.APPROVED) continue;
+                worksheet.getAssignments().stream()
+                    .filter(assignment -> assignment.getAssignmentType() == Worksheet.AudienceType.CLASS)
+                    .filter(assignment -> classId.equals(assignment.getClassId()))
+                    .forEach(assignment -> result.add(assignmentSummary(worksheet, assignment)));
+            }
+        }
+        return result.stream()
+            .sorted(Comparator.comparing(StudentProfileResponse.WorksheetAssignmentSummary::assignedAt,
+                Comparator.nullsLast(Comparator.reverseOrder()))
+                .thenComparing(StudentProfileResponse.WorksheetAssignmentSummary::worksheetId))
+            .toList();
+    }
+
+    private StudentProfileResponse.WorksheetAssignmentSummary assignmentSummary(
+        Worksheet worksheet,
+        WorksheetAssignment assignment
+    ) {
+        return new StudentProfileResponse.WorksheetAssignmentSummary(
+            worksheet.getId(), worksheet.getTitle(), assignment.getAssignmentType(), assignment.getClassId(),
+            assignment.getAssignedAt(), assignment.getDueAt());
+    }
+
+    private StudentProfileResponse.TutorOnly tutorOnly(StudentProfile student) {
+        List<TutorAlert.AlertStatus> activeStatuses = List.of(
+            TutorAlert.AlertStatus.OPEN, TutorAlert.AlertStatus.ACKNOWLEDGED);
+        List<StudentProfileResponse.AlertSummary> activeAlerts = alerts
+            .findActiveByTutorIdAndStudentProfileId(student.getTutorId(), student.getId(), activeStatuses)
+            .stream()
+            .map(alert -> new StudentProfileResponse.AlertSummary(
+                alert.getId(), alert.getAlertType().name(), alert.getSeverity().name(),
+                alert.getAlertStatus().name(), alert.getTitle(), alert.getCreatedAt()))
+            .toList();
+        List<StudentProfileResponse.ReportMetadata> reportMetadata = reports
+            .findAllByStudentProfileIdOrderByPeriodEndDesc(student.getId()).stream()
+            .filter(report -> student.getTutorId().equals(report.getTutorId()))
+            .map(this::reportMetadata)
+            .toList();
+        return new StudentProfileResponse.TutorOnly(activeAlerts, reportMetadata);
+    }
+
+    private StudentProfileResponse.TopicSummary topicSummary(MasteryRecord record) {
+        return new StudentProfileResponse.TopicSummary(record.getSyllabusTopic().getId(),
+            record.getSyllabusTopic().getName(), record.getScore(), record.getMasteryStatus());
+    }
+
+    private StudentProfileResponse.HistoryItem historyItem(MasteryRecord record, MasteryHistory history) {
+        return new StudentProfileResponse.HistoryItem(record.getSyllabusTopic().getId(),
+            record.getSyllabusTopic().getName(), history.getPreviousScore(), history.getNewScore(),
+            history.getPreviousStatus(), history.getNewStatus(), history.getReason(), history.getCreatedAt());
+    }
+
+    private static BigDecimal average(BigDecimal total, int count) {
+        return total.divide(BigDecimal.valueOf(count), 2, RoundingMode.HALF_UP);
+    }
+
     private void ensureLoginIdentityAvailable(Long loginUserId, Long currentStudentId) {
         if (loginUserId == null) {
             return;
@@ -192,6 +368,13 @@ public class StudentService {
     public static class StudentNotFoundException extends RuntimeException {
         public StudentNotFoundException(long studentId) {
             super("Student " + studentId + " was not found for this tutor");
+        }
+    }
+
+    /** Same response for a missing, foreign, or unlinked profile. */
+    public static class ProfileNotFoundException extends RuntimeException {
+        public ProfileNotFoundException() {
+            super("Student profile was not found");
         }
     }
 
