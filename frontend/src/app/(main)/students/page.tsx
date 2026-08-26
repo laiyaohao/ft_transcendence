@@ -1,49 +1,27 @@
 "use client";
 
-import * as React from "react";
+import AddIcon from "@mui/icons-material/Add";
 import Box from "@mui/material/Box";
-import Typography from "@mui/material/Typography";
-import Card from "@mui/material/Card";
-import Chip from "@mui/material/Chip";
-import Avatar from "@mui/material/Avatar";
 import Button from "@mui/material/Button";
-import LinearProgress from "@mui/material/LinearProgress";
-import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
-import TrendingUpIcon from "@mui/icons-material/TrendingUp";
-import HelpOutlineIcon from "@mui/icons-material/HelpOutlined";
-import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
-import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
-import UploadFileIcon from "@mui/icons-material/UploadFile";
-import DescriptionIcon from "@mui/icons-material/Description";
-import Stack from "@/components/lumina-stack";
+import Typography from "@mui/material/Typography";
+import Link from "next/link";
 
-const student = { name: "Bella Tan", grade: "P5", subject: "Science", status: "NEEDS PRACTICE" };
-const stats = [
-  { label: "Mastery score", value: "68%", context: "Across current topics", icon: TrendingUpIcon, progress: 68, tone: "#2A2622" },
-  { label: "Recent improvement", value: "+12%", context: "Vs last month", icon: TrendingUpIcon, tone: "#5C7A63" },
-  { label: "Current weak area", value: "Living Things", context: "45% mastery", icon: HelpOutlineIcon, tone: "#B4573F" },
-  { label: "Worksheets completed", value: "24", context: "This term", icon: DescriptionOutlinedIcon, tone: "#2A2622" },
-];
-const strengths = ["Strong grasp of conceptual facts, especially in Physical Sciences.", "Excellent retention of visual information and diagrams.", "Consistently completes assigned homework on time."];
-const areasForGrowth = ["Needs precise scientific vocabulary in OEQ answers.", "Needs practice linking concepts in open-ended questions."];
-const topicMastery = [{ topic: "Cycles in Matter & Water", value: 75 }, { topic: "Energy Forms & Uses", value: 72 }, { topic: "Living Things & Environment", value: 45 }];
-const buttonBase = { minHeight: 40, textTransform: "none", fontSize: 13.5, fontWeight: 500, borderRadius: "10px", "&:focus-visible": { outline: "3px solid #E08A72", outlineOffset: 2 } };
-const barColor = (value: number) => value < 55 ? "#B4573F" : value < 72 ? "#D8B384" : "#93A896";
+import StudentList from "@/components/students/StudentList";
 
-function Badge({ label, bg, color }: { label: string; bg: string; color: string }) { return <Chip label={label} size="small" sx={{ height: 24, borderRadius: 20, bgcolor: bg, color, fontSize: 9.5, fontWeight: 700, letterSpacing: ".05em", ".MuiChip-label": { px: 1.1 } }} />; }
-
-export default function Page() {
-  const [message, setMessage] = React.useState("");
-  const initials = "BT";
-  return <Box sx={{ minHeight: "100vh", bgcolor: "#F7F4EF", px: { xs: 2.5, sm: 3.75 }, py: 3.75, color: "#2A2622" }}><Box sx={{ maxWidth: 1420, mx: "auto", animation: "fadeUp .35s ease both" }}>
-    <Stack direction={{ xs: "column", lg: "row" }} alignItems={{ xs: "flex-start", lg: "center" }} justifyContent="space-between" gap={2.25} sx={{ mb: 3 }}>
-      <Stack direction="row" gap={2} alignItems="center"><Avatar sx={{ width: 66, height: 66, bgcolor: "#D8B384", color: "#3A332C", fontFamily: "'Playfair Display', Georgia, serif", fontSize: 24, fontWeight: 600 }}>{initials}</Avatar><Box><Typography component="h1" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: { xs: 32, sm: 38 }, fontWeight: 500, lineHeight: 1.05 }}>{student.name}</Typography><Stack direction="row" flexWrap="wrap" gap={.75} sx={{ mt: .9 }}><Chip label={`${student.grade} · ${student.subject}`} size="small" sx={{ height: 25, bgcolor: "#F4EFE6", color: "#6F675E", fontSize: 11.5, fontWeight: 500 }} /><Badge label={student.status} bg="#F7E3DC" color="#9E3A24" /><Typography sx={{ alignSelf: "center", fontSize: 11.5, color: "#A09488" }}>Joined Jan 2026</Typography></Stack></Box></Stack>
-      <Stack direction="row" flexWrap="wrap" gap={1}><Button onClick={() => setMessage("Worksheet generator prepared for Bella Tan.")} startIcon={<DescriptionIcon />} sx={{ ...buttonBase, bgcolor: "#E08A72", color: "#1B1917", px: 2, "&:hover": { bgcolor: "#D2795F" } }}>Generate Worksheet</Button><Button onClick={() => setMessage("Upload flow prepared for Bella Tan.")} startIcon={<UploadFileIcon />} variant="outlined" sx={{ ...buttonBase, borderColor: "#E4DCD0", bgcolor: "#FFFDFA", color: "#2A2622", px: 2, "&:hover": { bgcolor: "#F4EFE6" } }}>Upload worksheet</Button><Button onClick={() => setMessage("Parent report draft selected.")} variant="outlined" sx={{ ...buttonBase, borderColor: "#E4DCD0", bgcolor: "#FFFDFA", color: "#2A2622", px: 2, "&:hover": { bgcolor: "#F4EFE6" } }}>Create Parent Report</Button></Stack>
-    </Stack>
-    <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 1.75, mb: 2.75 }}>{stats.map(({ label, value, context, icon: Icon, progress, tone }) => <Card key={label} component="button" onClick={() => setMessage(`${label}: ${value}. ${context}.`)} variant="outlined" sx={{ cursor: "pointer", textAlign: "left", p: "16px 18px 18px", minHeight: 148, bgcolor: "#FFFDFA", borderColor: "#EBE4D9", borderRadius: "14px", boxShadow: "none", transition: "border-color .18s, transform .18s", "&:hover": { borderColor: "#DCCFBE", transform: "translateY(-2px)" }, "&:focus-visible": { outline: "3px solid #E08A72", outlineOffset: 2 } }}><Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.25 }}><Typography sx={{ fontSize: 11.5, fontWeight: 500, color: "#6F675E" }}>{label}</Typography><Icon aria-hidden="true" sx={{ fontSize: 17, color: "#A09488" }} /></Stack><Typography sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: label === "Current weak area" ? 21 : 34, lineHeight: 1.1, fontWeight: 500, color: tone, fontVariantNumeric: "tabular-nums" }}>{value}</Typography><Typography sx={{ fontSize: 11, color: "#A09488", mt: .9 }}>{context}</Typography>{progress !== undefined && <LinearProgress aria-label={`Mastery score ${progress}%`} variant="determinate" value={progress} sx={{ height: 5, borderRadius: 20, bgcolor: "#F0EAE0", mt: 1.2, ".MuiLinearProgress-bar": { bgcolor: "#D8B384", borderRadius: 20, transition: "transform .7s cubic-bezier(.2,.8,.3,1)" } }} />}</Card>)}</Box>
-    <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2.5 }}><Box sx={{ flex: "1 1 460px", minWidth: 0 }}><Card component="section" aria-labelledby="learning-profile" variant="outlined" sx={{ p: { xs: 2.25, sm: 3 }, borderColor: "#EBE4D9", bgcolor: "#FFFDFA", borderRadius: "14px", boxShadow: "none", mb: 2.5 }}><Typography id="learning-profile" component="h2" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 21, fontWeight: 500, mb: 2 }}>Learning Profile</Typography><Box sx={{ display: "flex", flexWrap: "wrap", gap: 3.25 }}><Box sx={{ flex: "1 1 200px" }}><Typography sx={{ fontSize: 10.5, fontWeight: 600, letterSpacing: ".13em", color: "#5C7A63", mb: 1.25 }}>STRENGTHS</Typography><Stack gap={1.2}>{strengths.map((item) => <Typography key={item} sx={{ pl: 1.5, borderLeft: "2px solid #DCE4DC", fontSize: 13, lineHeight: 1.6, color: "#4A443D" }}>{item}</Typography>)}</Stack></Box><Box sx={{ flex: "1 1 200px" }}><Typography sx={{ fontSize: 10.5, fontWeight: 600, letterSpacing: ".13em", color: "#9E3A24", mb: 1.25 }}>AREAS FOR GROWTH</Typography><Stack gap={1.2}>{areasForGrowth.map((item) => <Typography key={item} sx={{ pl: 1.5, borderLeft: "2px solid #EDD9D2", fontSize: 13, lineHeight: 1.6, color: "#4A443D" }}>{item}</Typography>)}</Stack></Box></Box></Card>
-      <Typography component="h2" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 21, fontWeight: 500, mb: 1.25 }}>Topic Mastery Map</Typography><Stack gap={1.25}>{topicMastery.map(({ topic, value }) => { const focus = value < 55; return <Card key={topic} variant="outlined" sx={{ p: { xs: 1.75, sm: "13px 16px" }, borderRadius: "10px", bgcolor: focus ? "#FDF6F3" : "#FFFDFA", borderColor: focus ? "#F0DCD4" : "#EFE8DE", boxShadow: "none", display: "flex", alignItems: "center", gap: 1.75 }}><Typography sx={{ flex: "0 0 44px", fontSize: 14, fontWeight: 600, color: focus ? "#9E3A24" : "#4A443D", fontVariantNumeric: "tabular-nums" }}>{value}%</Typography><Box sx={{ flex: 1, minWidth: 0 }}><Stack direction="row" alignItems="center" flexWrap="wrap" gap={.75} sx={{ mb: .85 }}><Typography sx={{ fontSize: 13, fontWeight: 500 }}>{topic}</Typography>{focus && <Badge label="FOCUS AREA" bg="#F1D9D1" color="#9E3A24" />}</Stack><LinearProgress aria-label={`${topic} mastery ${value}%`} variant="determinate" value={value} sx={{ height: 5, borderRadius: 20, bgcolor: "#F0EAE0", ".MuiLinearProgress-bar": { bgcolor: barColor(value), borderRadius: 20, transition: "transform .7s cubic-bezier(.2,.8,.3,1)" } }} /></Box></Card>; })}</Stack></Box>
-      <Box sx={{ flex: "0 1 320px", minWidth: 280 }}><Card component="section" aria-labelledby="ai-title" sx={{ bgcolor: "#1B1917", color: "#FBF9F5", p: 3, borderRadius: "14px", boxShadow: "none" }}><Stack direction="row" alignItems="center" gap={1.2} sx={{ mb: 1.75 }}><Box aria-hidden="true" sx={{ width: 22, height: 22, display: "grid", placeItems: "center", bgcolor: "#E08A72", color: "#1B1917", borderRadius: "50%" }}><AutoAwesomeIcon sx={{ fontSize: 14 }} /></Box><Typography id="ai-title" component="h2" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 20, fontWeight: 500 }}>AI Insight</Typography></Stack><Typography sx={{ maxWidth: "52ch", fontFamily: "'Playfair Display', Georgia, serif", fontSize: 19, lineHeight: 1.35, color: "#FBF9F5", mb: 1.25 }}>Bella needs more consistent OEQ keyword phrasing.</Typography><Typography sx={{ maxWidth: "52ch", fontSize: 13, lineHeight: 1.6, color: "#A8A096", mb: 1.25 }}>Her latest answers identify the concept but omit the mark-scheme mechanism. This can cost marks in Booklet B.</Typography><Typography sx={{ fontSize: 10.5, color: "#6E665D", mb: 1.5 }}>SUGGESTION ONLY — NOT SAVED</Typography><Typography sx={{ fontSize: 10.5, fontWeight: 600, letterSpacing: ".13em", color: "#7A7268", mb: 1 }}>SUGGESTED ACTIONS</Typography><Stack gap={1}>{["Generate Keyword Drill", "Review Past OEQ Errors"].map((action) => <Button key={action} onClick={() => setMessage(`${action} prepared for Bella Tan.`)} endIcon={<ArrowForwardIcon />} sx={{ ...buttonBase, minHeight: 42, justifyContent: "space-between", bgcolor: "#282522", border: "1px solid #35312C", color: "#E8E2D9", px: 1.5, "&:hover": { bgcolor: "#332F2A" } }}>{action}</Button>)}</Stack></Card></Box></Box>
-    <Box role="status" aria-live="polite" sx={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>{message}</Box>
-  </Box></Box>;
+export default function StudentsPage() {
+  return (
+    <Box sx={{ minHeight: "100vh", bgcolor: "#F7F4EF", px: { xs: 2.5, sm: 3.75 }, py: 3.75, color: "#2A2622" }}>
+      <Box sx={{ maxWidth: 1420, mx: "auto", animation: "fadeUp .35s ease both" }}>
+        <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "flex-end", justifyContent: "space-between", gap: 2, mb: 3 }}>
+          <Box>
+            <Typography sx={{ color: "#A09488", fontSize: 10.5, fontWeight: 600, letterSpacing: ".13em", mb: .75 }}>STUDENT MANAGEMENT</Typography>
+            <Typography component="h1" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: { xs: 32, sm: 38 }, fontWeight: 500, lineHeight: 1.1, letterSpacing: "-.02em" }}>Students</Typography>
+            <Typography sx={{ color: "#6F675E", fontSize: 14, lineHeight: 1.6, mt: 1 }}>Manage tutor-owned student profiles and their class memberships.</Typography>
+          </Box>
+          <Button component={Link} href="/students/new" startIcon={<AddIcon />} sx={{ minHeight: 42, borderRadius: "10px", bgcolor: "#9E3A24", color: "#FBF9F5", textTransform: "none", fontWeight: 500, px: 2.25, "&:hover": { bgcolor: "#8A3120" } }}>Create student</Button>
+        </Box>
+        <StudentList />
+      </Box>
+    </Box>
+  );
 }

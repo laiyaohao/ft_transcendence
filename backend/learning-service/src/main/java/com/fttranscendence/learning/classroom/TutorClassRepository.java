@@ -20,6 +20,8 @@ public interface TutorClassRepository extends Repository<TutorClass, Long> {
         TutorClass.Status status
     );
 
+    List<TutorClass> findAllByTutorIdOrderByClassNameAsc(Long tutorId);
+
     boolean existsByTutorIdAndClassNameIgnoreCase(Long tutorId, String className);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)

@@ -74,7 +74,7 @@ class ClassDetailIntegrationTest {
             .andExpect(jsonPath("$.mastery.averageScore").value(60.00))
             .andExpect(jsonPath("$.weakAreas.length()").value(2))
             .andExpect(jsonPath("$.weakAreas[0].topicName").value("Reproduction"))
-            .andExpect(jsonPath("$.insight.status").value("UNAVAILABLE"))
+            .andExpect(jsonPath("$.insight.status").value("REFRESHING"))
             .andExpect(jsonPath("$.worksheets[0].title").value("Water revision"))
             .andExpect(jsonPath("$.worksheets[0].dueAt").value("2026-09-15T17:00:00"));
     }
@@ -100,7 +100,7 @@ class ClassDetailIntegrationTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.students").isEmpty())
             .andExpect(jsonPath("$.mastery.recordCount").value(0))
-            .andExpect(jsonPath("$.insight.message").value("Insights are not available yet"));
+            .andExpect(jsonPath("$.insight.message").value("Insights are being refreshed"));
     }
 
     @Test

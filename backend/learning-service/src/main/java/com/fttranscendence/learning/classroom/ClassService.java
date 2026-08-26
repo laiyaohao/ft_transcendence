@@ -7,6 +7,8 @@ import com.fttranscendence.learning.student.StudentProfileRepository;
 import com.fttranscendence.learning.worksheet.Worksheet;
 import com.fttranscendence.learning.worksheet.WorksheetAssignment;
 import com.fttranscendence.learning.worksheet.WorksheetRepository;
+import com.fttranscendence.learning.insight.ClassInsightResponse;
+import com.fttranscendence.learning.insight.ClassInsightService;
 import jakarta.persistence.EntityManager;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -34,19 +36,22 @@ public class ClassService {
     private final StudentProfileRepository studentRepository;
     private final MasteryRecordRepository masteryRepository;
     private final WorksheetRepository worksheetRepository;
+    private final ClassInsightService insightService;
 
     public ClassService(
         TutorClassRepository repository,
         EntityManager entityManager,
         StudentProfileRepository studentRepository,
         MasteryRecordRepository masteryRepository,
-        WorksheetRepository worksheetRepository
+        WorksheetRepository worksheetRepository,
+        ClassInsightService insightService
     ) {
         this.repository = repository;
         this.entityManager = entityManager;
         this.studentRepository = studentRepository;
         this.masteryRepository = masteryRepository;
         this.worksheetRepository = worksheetRepository;
+        this.insightService = insightService;
     }
 
     @Transactional(readOnly = true)
@@ -117,11 +122,15 @@ public class ClassService {
             studentResponses,
             new ClassDetailResponse.MasterySummary(average, recordsWithData, studentsWithMastery),
             weakAreas,
-            new ClassDetailResponse.InsightResponse(
-                ClassDetailResponse.InsightStatus.UNAVAILABLE,
-                "Insights are not available yet"
-            ),
+            insightResponse(tutorId, classId),
             worksheets
+        );
+    }
+
+    private ClassDetailResponse.InsightResponse insightResponse(long tutorId, long classId) {
+        ClassInsightResponse insight = insightService.insights(tutorId, classId);
+        return new ClassDetailResponse.InsightResponse(
+            ClassDetailResponse.InsightStatus.valueOf(insight.status().name()), insight.message()
         );
     }
 

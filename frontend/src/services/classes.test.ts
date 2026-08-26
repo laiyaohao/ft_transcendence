@@ -4,9 +4,11 @@ import {
   ClassApiError,
   createTutorClass,
   fetchTutorClassDetail,
+  fetchTutorClassInsights,
   fetchTutorClasses,
   parseTutorClass,
   parseTutorClassDetail,
+  parseTutorClassInsights,
   parseTutorClasses,
   updateTutorClass,
 } from "./classes";
@@ -34,8 +36,27 @@ const detail = {
   students: [{ id: 80, fullName: "Bella Tan", overallMastery: 68, masteryRecordCount: 4 }],
   mastery: { averageScore: 68, recordCount: 4, studentsWithMastery: 1 },
   weakAreas: [{ topicId: 41, topicName: "Adaptation", averageScore: 45, affectedStudentCount: 1 }],
-  insight: { status: "UNAVAILABLE" as const, message: "Insights are not available yet." },
+  insight: { status: "REFRESHING" as const, message: "Insights are being refreshed" },
   worksheets: [{ id: 31, title: "P5 Science — Adaptation Mini Test", status: "APPROVED" as const, dueAt: "2026-09-15T23:59:00+08:00", assignedAt: "2026-09-01T10:00:00+08:00" }],
+};
+
+const insights = {
+  status: "FRESH" as const,
+  message: "Insights are current",
+  dataAsOf: "2026-09-02T10:00:00",
+  items: [{
+    topicId: 41,
+    topicName: "Adaptation",
+    averageMasteryPercent: 45,
+    activeStudentCount: 4,
+    assessedStudentCount: 4,
+    affectedStudentCount: 3,
+    weak: true,
+    suggestedAction: "Prioritise guided practice before the next assessment.",
+    displayRank: 1,
+    rankingNote: "Prioritise before Friday.",
+  }],
+  feedback: [{ id: 6, feedback: "Revisit keywords first.", createdAt: "2026-09-02T10:30:00" }],
 };
 
 describe("tutor class service", () => {
@@ -102,6 +123,17 @@ describe("tutor class service", () => {
     await expect(fetchTutorClassDetail(12)).rejects.toMatchObject({ status: 404, message: "Class 12 was not found for this tutor" });
   });
 
+  it("requests and runtime-validates the owner-scoped persisted insight snapshot", async () => {
+    localStorage.setItem("jwt_token", "stored-token");
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify(insights), { status: 200 }));
+
+    await expect(fetchTutorClassInsights(12)).resolves.toEqual(insights);
+    expect(fetch).toHaveBeenCalledWith(
+      "http://localhost:8083/api/learning/tutor/classes/12/insights",
+      expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer stored-token" }) }),
+    );
+  });
+
   it("runtime-validates full and partial class detail data", () => {
     expect(parseTutorClassDetail(detail)).toEqual(detail);
     expect(parseTutorClassDetail({
@@ -115,8 +147,17 @@ describe("tutor class service", () => {
     expect(() => parseTutorClassDetail({ ...detail, weakAreas: [{ ...detail.weakAreas[0], averageScore: 101 }] })).toThrow("invalid class details");
   });
 
+  it("rejects malformed insight evidence and impossible ranking metadata", () => {
+    expect(parseTutorClassInsights(insights)).toEqual(insights);
+    expect(parseTutorClassInsights({ ...insights, status: "STALE", dataAsOf: null })).toMatchObject({ status: "STALE" });
+    expect(() => parseTutorClassInsights({ ...insights, items: [{ ...insights.items[0], averageMasteryPercent: 101 }] })).toThrow("invalid class insights");
+    expect(() => parseTutorClassInsights({ ...insights, items: [{ ...insights.items[0], displayRank: 0 }] })).toThrow("invalid class insights");
+    expect(() => parseTutorClassInsights({ ...insights, feedback: [{ id: 0, feedback: "No", createdAt: "today" }] })).toThrow("invalid class insights");
+  });
+
   it("rejects invalid class references before making a request", async () => {
     await expect(fetchTutorClassDetail(0)).rejects.toMatchObject({ status: 400 });
+    await expect(fetchTutorClassInsights(0)).rejects.toMatchObject({ status: 400 });
     expect(fetch).not.toHaveBeenCalled();
   });
 

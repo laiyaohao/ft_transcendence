@@ -52,7 +52,7 @@ public record ClassDetailResponse(
 
     public record InsightResponse(InsightStatus status, String message) {}
 
-    public enum InsightStatus { UNAVAILABLE }
+    public enum InsightStatus { FRESH, STALE, REFRESHING, FAILED }
 
     public record WorksheetResponse(
         Long id,

@@ -15,5 +15,7 @@ public interface SyllabusTopicRepository extends Repository<SyllabusTopic, Long>
         SyllabusTopic.NodeType nodeType
     );
 
+    List<SyllabusTopic> findAllById(Iterable<Long> ids);
+
     long countByCurriculumVersionAndActiveTrue(String curriculumVersion);
 }

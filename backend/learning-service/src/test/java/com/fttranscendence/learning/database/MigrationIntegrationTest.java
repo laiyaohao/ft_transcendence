@@ -27,6 +27,13 @@ class MigrationIntegrationTest {
 
     @BeforeEach
     void clearClasses() {
+        jdbcTemplate.update("DELETE FROM class_insight_feedback");
+        jdbcTemplate.update("DELETE FROM class_insight_items");
+        jdbcTemplate.update("DELETE FROM class_insight_snapshots");
+        jdbcTemplate.update("DELETE FROM class_insight_ranking_overrides");
+        jdbcTemplate.update("DELETE FROM class_insight_refresh_queue");
+        jdbcTemplate.update("DELETE FROM class_insight_settings");
+        jdbcTemplate.update("DELETE FROM class_topic_coverage");
         jdbcTemplate.update("DELETE FROM progress_reports");
         jdbcTemplate.update("DELETE FROM tutor_alerts");
         jdbcTemplate.update("DELETE FROM mastery_history");
@@ -60,8 +67,15 @@ class MigrationIntegrationTest {
         assertEquals(1, tableCount("mastery_history"));
         assertEquals(1, tableCount("tutor_alerts"));
         assertEquals(1, tableCount("progress_reports"));
-        assertEquals("10", flyway.info().current().getVersion().getVersion());
-        assertEquals(10, versionedMigrationCount());
+        assertEquals(1, tableCount("class_topic_coverage"));
+        assertEquals(1, tableCount("class_insight_settings"));
+        assertEquals(1, tableCount("class_insight_snapshots"));
+        assertEquals(1, tableCount("class_insight_items"));
+        assertEquals(1, tableCount("class_insight_feedback"));
+        assertEquals(1, tableCount("class_insight_ranking_overrides"));
+        assertEquals(1, tableCount("class_insight_refresh_queue"));
+        assertEquals("11", flyway.info().current().getVersion().getVersion());
+        assertEquals(11, versionedMigrationCount());
 
         long appliedBefore = versionedMigrationCount();
         flyway.migrate();

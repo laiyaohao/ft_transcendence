@@ -39,8 +39,46 @@ export interface ClassWeakArea {
 }
 
 export interface ClassInsightAvailability {
-  status: "UNAVAILABLE";
+  status: ClassInsightStatus;
   message: string;
+}
+
+export type ClassInsightStatus = "FRESH" | "STALE" | "REFRESHING" | "FAILED";
+
+/**
+ * A persisted, aggregate-only item. These values describe the class; they do
+ * not expose individual student evidence or change any learning record.
+ */
+export interface ClassInsightItem {
+  topicId: number;
+  topicName: string;
+  averageMasteryPercent: number;
+  activeStudentCount: number;
+  assessedStudentCount: number;
+  affectedStudentCount: number;
+  weak: boolean;
+  suggestedAction: string;
+  /** A tutor-controlled display priority, when one has been saved. */
+  displayRank: number | null;
+  rankingNote: string | null;
+}
+
+export interface ClassInsightFeedback {
+  id: number;
+  feedback: string;
+  createdAt: string;
+}
+
+/**
+ * A read-only persisted insight snapshot. `dataAsOf` is null while the first
+ * background refresh is pending or has failed before producing a snapshot.
+ */
+export interface ClassInsightSnapshot {
+  status: ClassInsightStatus;
+  message: string;
+  dataAsOf: string | null;
+  items: ClassInsightItem[];
+  feedback: ClassInsightFeedback[];
 }
 
 export type ClassWorksheetStatus = "DRAFT" | "APPROVED" | "ARCHIVED";
@@ -103,6 +141,10 @@ function isPercentage(value: unknown): value is number {
 
 function isOptionalDateTime(value: unknown): value is string | null {
   return value === null || isNonEmptyString(value);
+}
+
+function isInsightStatus(value: unknown): value is ClassInsightStatus {
+  return value === "FRESH" || value === "STALE" || value === "REFRESHING" || value === "FAILED";
 }
 
 function isSchedule(value: unknown): value is ClassSchedule {
@@ -171,7 +213,42 @@ function isClassWeakArea(value: unknown): value is ClassWeakArea {
 function isClassInsightAvailability(value: unknown): value is ClassInsightAvailability {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
-  return candidate.status === "UNAVAILABLE" && isNonEmptyString(candidate.message);
+  return isInsightStatus(candidate.status) && isNonEmptyString(candidate.message);
+}
+
+function isClassInsightItem(value: unknown): value is ClassInsightItem {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return isPositiveNumber(candidate.topicId)
+    && isNonEmptyString(candidate.topicName)
+    && isPercentage(candidate.averageMasteryPercent)
+    && isNonNegativeInteger(candidate.activeStudentCount)
+    && isNonNegativeInteger(candidate.assessedStudentCount)
+    && isNonNegativeInteger(candidate.affectedStudentCount)
+    && typeof candidate.weak === "boolean"
+    && isNonEmptyString(candidate.suggestedAction)
+    && (candidate.displayRank === null || (isNonNegativeInteger(candidate.displayRank) && candidate.displayRank > 0))
+    && (candidate.rankingNote === null || isNonEmptyString(candidate.rankingNote));
+}
+
+function isClassInsightFeedback(value: unknown): value is ClassInsightFeedback {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return isPositiveNumber(candidate.id)
+    && isNonEmptyString(candidate.feedback)
+    && isNonEmptyString(candidate.createdAt);
+}
+
+function isClassInsightSnapshot(value: unknown): value is ClassInsightSnapshot {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return isInsightStatus(candidate.status)
+    && isNonEmptyString(candidate.message)
+    && isOptionalDateTime(candidate.dataAsOf)
+    && Array.isArray(candidate.items)
+    && candidate.items.every(isClassInsightItem)
+    && Array.isArray(candidate.feedback)
+    && candidate.feedback.every(isClassInsightFeedback);
 }
 
 function isClassWorksheet(value: unknown): value is ClassWorksheet {
@@ -200,6 +277,14 @@ function isTutorClassDetail(value: unknown): value is TutorClassDetail {
 export function parseTutorClassDetail(payload: unknown): TutorClassDetail {
   if (!isTutorClassDetail(payload)) {
     throw new Error("The learning service returned invalid class details. Please try again.");
+  }
+
+  return payload;
+}
+
+export function parseTutorClassInsights(payload: unknown): ClassInsightSnapshot {
+  if (!isClassInsightSnapshot(payload)) {
+    throw new Error("The learning service returned invalid class insights. Please try again.");
   }
 
   return payload;
@@ -262,6 +347,22 @@ export async function fetchTutorClassDetail(classId: number): Promise<TutorClass
   }
 
   return parseTutorClassDetail(await response.json());
+}
+
+export async function fetchTutorClassInsights(classId: number): Promise<ClassInsightSnapshot> {
+  if (!Number.isSafeInteger(classId) || classId <= 0) {
+    throw new ClassApiError("The class reference is invalid.", 400);
+  }
+
+  const response = await fetch(`${LEARNING_API_URL}${CLASS_LIST_PATH}/${classId}/insights`, {
+    headers: authHeaders(),
+  });
+
+  if (!response.ok) {
+    throw await responseError(response);
+  }
+
+  return parseTutorClassInsights(await response.json());
 }
 
 async function mutateTutorClass(

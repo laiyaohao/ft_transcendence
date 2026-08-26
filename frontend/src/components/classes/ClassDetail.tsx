@@ -15,11 +15,19 @@ import Skeleton from "@mui/material/Skeleton";
 import Typography from "@mui/material/Typography";
 import Link from "next/link";
 
-import { fetchTutorClassDetail, type ClassWorksheet, type TutorClassDetail } from "@/services/classes";
+import {
+  fetchTutorClassDetail,
+  fetchTutorClassInsights,
+  type ClassInsightAvailability,
+  type ClassInsightSnapshot,
+  type ClassWorksheet,
+  type TutorClassDetail,
+} from "@/services/classes";
 
 export interface ClassDetailProps {
   classId: number;
   loadClass?: (classId: number) => Promise<TutorClassDetail>;
+  loadInsights?: (classId: number) => Promise<ClassInsightSnapshot>;
 }
 
 const serif = "'Playfair Display', Georgia, serif";
@@ -63,30 +71,106 @@ function WorksheetRow({ worksheet }: { worksheet: ClassWorksheet }) {
   </Box>;
 }
 
-export default function ClassDetail({ classId, loadClass = fetchTutorClassDetail }: ClassDetailProps) {
+const insightStatus = {
+  FRESH: { label: "CURRENT", bg: "#22301F", color: "#9FC0A2" },
+  STALE: { label: "STALE", bg: "#3A2119", color: "#E0A692" },
+  REFRESHING: { label: "REFRESHING", bg: "#33302A", color: "#B5ADA2" },
+  FAILED: { label: "REFRESH FAILED", bg: "#3A2119", color: "#E0A692" },
+} as const;
+
+function snapshotTime(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.valueOf()) ? value : date.toLocaleString();
+}
+
+function ClassInsightPanel({
+  availability,
+  insight,
+  loading,
+  error,
+  onRetry,
+}: {
+  availability: ClassInsightAvailability;
+  insight: ClassInsightSnapshot | null;
+  loading: boolean;
+  error: string | null;
+  onRetry: () => void;
+}) {
+  const status = insight?.status ?? availability.status;
+  const statusStyle = insightStatus[status];
+  const weakItems = insight?.items.filter((item) => item.weak).slice(0, 3) ?? [];
+
+  return <Card component="section" aria-labelledby="insight-heading" sx={{ borderRadius: "14px", bgcolor: "#1B1917", color: "#E8E2D9", p: { xs: 2.25, sm: 2.75 }, boxShadow: "none" }}>
+    <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1, mb: 1.25 }}>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+        <Box aria-hidden="true" sx={{ width: 20, height: 20, borderRadius: "50%", bgcolor: "#E08A72", color: "#1B1917", display: "grid", placeItems: "center" }}><AutoAwesomeIcon sx={{ fontSize: 12 }} /></Box>
+        <Typography id="insight-heading" component="h2" sx={{ fontFamily: serif, fontSize: 19, fontWeight: 500, color: "#FBF9F5" }}>Class insight</Typography>
+      </Box>
+      <Chip label={statusStyle.label} size="small" sx={{ height: 22, bgcolor: statusStyle.bg, color: statusStyle.color, fontSize: 9.5, fontWeight: 700, letterSpacing: ".05em" }} />
+    </Box>
+    <Typography aria-live="polite" sx={{ color: "#CFC7BC", fontSize: 13.5, lineHeight: 1.65, maxWidth: "52ch" }}>{error ?? insight?.message ?? availability.message}</Typography>
+    {loading && <Typography role="status" sx={{ color: "#A8A096", fontSize: 12, lineHeight: 1.55, mt: 1 }}>Refreshing recorded class mastery…</Typography>}
+    {error && <Button onClick={onRetry} variant="text" sx={{ minHeight: 34, mt: 0.75, px: 0, color: "#E08A72", textTransform: "none", fontWeight: 600 }}>Retry insight refresh</Button>}
+    {insight?.dataAsOf && <Typography sx={{ color: "#8F877D", fontSize: 11.5, lineHeight: 1.55, mt: 1 }}>Evidence recorded {snapshotTime(insight.dataAsOf)}.</Typography>}
+    {!loading && !error && insight && (weakItems.length === 0
+      ? <Box sx={{ mt: 1.5, borderTop: "1px solid #2C2925", pt: 1.5 }}><Typography sx={{ color: "#CFC7BC", fontSize: 12.5, lineHeight: 1.6 }}>No covered topic currently meets this class’s weak-area threshold.</Typography></Box>
+      : <Box sx={{ display: "grid", gap: 1, mt: 1.5 }}>{weakItems.map((item) => <Box key={item.topicId} sx={{ bgcolor: "#232120", borderRadius: "10px", p: "13px 14px" }}>
+        <Box sx={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 1, mb: 0.75 }}><Typography sx={{ color: "#FBF9F5", fontSize: 13, fontWeight: 600, lineHeight: 1.35 }}>{item.topicName}</Typography>{item.displayRank !== null && <Chip label={`TUTOR PRIORITY ${item.displayRank}`} size="small" sx={{ height: 20, bgcolor: "#33302A", color: "#B5ADA2", fontSize: 8.5, fontWeight: 700, letterSpacing: ".04em" }} />}</Box>
+        <Typography sx={{ color: "#A8A096", fontSize: 12, lineHeight: 1.55 }}>{item.affectedStudentCount} of {item.activeStudentCount} students need support; average mastery is {Math.round(item.averageMasteryPercent)}%.</Typography>
+        <Typography sx={{ color: "#CFC7BC", fontSize: 11.5, lineHeight: 1.55, mt: 0.75 }}>{item.suggestedAction}</Typography>
+        {item.rankingNote && <Typography sx={{ color: "#8F877D", fontSize: 11, lineHeight: 1.5, borderTop: "1px solid #2C2925", mt: 0.9, pt: 0.8 }}>Tutor note: {item.rankingNote}</Typography>}
+      </Box>)}</Box>)}
+    {insight && <Box sx={{ borderTop: "1px solid #2C2925", mt: 1.5, pt: 1.25 }}>
+      <Typography sx={{ color: "#8F877D", fontSize: 10.5, fontWeight: 600, letterSpacing: ".09em" }}>TUTOR CONTEXT</Typography>
+      {insight.feedback.length > 0 ? insight.feedback.slice(-2).map((feedback) => <Typography key={feedback.id} sx={{ color: "#CFC7BC", fontSize: 11.5, lineHeight: 1.55, mt: 0.65 }}>{feedback.feedback}</Typography>) : <Typography sx={{ color: "#8F877D", fontSize: 11.5, lineHeight: 1.55, mt: 0.65 }}>No tutor feedback has been recorded for this snapshot.</Typography>}
+      <Typography sx={{ color: "#6E665D", fontSize: 10.5, lineHeight: 1.5, mt: 0.9 }}>Saved tutor priorities and feedback are shown here. Editing them is not available in this view yet.</Typography>
+    </Box>}
+    <Typography sx={{ color: "#6E665D", fontSize: 10.5, lineHeight: 1.5, mt: 1.25 }}>Derived from recorded class mastery. It is not a student record or an automatic assignment.</Typography>
+  </Card>;
+}
+
+export default function ClassDetail({ classId, loadClass = fetchTutorClassDetail, loadInsights = fetchTutorClassInsights }: ClassDetailProps) {
   const [detail, setDetail] = React.useState<TutorClassDetail | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [insight, setInsight] = React.useState<ClassInsightSnapshot | null>(null);
+  const [insightError, setInsightError] = React.useState<string | null>(null);
+  const [insightLoading, setInsightLoading] = React.useState(false);
+  const requestId = React.useRef(0);
+  const insightRequestId = React.useRef(0);
   const validClassId = Number.isSafeInteger(classId) && classId > 0;
+  const refreshInsights = React.useCallback(async () => {
+    if (!validClassId) return;
+    const currentRequest = ++insightRequestId.current;
+    setInsight(null); setInsightError(null); setInsightLoading(true);
+    try {
+      const loaded = await loadInsights(classId);
+      if (insightRequestId.current === currentRequest) setInsight(loaded);
+    } catch (reason) {
+      if (insightRequestId.current === currentRequest) setInsightError(reason instanceof Error ? reason.message : "Class insights could not be loaded. Please try again.");
+    } finally {
+      if (insightRequestId.current === currentRequest) setInsightLoading(false);
+    }
+  }, [classId, loadInsights, validClassId]);
   const load = React.useCallback(async () => {
     if (!validClassId) return;
+    const currentRequest = ++requestId.current;
+    // Defer state reset so the mount effect begins an asynchronous request rather
+    // than synchronously cascading a render.
+    await Promise.resolve();
+    if (requestId.current !== currentRequest) return;
     setDetail(null); setError(null);
-    try { setDetail(await loadClass(classId)); } catch (reason) { setError(reason instanceof Error ? reason.message : "Class details could not be loaded. Please try again."); }
-  }, [classId, loadClass, validClassId]);
+    void loadClass(classId).then(
+      (loaded) => { if (requestId.current === currentRequest) setDetail(loaded); },
+      (reason: unknown) => { if (requestId.current === currentRequest) setError(reason instanceof Error ? reason.message : "Class details could not be loaded. Please try again."); },
+    );
+    void refreshInsights();
+  }, [classId, loadClass, refreshInsights, validClassId]);
 
   React.useEffect(() => {
-    let current = true;
-    if (!validClassId) return () => { current = false; };
-    const requestDetail = async () => {
-      try {
-        const loaded = await loadClass(classId);
-        if (current) setDetail(loaded);
-      } catch (reason) {
-        if (current) setError(reason instanceof Error ? reason.message : "Class details could not be loaded. Please try again.");
-      }
-    };
-    void requestDetail();
-    return () => { current = false; };
-  }, [classId, loadClass, validClassId]);
+    if (!validClassId) return undefined;
+    void load();
+    return () => { requestId.current += 1; insightRequestId.current += 1; };
+  }, [load, validClassId]);
 
   const heading = detail?.className ?? "Class details";
   return <Box sx={{ minHeight: "100vh", bgcolor: "#F7F4EF", px: { xs: 2.5, sm: 3.75 }, py: 3.75, color: "#2A2622" }}>
@@ -106,7 +190,7 @@ export default function ClassDetail({ classId, loadClass = fetchTutorClassDetail
             <Card component="section" aria-labelledby="weak-areas-heading" variant="outlined" sx={{ ...card, p: { xs: 2, sm: 2.5 } }}><Typography id="weak-areas-heading" component="h2" sx={{ fontFamily: serif, fontSize: 21, fontWeight: 500, mb: 1.5 }}>Weak areas</Typography>{detail.weakAreas.length === 0 ? <EmptySection title="No weak areas identified">Mastery results will surface focus topics when enough class data is available.</EmptySection> : <Box sx={{ display: "grid", gap: 1.25 }}>{detail.weakAreas.map((area) => <Box key={area.topicId} sx={{ border: "1px solid #F0DCD4", bgcolor: "#FDF6F3", borderRadius: "10px", p: "13px 16px", display: "flex", alignItems: "center", gap: 1.75 }}><Typography sx={{ width: 44, flex: "0 0 auto", color: "#9E3A24", fontSize: 14, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{percent(area.averageScore)}</Typography><Box sx={{ flex: 1, minWidth: 0 }}><Typography sx={{ fontSize: 13, fontWeight: 500 }}>{area.topicName}</Typography><LinearProgress aria-label={`${area.topicName} average mastery ${percent(area.averageScore)}`} variant="determinate" value={area.averageScore} sx={{ height: 5, borderRadius: 20, bgcolor: "#F0EAE0", mt: 0.9, ".MuiLinearProgress-bar": { bgcolor: barColor(area.averageScore), borderRadius: 20 } }} /></Box><Chip label={`${area.affectedStudentCount} AFFECTED`} size="small" sx={{ height: 22, bgcolor: "#F1D9D1", color: "#9E3A24", fontSize: 9.5, fontWeight: 700, letterSpacing: ".05em" }} /></Box>)}</Box>}</Card>
           </Box>
           <Box sx={{ flex: "0 1 330px", minWidth: 0, display: "grid", gap: 2.5 }}>
-            <Card component="section" aria-labelledby="insight-heading" sx={{ borderRadius: "14px", bgcolor: "#1B1917", color: "#E8E2D9", p: { xs: 2.25, sm: 2.75 }, boxShadow: "none" }}><Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1.25 }}><Box aria-hidden="true" sx={{ width: 20, height: 20, borderRadius: "50%", bgcolor: "#E08A72", color: "#1B1917", display: "grid", placeItems: "center" }}><AutoAwesomeIcon sx={{ fontSize: 12 }} /></Box><Typography id="insight-heading" component="h2" sx={{ fontFamily: serif, fontSize: 19, fontWeight: 500, color: "#FBF9F5" }}>AI Insight</Typography></Box><Typography sx={{ color: "#CFC7BC", fontSize: 13.5, lineHeight: 1.65, maxWidth: "52ch" }}>{detail.insight.message}</Typography><Typography sx={{ color: "#8F877D", fontSize: 11.5, lineHeight: 1.55, mt: 1.5 }}>Suggestion unavailable — this does not change student records.</Typography></Card>
+            <ClassInsightPanel availability={detail.insight} insight={insight} loading={insightLoading} error={insightError} onRetry={() => void refreshInsights()} />
             <Card component="section" aria-labelledby="worksheets-heading" variant="outlined" sx={{ ...card, p: { xs: 2, sm: 2.25 } }}><Typography id="worksheets-heading" component="h2" sx={{ fontFamily: serif, fontSize: 21, fontWeight: 500, mb: 1.5 }}>Worksheets</Typography>{detail.worksheets.length === 0 ? <EmptySection title="No worksheets assigned">Approved worksheets for this class will appear here.</EmptySection> : <Box sx={{ display: "grid", gap: 1.25 }}>{detail.worksheets.map((worksheet) => <WorksheetRow key={worksheet.id} worksheet={worksheet} />)}</Box>}<Box sx={{ mt: 1.5 }}><Button disabled aria-describedby="worksheet-generation-unavailable" startIcon={<AutoAwesomeIcon />} sx={{ minHeight: 40, borderRadius: "10px", bgcolor: "#EDE6DB", color: "#B5AA9C", textTransform: "none", fontWeight: 500, px: 1.75 }}>Generate Worksheet</Button><Typography id="worksheet-generation-unavailable" sx={{ color: "#8B837A", fontSize: 11.5, lineHeight: 1.55, mt: 0.8 }}>Worksheet generation is unavailable until the generation service is connected.</Typography></Box></Card>
           </Box>
         </Box>
