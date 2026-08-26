@@ -240,8 +240,8 @@ public class StudentService {
             .flatMap(record -> record.getHistory().stream().map(item -> historyItem(record, item)))
             .sorted(Comparator.comparing(StudentProfileResponse.HistoryItem::occurredAt,
                 Comparator.nullsLast(Comparator.reverseOrder()))
-                .thenComparing(StudentProfileResponse.HistoryItem::topicId)
-                .limit(50)
+                .thenComparing(StudentProfileResponse.HistoryItem::topicId))
+            .limit(50)
             .toList();
 
         List<StudentProfileResponse.WorksheetAssignmentSummary> worksheetAssignments = effectiveWorksheets(
@@ -312,6 +312,12 @@ public class StudentService {
     private StudentProfileResponse.TopicSummary topicSummary(MasteryRecord record) {
         return new StudentProfileResponse.TopicSummary(record.getSyllabusTopic().getId(),
             record.getSyllabusTopic().getName(), record.getScore(), record.getMasteryStatus());
+    }
+
+    private StudentProfileResponse.ReportMetadata reportMetadata(ProgressReport report) {
+        return new StudentProfileResponse.ReportMetadata(report.getId(), report.getReportCode(),
+            report.getReportStatus(), report.getPeriodStart(), report.getPeriodEnd(),
+            report.getGeneratedAt(), report.getFinalizedAt());
     }
 
     private StudentProfileResponse.HistoryItem historyItem(MasteryRecord record, MasteryHistory history) {

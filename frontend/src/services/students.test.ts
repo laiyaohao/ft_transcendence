@@ -2,12 +2,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   StudentApiError,
+  createTutorNote,
   createTutorStudent,
+  deleteTutorNote,
+  fetchTutorNotes,
   fetchTutorStudents,
   fetchTutorStudentProfile,
   parseTutorStudent,
   parseTutorStudentProfile,
   parseTutorStudents,
+  parseTutorNote,
+  parseTutorNotes,
+  updateTutorNote,
   updateTutorStudent,
 } from "./students";
 
@@ -22,6 +28,13 @@ const students = [{
 }];
 
 const mutation = { fullName: "Bella Tan", classIds: [12] };
+const notes = [{
+  id: 44,
+  studentId: 31,
+  content: "Check whether revision support helped.",
+  createdAt: "2026-09-02T10:00:00",
+  updatedAt: "2026-09-02T11:00:00",
+}];
 
 const profile = {
   id: 31,
@@ -146,5 +159,44 @@ describe("tutor student service", () => {
   it("preserves missing and cross-owner profile errors", async () => {
     vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ message: "Student profile was not found" }), { status: 404 }));
     await expect(fetchTutorStudentProfile(31)).rejects.toMatchObject({ status: 404, message: "Student profile was not found" });
+  });
+
+  it("lists and mutates tutor-only notes through owner-scoped endpoints", async () => {
+    localStorage.setItem("jwt_token", "stored-token");
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify(notes), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(notes[0]), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ...notes[0], content: "Updated follow-up" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    await expect(fetchTutorNotes(31)).resolves.toEqual(notes);
+    await expect(createTutorNote(31, { content: notes[0].content })).resolves.toEqual(notes[0]);
+    await expect(updateTutorNote(31, 44, { content: "Updated follow-up" })).resolves.toMatchObject({ content: "Updated follow-up" });
+    await expect(deleteTutorNote(31, 44)).resolves.toBeUndefined();
+    expect(fetch).toHaveBeenNthCalledWith(1, "http://localhost:8083/api/learning/tutor/students/31/notes", expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer stored-token" }) }));
+    expect(fetch).toHaveBeenNthCalledWith(2, "http://localhost:8083/api/learning/tutor/students/31/notes", expect.objectContaining({ method: "POST", body: JSON.stringify({ content: notes[0].content }) }));
+    expect(fetch).toHaveBeenNthCalledWith(3, "http://localhost:8083/api/learning/tutor/students/31/notes/44", expect.objectContaining({ method: "PUT" }));
+    expect(fetch).toHaveBeenNthCalledWith(4, "http://localhost:8083/api/learning/tutor/students/31/notes/44", expect.objectContaining({ method: "DELETE" }));
+  });
+
+  it("runtime-validates tutor note payloads and rejects invalid references before requesting", async () => {
+    expect(parseTutorNotes(notes)).toEqual(notes);
+    expect(parseTutorNote(notes[0])).toEqual(notes[0]);
+    expect(() => parseTutorNotes([{ ...notes[0], content: "" }])).toThrow("invalid tutor note list");
+    expect(() => parseTutorNote({ ...notes[0], updatedAt: null })).toThrow("invalid tutor note");
+    await expect(fetchTutorNotes(0)).rejects.toMatchObject({ status: 400 });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("preserves tutor-note validation and owner-scoped errors", async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
+      message: "Tutor note was not found",
+      fields: { content: "Note content is required" },
+    }), { status: 404, headers: { "content-type": "application/json" } }));
+    await expect(updateTutorNote(31, 44, { content: "follow up" })).rejects.toMatchObject({
+      status: 404,
+      message: "Tutor note was not found",
+      fields: { content: "Note content is required" },
+    });
   });
 });

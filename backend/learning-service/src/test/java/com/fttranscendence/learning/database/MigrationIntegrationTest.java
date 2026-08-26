@@ -44,6 +44,7 @@ class MigrationIntegrationTest {
         jdbcTemplate.update("DELETE FROM question_keywords");
         jdbcTemplate.update("DELETE FROM marking_components");
         jdbcTemplate.update("DELETE FROM questions");
+        jdbcTemplate.update("DELETE FROM tutor_notes");
         jdbcTemplate.update("DELETE FROM class_memberships");
         jdbcTemplate.update("DELETE FROM student_profiles");
         jdbcTemplate.update("DELETE FROM tutor_classes");
@@ -74,8 +75,9 @@ class MigrationIntegrationTest {
         assertEquals(1, tableCount("class_insight_feedback"));
         assertEquals(1, tableCount("class_insight_ranking_overrides"));
         assertEquals(1, tableCount("class_insight_refresh_queue"));
-        assertEquals("11", flyway.info().current().getVersion().getVersion());
-        assertEquals(11, versionedMigrationCount());
+        assertEquals(1, tableCount("tutor_notes"));
+        assertEquals("12", flyway.info().current().getVersion().getVersion());
+        assertEquals(12, versionedMigrationCount());
 
         long appliedBefore = versionedMigrationCount();
         flyway.migrate();

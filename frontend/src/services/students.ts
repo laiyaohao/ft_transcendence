@@ -113,6 +113,18 @@ export interface TutorStudentProfile {
   tutorOnly: TutorOnlyStudentProfile | null;
 }
 
+export interface TutorNote {
+  id: number;
+  studentId: number;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TutorNoteMutationRequest {
+  content: string;
+}
+
 export class StudentApiError extends Error {
   readonly status: number;
   readonly fields: Record<string, string>;
@@ -307,6 +319,16 @@ function isTutorStudentProfile(value: unknown): value is TutorStudentProfile {
     && (candidate.tutorOnly === null || isTutorOnlyStudentProfile(candidate.tutorOnly));
 }
 
+function isTutorNote(value: unknown): value is TutorNote {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return isPositiveNumber(candidate.id)
+    && isPositiveNumber(candidate.studentId)
+    && isNonEmptyString(candidate.content)
+    && isDateTime(candidate.createdAt)
+    && isDateTime(candidate.updatedAt);
+}
+
 export function parseTutorStudent(payload: unknown): TutorStudent {
   if (!isTutorStudent(payload)) {
     throw new Error("The learning service returned an invalid student. Please try again.");
@@ -324,6 +346,20 @@ export function parseTutorStudents(payload: unknown): TutorStudent[] {
 export function parseTutorStudentProfile(payload: unknown): TutorStudentProfile {
   if (!isTutorStudentProfile(payload)) {
     throw new Error("The learning service returned an invalid student profile. Please try again.");
+  }
+  return payload;
+}
+
+export function parseTutorNote(payload: unknown): TutorNote {
+  if (!isTutorNote(payload)) {
+    throw new Error("The learning service returned an invalid tutor note. Please try again.");
+  }
+  return payload;
+}
+
+export function parseTutorNotes(payload: unknown): TutorNote[] {
+  if (!Array.isArray(payload) || !payload.every(isTutorNote)) {
+    throw new Error("The learning service returned an invalid tutor note list. Please try again.");
   }
   return payload;
 }
@@ -382,6 +418,50 @@ export async function fetchTutorStudentProfile(studentId: number): Promise<Tutor
   const response = await fetch(`${LEARNING_API_URL}${STUDENT_LIST_PATH}/${studentId}/profile`, { headers: authHeaders() });
   if (!response.ok) throw await responseError(response);
   return parseTutorStudentProfile(await response.json());
+}
+
+function notePath(studentId: number, noteId?: number) {
+  if (!Number.isSafeInteger(studentId) || studentId <= 0 || (noteId !== undefined && (!Number.isSafeInteger(noteId) || noteId <= 0))) {
+    throw new StudentApiError("The student or note reference is invalid.", 400);
+  }
+  return `${STUDENT_LIST_PATH}/${studentId}/notes${noteId === undefined ? "" : `/${noteId}`}`;
+}
+
+export async function fetchTutorNotes(studentId: number): Promise<TutorNote[]> {
+  const response = await fetch(`${LEARNING_API_URL}${notePath(studentId)}`, { headers: authHeaders() });
+  if (!response.ok) throw await responseError(response);
+  return parseTutorNotes(await response.json());
+}
+
+async function mutateTutorNote(
+  studentId: number,
+  noteId: number | undefined,
+  method: "POST" | "PUT",
+  request: TutorNoteMutationRequest,
+): Promise<TutorNote> {
+  const response = await fetch(`${LEARNING_API_URL}${notePath(studentId, noteId)}`, {
+    method,
+    headers: authHeaders(true),
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) throw await responseError(response);
+  return parseTutorNote(await response.json());
+}
+
+export function createTutorNote(studentId: number, request: TutorNoteMutationRequest): Promise<TutorNote> {
+  return mutateTutorNote(studentId, undefined, "POST", request);
+}
+
+export function updateTutorNote(studentId: number, noteId: number, request: TutorNoteMutationRequest): Promise<TutorNote> {
+  return mutateTutorNote(studentId, noteId, "PUT", request);
+}
+
+export async function deleteTutorNote(studentId: number, noteId: number): Promise<void> {
+  const response = await fetch(`${LEARNING_API_URL}${notePath(studentId, noteId)}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw await responseError(response);
 }
 
 async function mutateTutorStudent(

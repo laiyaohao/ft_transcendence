@@ -13,6 +13,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -32,9 +33,11 @@ import java.util.Map;
 public class StudentController {
 
     private final StudentService studentService;
+    private final TutorNoteService tutorNoteService;
 
-    public StudentController(StudentService studentService) {
+    public StudentController(StudentService studentService, TutorNoteService tutorNoteService) {
         this.studentService = studentService;
+        this.tutorNoteService = tutorNoteService;
     }
 
     @GetMapping("/api/learning/tutor/students")
@@ -83,6 +86,43 @@ public class StudentController {
         return studentService.getLinkedStudentProfile(user.userId());
     }
 
+    @GetMapping("/api/learning/tutor/students/{studentId}/notes")
+    public List<TutorNoteRequest.Response> listNotes(
+        @AuthenticationPrincipal AuthenticatedUser user,
+        @PathVariable @Positive long studentId
+    ) {
+        return tutorNoteService.list(user.userId(), studentId);
+    }
+
+    @PostMapping(value = "/api/learning/tutor/students/{studentId}/notes", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<TutorNoteRequest.Response> createNote(
+        @AuthenticationPrincipal AuthenticatedUser user,
+        @PathVariable @Positive long studentId,
+        @Valid @RequestBody TutorNoteRequest request
+    ) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(tutorNoteService.create(user.userId(), studentId, request));
+    }
+
+    @PutMapping(value = "/api/learning/tutor/students/{studentId}/notes/{noteId}", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public TutorNoteRequest.Response updateNote(
+        @AuthenticationPrincipal AuthenticatedUser user,
+        @PathVariable @Positive long studentId,
+        @PathVariable @Positive long noteId,
+        @Valid @RequestBody TutorNoteRequest request
+    ) {
+        return tutorNoteService.update(user.userId(), studentId, noteId, request);
+    }
+
+    @DeleteMapping("/api/learning/tutor/students/{studentId}/notes/{noteId}")
+    public ResponseEntity<Void> deleteNote(
+        @AuthenticationPrincipal AuthenticatedUser user,
+        @PathVariable @Positive long studentId,
+        @PathVariable @Positive long noteId
+    ) {
+        tutorNoteService.delete(user.userId(), studentId, noteId);
+        return ResponseEntity.noContent().build();
+    }
+
     @ExceptionHandler(StudentService.StudentNotFoundException.class)
     ResponseEntity<ClassController.ApiError> studentNotFound(StudentService.StudentNotFoundException error) {
         return error(HttpStatus.NOT_FOUND, "STUDENT_NOT_FOUND", error.getMessage(), Map.of());
@@ -91,6 +131,11 @@ public class StudentController {
     @ExceptionHandler(StudentService.ProfileNotFoundException.class)
     ResponseEntity<ClassController.ApiError> profileNotFound(StudentService.ProfileNotFoundException error) {
         return error(HttpStatus.NOT_FOUND, "STUDENT_PROFILE_NOT_FOUND", "Student profile was not found", Map.of());
+    }
+
+    @ExceptionHandler(TutorNoteService.TutorNoteNotFoundException.class)
+    ResponseEntity<ClassController.ApiError> tutorNoteNotFound(TutorNoteService.TutorNoteNotFoundException error) {
+        return error(HttpStatus.NOT_FOUND, "TUTOR_NOTE_NOT_FOUND", "Tutor note was not found", Map.of());
     }
 
     @ExceptionHandler(StudentService.ClassNotFoundException.class)
@@ -126,6 +171,12 @@ public class StudentController {
     ResponseEntity<ClassController.ApiError> persistence(Exception error) {
         return error(HttpStatus.SERVICE_UNAVAILABLE, "STUDENT_DATABASE_UNAVAILABLE",
             "Student data is temporarily unavailable", Map.of());
+    }
+
+    @ExceptionHandler(TutorNoteService.TutorNotePersistenceException.class)
+    ResponseEntity<ClassController.ApiError> tutorNotePersistence(TutorNoteService.TutorNotePersistenceException error) {
+        return error(HttpStatus.SERVICE_UNAVAILABLE, "TUTOR_NOTE_DATABASE_UNAVAILABLE",
+            "Tutor notes are temporarily unavailable", Map.of());
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)

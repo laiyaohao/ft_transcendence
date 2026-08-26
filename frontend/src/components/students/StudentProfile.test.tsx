@@ -46,4 +46,10 @@ describe("StudentProfile", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Student profile was not found");
     expect(screen.getByRole("button", { name: "Retry loading profile" })).toBeVisible();
   });
+
+  it("does not render or request private notes for a student-facing profile shape", async () => {
+    render(<StudentProfile studentId={31} loadProfile={async () => ({ ...profile, tutorOnly: null })} />);
+    await screen.findByRole("heading", { name: "Bella Tan" });
+    expect(screen.queryByRole("heading", { name: "Private tutor notes" })).not.toBeInTheDocument();
+  });
 });
