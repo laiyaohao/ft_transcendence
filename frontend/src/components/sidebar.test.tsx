@@ -82,6 +82,10 @@ describe('Sidebar', () => {
     const navigation = screen.getByRole('navigation', { name: 'Desktop navigation', hidden: true });
 
     await waitFor(() => {
+      expect(within(navigation).getByRole('link', { name: 'Dashboard', hidden: true })).toHaveAttribute(
+        'href',
+        '/tutor/dashboard',
+      );
       expect(within(navigation).getByRole('link', { name: 'Classes', hidden: true })).toHaveAttribute(
         'href',
         '/classes',

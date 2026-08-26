@@ -19,7 +19,7 @@ interface TokenClaims {
   exp?: unknown;
 }
 
-const TUTOR_PATHS = ['/classes', '/students', '/upload', '/profile'];
+const TUTOR_PATHS = ['/tutor/dashboard', '/classes', '/students', '/upload', '/profile'];
 const STUDENT_PATHS = [
   '/',
   '/worksheets',
@@ -65,7 +65,7 @@ export function parseAuthToken(token: string, nowMs = Date.now()): AuthSession |
 }
 
 export function getRoleHome(role: AuthRole): string {
-  return role === 'TUTOR' ? '/classes' : '/';
+  return role === 'TUTOR' ? '/tutor/dashboard' : '/';
 }
 
 export function isPathAllowed(role: AuthRole, pathname: string): boolean {

@@ -11,6 +11,7 @@ describe('role-aware navigation configuration', () => {
     const items = getNavigationItems('TUTOR');
 
     expect(items.map(({ title, href }) => ({ title, href }))).toEqual([
+      { title: 'Dashboard', href: '/tutor/dashboard' },
       { title: 'Classes', href: '/classes' },
       { title: 'Students', href: '/students' },
       { title: 'Upload', href: '/upload' },
@@ -46,5 +47,13 @@ describe('role-aware navigation configuration', () => {
     expect(isNavigationItemSelected(worksheets, '/worksheets')).toBe(true);
     expect(isNavigationItemSelected(worksheets, '/worksheets/42')).toBe(true);
     expect(isNavigationItemSelected(worksheets, '/progress')).toBe(false);
+  });
+
+  it('keeps the Tutor dashboard active for its nested routes', () => {
+    const dashboard = getNavigationItems('TUTOR')[0];
+
+    expect(isNavigationItemSelected(dashboard, '/tutor/dashboard')).toBe(true);
+    expect(isNavigationItemSelected(dashboard, '/tutor/dashboard/today')).toBe(true);
+    expect(isNavigationItemSelected(dashboard, '/classes')).toBe(false);
   });
 });

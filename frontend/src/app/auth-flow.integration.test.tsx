@@ -65,7 +65,7 @@ describe("authentication form integration", () => {
     );
     expect(localStorage.getItem("jwt_token")).toBe(token);
     expect(document.cookie).toContain(`auth_token=${token}`);
-    expect(navigation.replace).toHaveBeenCalledWith("/classes");
+    expect(navigation.replace).toHaveBeenCalledWith("/tutor/dashboard");
   });
 
   it("renders a backend login rejection without creating a session", async () => {

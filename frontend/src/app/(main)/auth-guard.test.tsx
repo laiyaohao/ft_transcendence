@@ -28,6 +28,15 @@ function studentSession() {
   };
 }
 
+function tutorSession() {
+  return {
+    token: 'token',
+    email: 'tutor@example.com',
+    role: 'TUTOR' as const,
+    expiresAt: Date.now() + 60_000,
+  };
+}
+
 describe('AuthGuard', () => {
   beforeEach(() => {
     testState.pathname = '/progress';
@@ -53,6 +62,16 @@ describe('AuthGuard', () => {
     expect(await screen.findByText(/session is missing or has expired/i)).toBeVisible();
     await waitFor(() => expect(testState.replace).toHaveBeenCalledWith('/login'));
     expect(screen.queryByText('Protected progress')).not.toBeInTheDocument();
+  });
+
+  it('authorizes the Tutor dashboard for a Tutor', async () => {
+    testState.pathname = '/tutor/dashboard';
+    testState.getBrowserSession.mockReturnValue(tutorSession());
+
+    render(<AuthGuard><div>Tutor dashboard</div></AuthGuard>);
+
+    expect(await screen.findByText('Tutor dashboard')).toBeVisible();
+    expect(testState.replace).not.toHaveBeenCalled();
   });
 
   it('shows an unauthorized state and redirects cross-role navigation', async () => {

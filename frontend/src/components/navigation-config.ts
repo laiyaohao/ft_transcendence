@@ -1,5 +1,6 @@
 import type { SvgIconComponent } from '@mui/icons-material';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
+import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
 import FileUploadOutlinedIcon from '@mui/icons-material/FileUploadOutlined';
 import GroupsOutlinedIcon from '@mui/icons-material/GroupsOutlined';
 import HomeOutlinedIcon from '@mui/icons-material/HomeOutlined';
@@ -20,6 +21,7 @@ export interface NavigationItem {
 }
 
 const TUTOR_NAVIGATION: readonly NavigationItem[] = [
+  { id: 'dashboard', title: 'Dashboard', href: '/tutor/dashboard', icon: DashboardOutlinedIcon },
   { id: 'classes', title: 'Classes', href: '/classes', icon: SchoolOutlinedIcon },
   { id: 'students', title: 'Students', href: '/students', icon: GroupsOutlinedIcon },
   { id: 'upload', title: 'Upload', href: '/upload', icon: FileUploadOutlinedIcon },

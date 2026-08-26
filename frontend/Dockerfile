@@ -12,6 +12,8 @@ COPY . .
 
 ARG NEXT_PUBLIC_API_URL=http://localhost:8081
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+ARG NEXT_PUBLIC_LEARNING_API_URL=http://localhost:8083
+ENV NEXT_PUBLIC_LEARNING_API_URL=${NEXT_PUBLIC_LEARNING_API_URL}
 
 # Build the Next.js application, which will generate the .next/standalone output
 RUN npm run build
