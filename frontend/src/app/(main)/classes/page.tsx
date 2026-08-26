@@ -1,7 +1,9 @@
 "use client";
 
 import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
 import Typography from "@mui/material/Typography";
+import Link from "next/link";
 
 import ClassList from "@/components/classes/ClassList";
 
@@ -15,9 +17,12 @@ export default function ClassesPage() {
         <Typography component="h1" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: { xs: 32, sm: 38 }, fontWeight: 500, lineHeight: 1.1, letterSpacing: "-.02em", textWrap: "pretty", mb: 1 }}>
           My Classes
         </Typography>
-        <Typography sx={{ color: "#6F675E", fontSize: 14, lineHeight: 1.6, mb: 3 }}>
-          Find a teaching group, check its schedule, and open its summary.
-        </Typography>
+        <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "flex-end", justifyContent: "space-between", gap: 2, mb: 3 }}>
+          <Typography sx={{ color: "#6F675E", fontSize: 14, lineHeight: 1.6, maxWidth: "52ch" }}>
+            Find a teaching group, check its schedule, and open its summary.
+          </Typography>
+          <Button component={Link} href="/classes/new" sx={{ minHeight: 42, borderRadius: "10px", bgcolor: "#9E3A24", color: "#FBF9F5", textTransform: "none", fontWeight: 500, px: 2.25, boxShadow: "0 1px 2px rgba(42,38,34,.12)", "&:hover": { bgcolor: "#8A3120" } }}>Create class</Button>
+        </Box>
         <ClassList />
       </Box>
     </Box>

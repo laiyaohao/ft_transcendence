@@ -56,10 +56,8 @@ function ClassCard({ item }: { item: TutorClass }) {
 
   return (
     <Card
-      component={Link}
-      href={`/classes/${item.id}`}
+      component="article"
       variant="outlined"
-      aria-label={`Open ${item.className}`}
       sx={{
         p: { xs: 2.25, sm: 2.5 },
         borderRadius: "14px",
@@ -67,7 +65,6 @@ function ClassCard({ item }: { item: TutorClass }) {
         borderColor: "#EBE4D9",
         color: "#2A2622",
         boxShadow: "none",
-        textDecoration: "none",
         display: "flex",
         flexDirection: "column",
         gap: 1.5,
@@ -92,9 +89,9 @@ function ClassCard({ item }: { item: TutorClass }) {
           {schedule}
         </Typography>
       </Box>
-      <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", mt: "auto", color: "#B4573F" }}>
-        <Typography sx={{ fontSize: 12.5, fontWeight: 600 }}>Open class summary</Typography>
-        <ArrowForwardIcon aria-hidden="true" sx={{ fontSize: 17 }} />
+      <Stack direction="row" sx={{ flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 1, mt: "auto" }}>
+        <Button component={Link} href={`/classes/${item.id}`} aria-label={`Open ${item.className}`} endIcon={<ArrowForwardIcon aria-hidden="true" sx={{ fontSize: 17 }} />} sx={{ minHeight: 34, color: "#B4573F", textTransform: "none", fontSize: 12.5, fontWeight: 600, px: 0.5, "&:hover": { bgcolor: "#FDF6F3" } }}>Open class summary</Button>
+        <Button component={Link} href={`/classes/${item.id}/edit`} aria-label={`Edit ${item.className}`} sx={{ minHeight: 34, border: "1px solid #E4DCD0", borderRadius: "9px", color: "#2A2622", bgcolor: "#FFFDFA", textTransform: "none", fontSize: 12.5, fontWeight: 500, px: 1.25, "&:hover": { bgcolor: "#F4EFE6", borderColor: "#DCCFBE" } }}>Edit class</Button>
       </Stack>
     </Card>
   );
