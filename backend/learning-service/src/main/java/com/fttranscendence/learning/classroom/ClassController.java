@@ -42,6 +42,14 @@ public class ClassController {
         return classService.listOwnedClasses(user.userId());
     }
 
+    @GetMapping("/{classId}")
+    public ClassDetailResponse detail(
+        @AuthenticationPrincipal AuthenticatedUser user,
+        @PathVariable @Positive long classId
+    ) {
+        return classService.getOwnedClassDetail(user.userId(), classId);
+    }
+
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<ClassRequest.ClassResponse> create(
         @AuthenticationPrincipal AuthenticatedUser user,

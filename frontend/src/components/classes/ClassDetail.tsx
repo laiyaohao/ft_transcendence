@@ -1,0 +1,116 @@
+"use client";
+
+import * as React from "react";
+import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
+import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import GroupsOutlinedIcon from "@mui/icons-material/GroupsOutlined";
+import MenuBookOutlinedIcon from "@mui/icons-material/MenuBookOutlined";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Card from "@mui/material/Card";
+import Chip from "@mui/material/Chip";
+import LinearProgress from "@mui/material/LinearProgress";
+import Skeleton from "@mui/material/Skeleton";
+import Typography from "@mui/material/Typography";
+import Link from "next/link";
+
+import { fetchTutorClassDetail, type ClassWorksheet, type TutorClassDetail } from "@/services/classes";
+
+export interface ClassDetailProps {
+  classId: number;
+  loadClass?: (classId: number) => Promise<TutorClassDetail>;
+}
+
+const serif = "'Playfair Display', Georgia, serif";
+const card = { borderRadius: "14px", bgcolor: "#FFFDFA", borderColor: "#EBE4D9", boxShadow: "none" } as const;
+const secondaryButton = { minHeight: 40, borderColor: "#E4DCD0", bgcolor: "#FFFDFA", color: "#2A2622", textTransform: "none", fontWeight: 500, borderRadius: "10px", px: 1.8, "&:hover": { bgcolor: "#F4EFE6", borderColor: "#DCCFBE" } } as const;
+const worksheetStatus = {
+  DRAFT: { label: "GENERATED", bg: "#F0EAE0", color: "#6F675E" },
+  APPROVED: { label: "ASSIGNED", bg: "#F3EBDD", color: "#7A6238" },
+  ARCHIVED: { label: "ARCHIVED", bg: "#F0EAE0", color: "#6F675E" },
+} as const;
+
+function percent(value: number | null) {
+  return value === null ? "—" : `${Math.round(value)}%`;
+}
+
+function barColor(value: number) {
+  return value < 55 ? "#B4573F" : value < 72 ? "#D8B384" : "#93A896";
+}
+
+function ClassDetailSkeleton() {
+  return <Box data-testid="class-detail-skeleton" aria-label="Loading class details" sx={{ display: "grid", gap: 2 }}>
+    <Skeleton variant="text" width="38%" height={52} sx={{ bgcolor: "#F0EAE0" }} />
+    <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(168px, 1fr))", gap: 1.75 }}>{[0, 1, 2].map((item) => <Skeleton key={item} variant="rounded" height={116} sx={{ borderRadius: "14px", bgcolor: "#F0EAE0" }} />)}</Box>
+    <Skeleton variant="rounded" height={250} sx={{ borderRadius: "14px", bgcolor: "#F0EAE0" }} />
+  </Box>;
+}
+
+function EmptySection({ title, children }: { title: string; children: React.ReactNode }) {
+  return <Box sx={{ border: "1px dashed #DCCFBE", borderRadius: "12px", p: 2, textAlign: "center", bgcolor: "#FFFDFA" }}>
+    <Typography sx={{ fontSize: 13.5, fontWeight: 600, mb: 0.5 }}>{title}</Typography>
+    <Typography sx={{ color: "#8B837A", fontSize: 12.5, lineHeight: 1.6 }}>{children}</Typography>
+  </Box>;
+}
+
+function WorksheetRow({ worksheet }: { worksheet: ClassWorksheet }) {
+  const status = worksheetStatus[worksheet.status];
+  return <Box sx={{ border: "1px solid #EBE4D9", borderLeft: `3px solid ${worksheet.status === "APPROVED" ? "#93A896" : "#D8B384"}`, borderRadius: "12px", bgcolor: "#FFFDFA", p: "14px 16px", display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.25 }}>
+    <Box sx={{ minWidth: 0, flex: "1 1 210px" }}><Typography sx={{ fontSize: 13.5, fontWeight: 600, lineHeight: 1.35 }}>{worksheet.title}</Typography><Typography sx={{ color: "#8B837A", fontSize: 11.5, mt: 0.6 }}>{worksheet.dueAt ? `Due ${new Date(worksheet.dueAt).toLocaleDateString()}` : "No due date"}</Typography></Box>
+    <Chip label={status.label} size="small" sx={{ height: 24, bgcolor: status.bg, color: status.color, fontSize: 9.5, fontWeight: 700, letterSpacing: ".05em" }} />
+    <Button component={Link} href={`/worksheets/${worksheet.id}`} variant="outlined" sx={{ ...secondaryButton, minHeight: 34, py: 0, fontSize: 12.5 }}>View worksheet</Button>
+  </Box>;
+}
+
+export default function ClassDetail({ classId, loadClass = fetchTutorClassDetail }: ClassDetailProps) {
+  const [detail, setDetail] = React.useState<TutorClassDetail | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  const validClassId = Number.isSafeInteger(classId) && classId > 0;
+  const load = React.useCallback(async () => {
+    if (!validClassId) return;
+    setDetail(null); setError(null);
+    try { setDetail(await loadClass(classId)); } catch (reason) { setError(reason instanceof Error ? reason.message : "Class details could not be loaded. Please try again."); }
+  }, [classId, loadClass, validClassId]);
+
+  React.useEffect(() => {
+    let current = true;
+    if (!validClassId) return () => { current = false; };
+    const requestDetail = async () => {
+      try {
+        const loaded = await loadClass(classId);
+        if (current) setDetail(loaded);
+      } catch (reason) {
+        if (current) setError(reason instanceof Error ? reason.message : "Class details could not be loaded. Please try again.");
+      }
+    };
+    void requestDetail();
+    return () => { current = false; };
+  }, [classId, loadClass, validClassId]);
+
+  const heading = detail?.className ?? "Class details";
+  return <Box sx={{ minHeight: "100vh", bgcolor: "#F7F4EF", px: { xs: 2.5, sm: 3.75 }, py: 3.75, color: "#2A2622" }}>
+    <Box sx={{ maxWidth: 1420, mx: "auto", animation: "fadeUp .35s ease both" }}>
+      <Box component={Link} href="/classes" sx={{ display: "inline-flex", alignItems: "center", gap: 0.9, color: "#A09488", fontSize: 10.5, fontWeight: 600, letterSpacing: ".13em", textDecoration: "none", mb: 2.5, "&:hover": { color: "#B4573F" }, "&:focus-visible": { outline: "3px solid #E08A72", outlineOffset: 3, borderRadius: 1 } }}><ArrowBackIcon aria-hidden="true" sx={{ fontSize: 14 }} />ALL CLASSES</Box>
+      {!validClassId ? <Card component="section" role="alert" variant="outlined" sx={{ ...card, maxWidth: 620, p: 3, borderLeft: "3px solid #B4573F" }}><Typography component="h1" sx={{ fontFamily: serif, fontSize: 24, fontWeight: 500, mb: 0.75 }}>Class cannot be opened</Typography><Typography sx={{ color: "#5A544C", fontSize: 13.5, lineHeight: 1.6 }}>This class reference is invalid. Return to your classes and choose a class to open.</Typography></Card> : error ? <Card component="section" role="alert" variant="outlined" sx={{ ...card, maxWidth: 620, p: 3, borderLeft: "3px solid #B4573F" }}><Typography component="h1" sx={{ fontFamily: serif, fontSize: 24, fontWeight: 500, mb: 0.75 }}>Class details could not be loaded</Typography><Typography sx={{ color: "#5A544C", fontSize: 13.5, lineHeight: 1.6, mb: 2 }}>{error}</Typography><Button onClick={() => void load()} variant="outlined" sx={secondaryButton}>Retry loading class</Button></Card> : !detail ? <ClassDetailSkeleton /> : <>
+        <Box sx={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "flex-end", gap: 2, mb: 3 }}>
+          <Box><Typography sx={{ color: "#A09488", fontSize: 10.5, fontWeight: 600, letterSpacing: ".13em", mb: 0.75 }}>CLASS SUMMARY</Typography><Typography component="h1" sx={{ fontFamily: serif, fontSize: { xs: 32, sm: 38 }, fontWeight: 500, lineHeight: 1.1, letterSpacing: "-.02em", textWrap: "pretty" }}>{heading}</Typography><Typography sx={{ color: "#6F675E", fontSize: 14, mt: 0.8 }}>{detail.level} · {detail.subject} · {detail.status.toLowerCase()}</Typography></Box>
+          <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}><Button component={Link} href={`/classes/${detail.id}/edit`} startIcon={<EditOutlinedIcon />} variant="outlined" sx={secondaryButton}>Edit class</Button><Button component={Link} href={`/students?classId=${detail.id}`} startIcon={<GroupsOutlinedIcon />} variant="outlined" sx={secondaryButton}>View students</Button><Button component={Link} href={`/worksheets?classId=${detail.id}`} startIcon={<MenuBookOutlinedIcon />} variant="outlined" sx={secondaryButton}>View worksheets</Button></Box>
+        </Box>
+        <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(168px, 1fr))", gap: 1.75, mb: 2.5 }}>
+          {[{ label: "STUDENTS", value: detail.students.length }, { label: "CLASS MASTERY", value: percent(detail.mastery.averageScore) }, { label: "MASTERY RECORDS", value: detail.mastery.recordCount }].map((metric) => <Card key={metric.label} variant="outlined" sx={{ ...card, p: 2.25 }}><Typography sx={{ color: "#A09488", fontSize: 10.5, fontWeight: 600, letterSpacing: ".09em" }}>{metric.label}</Typography><Typography sx={{ fontFamily: serif, fontSize: 32, fontWeight: 500, mt: 0.5, fontVariantNumeric: "tabular-nums" }}>{metric.value}</Typography></Card>)}
+        </Box>
+        <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2.5, alignItems: "flex-start" }}>
+          <Box sx={{ flex: "1 1 520px", minWidth: 0, display: "grid", gap: 2.5 }}>
+            <Card component="section" aria-labelledby="students-heading" variant="outlined" sx={{ ...card, overflow: "hidden" }}><Typography id="students-heading" component="h2" sx={{ p: "18px 22px", borderBottom: "1px solid #EFE8DE", fontFamily: serif, fontSize: 21, fontWeight: 500 }}>Students</Typography>{detail.students.length === 0 ? <Box sx={{ p: 2.25 }}><EmptySection title="No students in this class">Add or assign students to see their class mastery here.</EmptySection></Box> : <Box>{detail.students.slice(0, 5).map((student, index) => <Box key={student.id} sx={{ display: "flex", alignItems: "center", gap: 1.25, p: "13px 22px", borderBottom: index === Math.min(detail.students.length, 5) - 1 ? "none" : "1px solid #F3EDE4" }}><Box aria-hidden="true" sx={{ width: 30, height: 30, borderRadius: "50%", bgcolor: ["#D8B384", "#C6D0C4", "#E3C3B4", "#CFC0D6", "#D9CBA8"][index % 5], color: "#3A332C", display: "grid", placeItems: "center", fontSize: 11, fontWeight: 700, flex: "0 0 auto" }}>{student.fullName.split(/\s+/).map((part) => part[0]).slice(0, 2).join("")}</Box><Box sx={{ minWidth: 0, flex: 1 }}><Typography sx={{ fontSize: 13.5, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{student.fullName}</Typography><Typography sx={{ color: "#8B837A", fontSize: 11.5 }}>{student.masteryRecordCount} mastery {student.masteryRecordCount === 1 ? "record" : "records"}</Typography></Box><Typography sx={{ color: "#4A443D", fontSize: 13, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{percent(student.overallMastery)}</Typography></Box>)}{detail.students.length > 5 && <Button component={Link} href={`/students?classId=${detail.id}`} sx={{ minHeight: 40, ml: 1.75, mb: 1, color: "#B4573F", textTransform: "none", fontSize: 12.5, fontWeight: 600 }}>View all {detail.students.length} students</Button>}</Box>}</Card>
+            <Card component="section" aria-labelledby="weak-areas-heading" variant="outlined" sx={{ ...card, p: { xs: 2, sm: 2.5 } }}><Typography id="weak-areas-heading" component="h2" sx={{ fontFamily: serif, fontSize: 21, fontWeight: 500, mb: 1.5 }}>Weak areas</Typography>{detail.weakAreas.length === 0 ? <EmptySection title="No weak areas identified">Mastery results will surface focus topics when enough class data is available.</EmptySection> : <Box sx={{ display: "grid", gap: 1.25 }}>{detail.weakAreas.map((area) => <Box key={area.topicId} sx={{ border: "1px solid #F0DCD4", bgcolor: "#FDF6F3", borderRadius: "10px", p: "13px 16px", display: "flex", alignItems: "center", gap: 1.75 }}><Typography sx={{ width: 44, flex: "0 0 auto", color: "#9E3A24", fontSize: 14, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{percent(area.averageScore)}</Typography><Box sx={{ flex: 1, minWidth: 0 }}><Typography sx={{ fontSize: 13, fontWeight: 500 }}>{area.topicName}</Typography><LinearProgress aria-label={`${area.topicName} average mastery ${percent(area.averageScore)}`} variant="determinate" value={area.averageScore} sx={{ height: 5, borderRadius: 20, bgcolor: "#F0EAE0", mt: 0.9, ".MuiLinearProgress-bar": { bgcolor: barColor(area.averageScore), borderRadius: 20 } }} /></Box><Chip label={`${area.affectedStudentCount} AFFECTED`} size="small" sx={{ height: 22, bgcolor: "#F1D9D1", color: "#9E3A24", fontSize: 9.5, fontWeight: 700, letterSpacing: ".05em" }} /></Box>)}</Box>}</Card>
+          </Box>
+          <Box sx={{ flex: "0 1 330px", minWidth: 0, display: "grid", gap: 2.5 }}>
+            <Card component="section" aria-labelledby="insight-heading" sx={{ borderRadius: "14px", bgcolor: "#1B1917", color: "#E8E2D9", p: { xs: 2.25, sm: 2.75 }, boxShadow: "none" }}><Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1.25 }}><Box aria-hidden="true" sx={{ width: 20, height: 20, borderRadius: "50%", bgcolor: "#E08A72", color: "#1B1917", display: "grid", placeItems: "center" }}><AutoAwesomeIcon sx={{ fontSize: 12 }} /></Box><Typography id="insight-heading" component="h2" sx={{ fontFamily: serif, fontSize: 19, fontWeight: 500, color: "#FBF9F5" }}>AI Insight</Typography></Box><Typography sx={{ color: "#CFC7BC", fontSize: 13.5, lineHeight: 1.65, maxWidth: "52ch" }}>{detail.insight.message}</Typography><Typography sx={{ color: "#8F877D", fontSize: 11.5, lineHeight: 1.55, mt: 1.5 }}>Suggestion unavailable — this does not change student records.</Typography></Card>
+            <Card component="section" aria-labelledby="worksheets-heading" variant="outlined" sx={{ ...card, p: { xs: 2, sm: 2.25 } }}><Typography id="worksheets-heading" component="h2" sx={{ fontFamily: serif, fontSize: 21, fontWeight: 500, mb: 1.5 }}>Worksheets</Typography>{detail.worksheets.length === 0 ? <EmptySection title="No worksheets assigned">Approved worksheets for this class will appear here.</EmptySection> : <Box sx={{ display: "grid", gap: 1.25 }}>{detail.worksheets.map((worksheet) => <WorksheetRow key={worksheet.id} worksheet={worksheet} />)}</Box>}<Box sx={{ mt: 1.5 }}><Button disabled aria-describedby="worksheet-generation-unavailable" startIcon={<AutoAwesomeIcon />} sx={{ minHeight: 40, borderRadius: "10px", bgcolor: "#EDE6DB", color: "#B5AA9C", textTransform: "none", fontWeight: 500, px: 1.75 }}>Generate Worksheet</Button><Typography id="worksheet-generation-unavailable" sx={{ color: "#8B837A", fontSize: 11.5, lineHeight: 1.55, mt: 0.8 }}>Worksheet generation is unavailable until the generation service is connected.</Typography></Box></Card>
+          </Box>
+        </Box>
+      </>}
+    </Box>
+  </Box>;
+}

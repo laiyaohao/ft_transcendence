@@ -1,6 +1,8 @@
 package com.fttranscendence.learning.student;
 
 import org.springframework.data.repository.Repository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
@@ -15,6 +17,19 @@ public interface StudentProfileRepository extends Repository<StudentProfile, Lon
 
     List<StudentProfile> findAllByTutorIdOrderByFullNameAsc(Long tutorId);
 
+    @Query("""
+        select distinct profile
+        from StudentProfile profile
+        join profile.memberships membership
+        where profile.tutorId = :tutorId
+          and membership.tutorId = :tutorId
+          and membership.classId = :classId
+        order by profile.fullName asc, profile.id asc
+        """)
+    List<StudentProfile> findAllByTutorIdAndClassIdOrderByFullNameAsc(
+        @Param("tutorId") Long tutorId,
+        @Param("classId") Long classId
+    );
+
     boolean existsByLoginUserId(Long loginUserId);
 }
-

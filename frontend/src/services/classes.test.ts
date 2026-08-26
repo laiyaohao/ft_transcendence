@@ -3,8 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ClassApiError,
   createTutorClass,
+  fetchTutorClassDetail,
   fetchTutorClasses,
   parseTutorClass,
+  parseTutorClassDetail,
   parseTutorClasses,
   updateTutorClass,
 } from "./classes";
@@ -25,6 +27,15 @@ const mutation = {
   level: "Primary 5",
   status: "ACTIVE" as const,
   schedules: [{ dayOfWeek: "MONDAY" as const, startTime: "16:00", endTime: "17:30" }],
+};
+
+const detail = {
+  ...classes[0],
+  students: [{ id: 80, fullName: "Bella Tan", overallMastery: 68, masteryRecordCount: 4 }],
+  mastery: { averageScore: 68, recordCount: 4, studentsWithMastery: 1 },
+  weakAreas: [{ topicId: 41, topicName: "Adaptation", averageScore: 45, affectedStudentCount: 1 }],
+  insight: { status: "UNAVAILABLE" as const, message: "Insights are not available yet." },
+  worksheets: [{ id: 31, title: "P5 Science — Adaptation Mini Test", status: "APPROVED" as const, dueAt: "2026-09-15T23:59:00+08:00", assignedAt: "2026-09-01T10:00:00+08:00" }],
 };
 
 describe("tutor class service", () => {
@@ -70,6 +81,43 @@ describe("tutor class service", () => {
     vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify([{ id: 12 }]), { status: 200 }));
 
     await expect(fetchTutorClasses()).rejects.toThrow("invalid class list");
+  });
+
+  it("requests a single owner-scoped class detail with the stored bearer token", async () => {
+    localStorage.setItem("jwt_token", "stored-token");
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify(detail), { status: 200 }));
+
+    await expect(fetchTutorClassDetail(12)).resolves.toEqual(detail);
+    expect(fetch).toHaveBeenCalledWith(
+      "http://localhost:8083/api/learning/tutor/classes/12",
+      expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer stored-token" }) }),
+    );
+  });
+
+  it("preserves missing and wrong-owner detail responses", async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
+      code: "CLASS_NOT_FOUND", message: "Class 12 was not found for this tutor", fields: {},
+    }), { status: 404, headers: { "content-type": "application/json" } }));
+
+    await expect(fetchTutorClassDetail(12)).rejects.toMatchObject({ status: 404, message: "Class 12 was not found for this tutor" });
+  });
+
+  it("runtime-validates full and partial class detail data", () => {
+    expect(parseTutorClassDetail(detail)).toEqual(detail);
+    expect(parseTutorClassDetail({
+      ...detail,
+      students: [],
+      mastery: { averageScore: null, recordCount: 0, studentsWithMastery: 0 },
+      weakAreas: [],
+      worksheets: [],
+    })).toMatchObject({ students: [], weakAreas: [], worksheets: [] });
+    expect(() => parseTutorClassDetail({ ...detail, insight: { status: "READY", message: "No" } })).toThrow("invalid class details");
+    expect(() => parseTutorClassDetail({ ...detail, weakAreas: [{ ...detail.weakAreas[0], averageScore: 101 }] })).toThrow("invalid class details");
+  });
+
+  it("rejects invalid class references before making a request", async () => {
+    await expect(fetchTutorClassDetail(0)).rejects.toMatchObject({ status: 400 });
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("creates a class with the stored Tutor bearer token and complete JSON body", async () => {

@@ -1,5 +1,12 @@
 package com.fttranscendence.learning.classroom;
 
+import com.fttranscendence.learning.mastery.MasteryRecord;
+import com.fttranscendence.learning.mastery.MasteryRecordRepository;
+import com.fttranscendence.learning.student.StudentProfile;
+import com.fttranscendence.learning.student.StudentProfileRepository;
+import com.fttranscendence.learning.worksheet.Worksheet;
+import com.fttranscendence.learning.worksheet.WorksheetAssignment;
+import com.fttranscendence.learning.worksheet.WorksheetRepository;
 import jakarta.persistence.EntityManager;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -7,6 +14,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalTime;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
@@ -19,10 +31,22 @@ public class ClassService {
 
     private final TutorClassRepository repository;
     private final EntityManager entityManager;
+    private final StudentProfileRepository studentRepository;
+    private final MasteryRecordRepository masteryRepository;
+    private final WorksheetRepository worksheetRepository;
 
-    public ClassService(TutorClassRepository repository, EntityManager entityManager) {
+    public ClassService(
+        TutorClassRepository repository,
+        EntityManager entityManager,
+        StudentProfileRepository studentRepository,
+        MasteryRecordRepository masteryRepository,
+        WorksheetRepository worksheetRepository
+    ) {
         this.repository = repository;
         this.entityManager = entityManager;
+        this.studentRepository = studentRepository;
+        this.masteryRepository = masteryRepository;
+        this.worksheetRepository = worksheetRepository;
     }
 
     @Transactional(readOnly = true)
@@ -31,6 +55,129 @@ public class ClassService {
         return ownedClasses(tutorId).stream()
             .map(ClassRequest.ClassResponse::from)
             .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public ClassDetailResponse getOwnedClassDetail(long tutorId, long classId) {
+        requireTutor(tutorId);
+        TutorClass tutorClass = repository.findByIdAndTutorId(classId, tutorId)
+            .orElseThrow(() -> new ClassNotFoundException(classId));
+
+        List<StudentProfile> students = studentRepository
+            .findAllByTutorIdAndClassIdOrderByFullNameAsc(tutorId, classId);
+        List<Long> studentIds = students.stream().map(StudentProfile::getId).toList();
+        List<MasteryRecord> masteryRecords = studentIds.isEmpty()
+            ? List.of()
+            : masteryRepository.findAllByStudentProfileIdInWithTopic(studentIds);
+
+        Map<Long, List<MasteryRecord>> recordsByStudent = new HashMap<>();
+        Map<Long, TopicAggregate> topics = new LinkedHashMap<>();
+        BigDecimal totalScore = BigDecimal.ZERO;
+        for (MasteryRecord mastery : masteryRecords) {
+            Long studentId = mastery.getStudentProfile().getId();
+            recordsByStudent.computeIfAbsent(studentId, ignored -> new ArrayList<>()).add(mastery);
+            totalScore = totalScore.add(mastery.getScore());
+            topics.computeIfAbsent(mastery.getSyllabusTopic().getId(), ignored -> new TopicAggregate(
+                mastery.getSyllabusTopic().getId(), mastery.getSyllabusTopic().getName()
+            )).add(mastery.getScore());
+        }
+
+        List<ClassDetailResponse.StudentResponse> studentResponses = students.stream()
+            .map(student -> studentResponse(student, recordsByStudent.getOrDefault(student.getId(), List.of())))
+            .toList();
+        int recordsWithData = masteryRecords.size();
+        int studentsWithMastery = (int) studentResponses.stream()
+            .filter(student -> student.masteryRecordCount() > 0)
+            .count();
+        BigDecimal average = recordsWithData == 0 ? null : average(totalScore, recordsWithData);
+        List<ClassDetailResponse.WeakAreaResponse> weakAreas = topics.values().stream()
+            .map(TopicAggregate::response)
+            .filter(area -> area.averageScore().compareTo(new BigDecimal("70.00")) < 0)
+            .sorted(Comparator.comparing(ClassDetailResponse.WeakAreaResponse::affectedStudentCount).reversed()
+                .thenComparing(ClassDetailResponse.WeakAreaResponse::averageScore)
+                .thenComparing(ClassDetailResponse.WeakAreaResponse::topicName)
+                .thenComparing(ClassDetailResponse.WeakAreaResponse::topicId))
+            .toList();
+
+        List<ClassDetailResponse.WorksheetResponse> worksheets = worksheetRepository
+            .findClassAssignedWorksheetsByTutorId(tutorId, classId).stream()
+            .map(worksheet -> worksheetResponse(worksheet, classId))
+            .toList();
+
+        List<ClassDetailResponse.ScheduleResponse> schedules = tutorClass.getSchedules().stream()
+            .map(schedule -> new ClassDetailResponse.ScheduleResponse(
+                schedule.getDayOfWeek(), schedule.getStartTime(), schedule.getEndTime()))
+            .sorted(Comparator.comparing(ClassDetailResponse.ScheduleResponse::dayOfWeek)
+                .thenComparing(ClassDetailResponse.ScheduleResponse::startTime)
+                .thenComparing(ClassDetailResponse.ScheduleResponse::endTime))
+            .toList();
+        return new ClassDetailResponse(
+            tutorClass.getId(), tutorClass.getTutorId(), tutorClass.getClassName(),
+            tutorClass.getSubject(), tutorClass.getLevel(), tutorClass.getStatus(), schedules,
+            studentResponses,
+            new ClassDetailResponse.MasterySummary(average, recordsWithData, studentsWithMastery),
+            weakAreas,
+            new ClassDetailResponse.InsightResponse(
+                ClassDetailResponse.InsightStatus.UNAVAILABLE,
+                "Insights are not available yet"
+            ),
+            worksheets
+        );
+    }
+
+    private ClassDetailResponse.StudentResponse studentResponse(
+        StudentProfile student,
+        List<MasteryRecord> records
+    ) {
+        BigDecimal total = records.stream().map(MasteryRecord::getScore)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return new ClassDetailResponse.StudentResponse(
+            student.getId(), student.getFullName(),
+            records.isEmpty() ? null : average(total, records.size()), records.size()
+        );
+    }
+
+    private ClassDetailResponse.WorksheetResponse worksheetResponse(Worksheet worksheet, long classId) {
+        WorksheetAssignment assignment = worksheet.getAssignments().stream()
+            .filter(item -> item.getAssignmentType() == Worksheet.AudienceType.CLASS)
+            .filter(item -> Long.valueOf(classId).equals(item.getClassId()))
+            .findFirst()
+            .orElseThrow(() -> new ClassPersistenceException(
+                new IllegalStateException("Class worksheet assignment was not loaded")
+            ));
+        return new ClassDetailResponse.WorksheetResponse(
+            worksheet.getId(), worksheet.getTitle(), worksheet.getStatus(),
+            assignment.getAssignedAt(), assignment.getDueAt()
+        );
+    }
+
+    private static BigDecimal average(BigDecimal total, int count) {
+        return total.divide(BigDecimal.valueOf(count), 2, RoundingMode.HALF_UP);
+    }
+
+    private static final class TopicAggregate {
+        private final Long topicId;
+        private final String topicName;
+        private BigDecimal total = BigDecimal.ZERO;
+        private int count;
+        private int affected;
+
+        private TopicAggregate(Long topicId, String topicName) {
+            this.topicId = topicId;
+            this.topicName = topicName;
+        }
+
+        void add(BigDecimal score) {
+            total = total.add(score);
+            count++;
+            if (score.compareTo(new BigDecimal("70.00")) < 0) {
+                affected++;
+            }
+        }
+
+        ClassDetailResponse.WeakAreaResponse response() {
+            return new ClassDetailResponse.WeakAreaResponse(topicId, topicName, average(total, count), affected);
+        }
     }
 
     @Transactional

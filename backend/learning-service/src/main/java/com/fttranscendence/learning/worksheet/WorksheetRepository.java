@@ -32,4 +32,18 @@ public interface WorksheetRepository extends Repository<Worksheet, Long> {
         @Param("assignmentType") Worksheet.AudienceType assignmentType,
         @Param("targetId") Long targetId
     );
+
+    @Query("""
+        SELECT DISTINCT worksheet
+        FROM Worksheet worksheet
+        JOIN FETCH worksheet.assignments assignment
+        WHERE worksheet.tutorId = :tutorId
+          AND assignment.assignmentType = com.fttranscendence.learning.worksheet.Worksheet.AudienceType.CLASS
+          AND assignment.targetId = :classId
+        ORDER BY worksheet.title ASC, worksheet.id ASC
+        """)
+    List<Worksheet> findClassAssignedWorksheetsByTutorId(
+        @Param("tutorId") Long tutorId,
+        @Param("classId") Long classId
+    );
 }

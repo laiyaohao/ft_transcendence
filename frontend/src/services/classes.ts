@@ -16,6 +16,51 @@ export interface TutorClass {
   schedules: ClassSchedule[];
 }
 
+export interface ClassDetailStudent {
+  id: number;
+  fullName: string;
+  /** Null means the student has not received a mastery calculation yet. */
+  overallMastery: number | null;
+  masteryRecordCount: number;
+}
+
+export interface ClassMasterySummary {
+  /** Null means this class does not have any mastery records yet. */
+  averageScore: number | null;
+  recordCount: number;
+  studentsWithMastery: number;
+}
+
+export interface ClassWeakArea {
+  topicId: number;
+  topicName: string;
+  averageScore: number;
+  affectedStudentCount: number;
+}
+
+export interface ClassInsightAvailability {
+  status: "UNAVAILABLE";
+  message: string;
+}
+
+export type ClassWorksheetStatus = "DRAFT" | "APPROVED" | "ARCHIVED";
+
+export interface ClassWorksheet {
+  id: number;
+  title: string;
+  status: ClassWorksheetStatus;
+  dueAt: string | null;
+  assignedAt: string | null;
+}
+
+export interface TutorClassDetail extends TutorClass {
+  students: ClassDetailStudent[];
+  mastery: ClassMasterySummary;
+  weakAreas: ClassWeakArea[];
+  insight: ClassInsightAvailability;
+  worksheets: ClassWorksheet[];
+}
+
 /** The JSON body accepted by the tutor class create and update endpoints. */
 export interface ClassMutationRequest {
   className: string;
@@ -48,6 +93,18 @@ function isPositiveNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isPercentage(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100;
+}
+
+function isOptionalDateTime(value: unknown): value is string | null {
+  return value === null || isNonEmptyString(value);
+}
+
 function isSchedule(value: unknown): value is ClassSchedule {
   if (typeof value !== "object" || value === null) return false;
   const schedule = value as Record<string, unknown>;
@@ -58,7 +115,7 @@ function isSchedule(value: unknown): value is ClassSchedule {
 
 function isTutorClass(value: unknown): value is TutorClass {
   if (typeof value !== "object" || value === null) return false;
-  const candidate = value as Record<string, unknown>;
+  const candidate = value as unknown as Record<string, unknown>;
   return isPositiveNumber(candidate.id)
     && isPositiveNumber(candidate.tutorId)
     && isNonEmptyString(candidate.className)
@@ -80,6 +137,69 @@ export function parseTutorClass(payload: unknown): TutorClass {
 export function parseTutorClasses(payload: unknown): TutorClass[] {
   if (!Array.isArray(payload) || !payload.every(isTutorClass)) {
     throw new Error("The learning service returned an invalid class list. Please try again.");
+  }
+
+  return payload;
+}
+
+function isClassDetailStudent(value: unknown): value is ClassDetailStudent {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return isPositiveNumber(candidate.id)
+    && isNonEmptyString(candidate.fullName)
+    && (candidate.overallMastery === null || isPercentage(candidate.overallMastery))
+    && isNonNegativeInteger(candidate.masteryRecordCount);
+}
+
+function isClassMasterySummary(value: unknown): value is ClassMasterySummary {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return (candidate.averageScore === null || isPercentage(candidate.averageScore))
+    && isNonNegativeInteger(candidate.recordCount)
+    && isNonNegativeInteger(candidate.studentsWithMastery);
+}
+
+function isClassWeakArea(value: unknown): value is ClassWeakArea {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return isPositiveNumber(candidate.topicId)
+    && isNonEmptyString(candidate.topicName)
+    && isPercentage(candidate.averageScore)
+    && isNonNegativeInteger(candidate.affectedStudentCount);
+}
+
+function isClassInsightAvailability(value: unknown): value is ClassInsightAvailability {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return candidate.status === "UNAVAILABLE" && isNonEmptyString(candidate.message);
+}
+
+function isClassWorksheet(value: unknown): value is ClassWorksheet {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return isPositiveNumber(candidate.id)
+    && isNonEmptyString(candidate.title)
+    && (candidate.status === "DRAFT" || candidate.status === "APPROVED" || candidate.status === "ARCHIVED")
+    && isOptionalDateTime(candidate.dueAt)
+    && isOptionalDateTime(candidate.assignedAt);
+}
+
+function isTutorClassDetail(value: unknown): value is TutorClassDetail {
+  if (!isTutorClass(value)) return false;
+  const candidate = value as unknown as Record<string, unknown>;
+  return Array.isArray(candidate.students)
+    && candidate.students.every(isClassDetailStudent)
+    && isClassMasterySummary(candidate.mastery)
+    && Array.isArray(candidate.weakAreas)
+    && candidate.weakAreas.every(isClassWeakArea)
+    && isClassInsightAvailability(candidate.insight)
+    && Array.isArray(candidate.worksheets)
+    && candidate.worksheets.every(isClassWorksheet);
+}
+
+export function parseTutorClassDetail(payload: unknown): TutorClassDetail {
+  if (!isTutorClassDetail(payload)) {
+    throw new Error("The learning service returned invalid class details. Please try again.");
   }
 
   return payload;
@@ -126,6 +246,22 @@ export async function fetchTutorClasses(): Promise<TutorClass[]> {
   }
 
   return parseTutorClasses(await response.json());
+}
+
+export async function fetchTutorClassDetail(classId: number): Promise<TutorClassDetail> {
+  if (!Number.isSafeInteger(classId) || classId <= 0) {
+    throw new ClassApiError("The class reference is invalid.", 400);
+  }
+
+  const response = await fetch(`${LEARNING_API_URL}${CLASS_LIST_PATH}/${classId}`, {
+    headers: authHeaders(),
+  });
+
+  if (!response.ok) {
+    throw await responseError(response);
+  }
+
+  return parseTutorClassDetail(await response.json());
 }
 
 async function mutateTutorClass(
