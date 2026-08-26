@@ -1,4 +1,5 @@
 'use client';
+
 import * as React from 'react';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import { inputsCustomizations } from '../customizations/inputs';
@@ -8,28 +9,21 @@ import { navigationCustomizations } from '../customizations/navigation';
 import { surfacesCustomizations } from '../customizations/surfaces';
 import { colorSchemes, typography, shadows, shape } from '../theme/theme-primitives';
 
+const theme = createTheme({
+  cssVariables: { colorSchemeSelector: 'data-mui-color-scheme', cssVarPrefix: 'lumina' },
+  colorSchemes,
+  typography,
+  shadows,
+  shape,
+  components: {
+    ...inputsCustomizations,
+    ...dataDisplayCustomizations,
+    ...feedbackCustomizations,
+    ...navigationCustomizations,
+    ...surfacesCustomizations,
+  },
+});
+
 export default function AppTheme({ children }: { children: React.ReactNode }) {
-  const theme = createTheme({
-    // For more details about CSS variables configuration, see https://mui.com/material-ui/customization/css-theme-variables/configuration/
-    cssVariables: {
-      colorSchemeSelector: 'data-mui-color-scheme',
-      cssVarPrefix: 'template',
-    },
-    colorSchemes, // Recently added in v6 for building light & dark mode app, see https://mui.com/material-ui/customization/palette/#color-schemes
-    typography,
-    shadows,
-    shape,
-    components: {
-      ...inputsCustomizations,
-      ...dataDisplayCustomizations,
-      ...feedbackCustomizations,
-      ...navigationCustomizations,
-      ...surfacesCustomizations,
-    },
-  });
-  return (
-    <ThemeProvider theme={theme} disableTransitionOnChange>
-      {children}
-    </ThemeProvider>
-  );
+  return <ThemeProvider theme={theme}>{children}</ThemeProvider>;
 }

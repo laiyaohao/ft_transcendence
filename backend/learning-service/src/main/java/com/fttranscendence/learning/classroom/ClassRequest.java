@@ -20,7 +20,9 @@ public record ClassRequest(
 ) {
 
     public ClassRequest {
-        schedules = schedules == null ? List.of() : List.copyOf(schedules);
+        schedules = schedules == null
+            ? List.of()
+            : java.util.Collections.unmodifiableList(new java.util.ArrayList<>(schedules));
     }
 
     public record ScheduleRequest(

@@ -2,6 +2,7 @@ package com.fttranscendence.learning.classroom;
 
 import com.fttranscendence.learning.security.AuthenticatedUser;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Positive;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -17,6 +18,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.http.MediaType;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -51,7 +54,7 @@ public class ClassController {
     @PutMapping(value = "/{classId}", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ClassRequest.ClassResponse update(
         @AuthenticationPrincipal AuthenticatedUser user,
-        @PathVariable long classId,
+        @PathVariable @Positive long classId,
         @Valid @RequestBody ClassRequest request
     ) {
         return classService.update(user.userId(), classId, request);
@@ -85,6 +88,24 @@ public class ClassController {
     ResponseEntity<ApiError> persistence(DataAccessException exception) {
         return error(HttpStatus.SERVICE_UNAVAILABLE, "CLASS_DATABASE_UNAVAILABLE",
             "Class data is temporarily unavailable", Map.of());
+    }
+
+    @ExceptionHandler(ClassService.ClassPersistenceException.class)
+    ResponseEntity<ApiError> persistence(ClassService.ClassPersistenceException exception) {
+        return error(HttpStatus.SERVICE_UNAVAILABLE, "CLASS_DATABASE_UNAVAILABLE",
+            "Class data is temporarily unavailable", Map.of());
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    ResponseEntity<ApiError> malformed(HttpMessageNotReadableException exception) {
+        return error(HttpStatus.BAD_REQUEST, "INVALID_CLASS_REQUEST",
+            "Class request contains invalid JSON or enum/time values", Map.of());
+    }
+
+    @ExceptionHandler(HandlerMethodValidationException.class)
+    ResponseEntity<ApiError> methodValidation(HandlerMethodValidationException exception) {
+        return error(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED",
+            "Class request is invalid", Map.of("classId", "must be greater than 0"));
     }
 
     public record ApiError(String code, String message, Map<String, String> fields) {

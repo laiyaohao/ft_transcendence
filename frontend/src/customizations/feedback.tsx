@@ -1,45 +1,20 @@
-import { Theme, alpha, Components } from '@mui/material/styles';
-import { gray, orange } from '../theme/theme-primitives';
+import { Components, Theme } from '@mui/material/styles';
+import { orange, gray } from '../theme/theme-primitives';
 
 export const feedbackCustomizations: Components<Theme> = {
   MuiAlert: {
     styleOverrides: {
-      root: ({ theme }) => ({
-        borderRadius: 10,
-        backgroundColor: orange[100],
-        color: (theme.vars || theme).palette.text.primary,
-        border: `1px solid ${alpha(orange[300], 0.5)}`,
-        '& .MuiAlert-icon': {
-          color: orange[500],
-        },
-        ...theme.applyStyles('dark', {
-          backgroundColor: `${alpha(orange[900], 0.5)}`,
-          border: `1px solid ${alpha(orange[800], 0.5)}`,
-        }),
-      }),
+      root: { borderRadius: 12, backgroundColor: orange[100], color: gray[800], border: `1px solid ${orange[200]}` },
+      icon: { color: orange[500] },
     },
   },
   MuiDialog: {
-    styleOverrides: {
-      root: ({ theme }) => ({
-        '& .MuiDialog-paper': {
-          borderRadius: '10px',
-          border: '1px solid',
-          borderColor: (theme.vars || theme).palette.divider,
-        },
-      }),
-    },
+    styleOverrides: { paper: { borderRadius: 14, border: '1px solid #EBE4D9', boxShadow: '0 12px 34px rgba(42,38,34,.28)' } },
   },
   MuiLinearProgress: {
     styleOverrides: {
-      root: ({ theme }) => ({
-        height: 8,
-        borderRadius: 8,
-        backgroundColor: gray[200],
-        ...theme.applyStyles('dark', {
-          backgroundColor: gray[800],
-        }),
-      }),
+      root: { height: 8, borderRadius: 8, backgroundColor: '#F0EAE0' },
+      bar: { borderRadius: 8, transition: 'transform .65s cubic-bezier(.2,.8,.3,1)' },
     },
   },
 };

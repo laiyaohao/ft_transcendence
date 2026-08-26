@@ -1,232 +1,47 @@
-import { Theme, alpha, Components } from '@mui/material/styles';
-import { svgIconClasses } from '@mui/material/SvgIcon';
-import { typographyClasses } from '@mui/material/Typography';
-import { buttonBaseClasses } from '@mui/material/ButtonBase';
+import { Components, Theme } from '@mui/material/styles';
 import { chipClasses } from '@mui/material/Chip';
 import { iconButtonClasses } from '@mui/material/IconButton';
-import { gray, red, green } from '../theme/theme-primitives';
+import { svgIconClasses } from '@mui/material/SvgIcon';
+import { green, gray, red } from '../theme/theme-primitives';
 
 export const dataDisplayCustomizations: Components<Theme> = {
-  MuiList: {
-    styleOverrides: {
-      root: {
-        padding: '8px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 0,
-      },
-    },
-  },
-  MuiListItem: {
-    styleOverrides: {
-      root: ({ theme }) => ({
-        [`& .${svgIconClasses.root}`]: {
-          width: '1rem',
-          height: '1rem',
-          color: (theme.vars || theme).palette.text.secondary,
-        },
-        [`& .${typographyClasses.root}`]: {
-          fontWeight: 500,
-        },
-        [`& .${buttonBaseClasses.root}`]: {
-          display: 'flex',
-          gap: 8,
-          padding: '2px 8px',
-          borderRadius: (theme.vars || theme).shape.borderRadius,
-          opacity: 0.7,
-          '&.Mui-selected': {
-            opacity: 1,
-            backgroundColor: alpha(theme.palette.action.selected, 0.3),
-            [`& .${svgIconClasses.root}`]: {
-              color: (theme.vars || theme).palette.text.primary,
-            },
-            '&:focus-visible': {
-              backgroundColor: alpha(theme.palette.action.selected, 0.3),
-            },
-            '&:hover': {
-              backgroundColor: alpha(theme.palette.action.selected, 0.5),
-            },
-          },
-          '&:focus-visible': {
-            backgroundColor: 'transparent',
-          },
-        },
-      }),
-    },
-  },
+  MuiList: { styleOverrides: { root: { padding: 0, display: 'flex', flexDirection: 'column', gap: 2 } } },
+  MuiListItem: { styleOverrides: { root: { padding: 0 } } },
   MuiListItemText: {
     styleOverrides: {
-      primary: ({ theme }) => ({
-        fontSize: theme.typography.body2.fontSize,
-        fontWeight: 500,
-        lineHeight: theme.typography.body2.lineHeight,
-      }),
-      secondary: ({ theme }) => ({
-        fontSize: theme.typography.caption.fontSize,
-        lineHeight: theme.typography.caption.lineHeight,
-      }),
+      primary: { fontSize: '0.84375rem', fontWeight: 500, lineHeight: 1.45 },
+      secondary: { fontSize: '0.75rem', lineHeight: 1.45 },
     },
   },
   MuiListSubheader: {
-    styleOverrides: {
-      root: ({ theme }) => ({
-        backgroundColor: 'transparent',
-        padding: '4px 8px',
-        fontSize: theme.typography.caption.fontSize,
-        fontWeight: 500,
-        lineHeight: theme.typography.caption.lineHeight,
-      }),
-    },
+    styleOverrides: { root: { padding: '4px 8px', backgroundColor: 'transparent', color: gray[500], fontSize: '0.65625rem', fontWeight: 600, letterSpacing: '.13em' } },
   },
-  MuiListItemIcon: {
+  MuiListItemIcon: { styleOverrides: { root: { minWidth: 0 } } },
+  MuiChip: {
+    defaultProps: { size: 'small' },
     styleOverrides: {
       root: {
-        minWidth: 0,
+        minHeight: 24,
+        border: '1px solid #E4DCD0',
+        borderRadius: 20,
+        backgroundColor: gray[100],
+        color: gray[600],
+        [`& .${chipClasses.label}`]: { paddingLeft: 9, paddingRight: 9, fontSize: '0.75rem', fontWeight: 600 },
+        [`& .${chipClasses.icon}`]: { color: 'inherit', marginLeft: 7 },
+        [`& .${svgIconClasses.root}`]: { fontSize: '0.875rem' },
       },
+      colorDefault: { borderColor: '#E4DCD0', backgroundColor: gray[100], color: gray[600] },
+      colorSuccess: { borderColor: '#BBD0BD', backgroundColor: green[50], color: green[600] },
+      colorError: { borderColor: red[200], backgroundColor: red[50], color: red[600] },
     },
   },
-  MuiChip: {
-    defaultProps: {
-      size: 'small',
-    },
+  MuiTableCell: {
     styleOverrides: {
-      root: ({ theme }) => ({
-        border: '1px solid',
-        borderRadius: '999px',
-        [`& .${chipClasses.label}`]: {
-          fontWeight: 600,
-        },
-        variants: [
-          {
-            props: {
-              color: 'default',
-            },
-            style: {
-              borderColor: gray[200],
-              backgroundColor: gray[100],
-              [`& .${chipClasses.label}`]: {
-                color: gray[500],
-              },
-              [`& .${chipClasses.icon}`]: {
-                color: gray[500],
-              },
-              ...theme.applyStyles('dark', {
-                borderColor: gray[700],
-                backgroundColor: gray[800],
-                [`& .${chipClasses.label}`]: {
-                  color: gray[300],
-                },
-                [`& .${chipClasses.icon}`]: {
-                  color: gray[300],
-                },
-              }),
-            },
-          },
-          {
-            props: {
-              color: 'success',
-            },
-            style: {
-              borderColor: green[200],
-              backgroundColor: green[50],
-              [`& .${chipClasses.label}`]: {
-                color: green[500],
-              },
-              [`& .${chipClasses.icon}`]: {
-                color: green[500],
-              },
-              ...theme.applyStyles('dark', {
-                borderColor: green[800],
-                backgroundColor: green[900],
-                [`& .${chipClasses.label}`]: {
-                  color: green[300],
-                },
-                [`& .${chipClasses.icon}`]: {
-                  color: green[300],
-                },
-              }),
-            },
-          },
-          {
-            props: {
-              color: 'error',
-            },
-            style: {
-              borderColor: red[100],
-              backgroundColor: red[50],
-              [`& .${chipClasses.label}`]: {
-                color: red[500],
-              },
-              [`& .${chipClasses.icon}`]: {
-                color: red[500],
-              },
-              ...theme.applyStyles('dark', {
-                borderColor: red[800],
-                backgroundColor: red[900],
-                [`& .${chipClasses.label}`]: {
-                  color: red[200],
-                },
-                [`& .${chipClasses.icon}`]: {
-                  color: red[300],
-                },
-              }),
-            },
-          },
-          {
-            props: { size: 'small' },
-            style: {
-              maxHeight: 20,
-              [`& .${chipClasses.label}`]: {
-                fontSize: theme.typography.caption.fontSize,
-              },
-              [`& .${svgIconClasses.root}`]: {
-                fontSize: theme.typography.caption.fontSize,
-              },
-            },
-          },
-          {
-            props: { size: 'medium' },
-            style: {
-              [`& .${chipClasses.label}`]: {
-                fontSize: theme.typography.caption.fontSize,
-              },
-            },
-          },
-        ],
-      }),
+      root: { borderColor: '#F0EAE0', color: gray[700] },
+      head: { color: gray[500], fontSize: '0.65625rem', fontWeight: 600, letterSpacing: '.09em', textTransform: 'uppercase' },
     },
   },
   MuiTablePagination: {
-    styleOverrides: {
-      actions: {
-        display: 'flex',
-        gap: 8,
-        marginRight: 6,
-        [`& .${iconButtonClasses.root}`]: {
-          minWidth: 0,
-          width: 36,
-          height: 36,
-        },
-      },
-    },
-  },
-  MuiIcon: {
-    defaultProps: {
-      fontSize: 'small',
-    },
-    styleOverrides: {
-      root: {
-        variants: [
-          {
-            props: {
-              fontSize: 'small',
-            },
-            style: {
-              fontSize: '1rem',
-            },
-          },
-        ],
-      },
-    },
+    styleOverrides: { actions: { display: 'flex', gap: 8, marginRight: 6, [`& .${iconButtonClasses.root}`]: { minWidth: 34, width: 34, height: 34 } } },
   },
 };

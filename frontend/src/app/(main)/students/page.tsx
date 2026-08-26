@@ -4,437 +4,46 @@ import * as React from "react";
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import Card from "@mui/material/Card";
-import Grid from "@mui/material/Grid";
-import Stack from "@mui/material/Stack";
 import Chip from "@mui/material/Chip";
 import Avatar from "@mui/material/Avatar";
 import Button from "@mui/material/Button";
-import Divider from "@mui/material/Divider";
 import LinearProgress from "@mui/material/LinearProgress";
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutlined";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
-import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutlineOutlined";
-import OutlinedFlagIcon from "@mui/icons-material/OutlinedFlag";
-import WaterDropOutlinedIcon from "@mui/icons-material/WaterDropOutlined";
-import FlashOnOutlinedIcon from "@mui/icons-material/FlashOnOutlined";
-import ParkOutlinedIcon from "@mui/icons-material/ParkOutlined";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import DescriptionIcon from "@mui/icons-material/Description";
+import Stack from "@/components/lumina-stack";
 
-// ---- Static content driving the profile. Swap these for real data later. ----
-
-const student = {
-  name: "Bella Tan",
-  grade: "P5",
-  subject: "Science",
-  status: "Needs Practice",
-};
-
+const student = { name: "Bella Tan", grade: "P5", subject: "Science", status: "NEEDS PRACTICE" };
 const stats = [
-  {
-    label: "Mastery Score",
-    value: "68%",
-    icon: TrendingUpIcon,
-    progress: 68,
-  },
-  {
-    label: "Recent Improvement",
-    value: "+12%",
-    caption: "vs last month",
-    icon: TrendingUpIcon,
-  },
-  {
-    label: "Current Weak Area",
-    value: "Living Things",
-    caption: "Requires focus",
-    icon: HelpOutlineIcon,
-  },
-  {
-    label: "Worksheets Completed",
-    value: "24",
-    caption: "This term",
-    icon: DescriptionOutlinedIcon,
-  },
+  { label: "Mastery score", value: "68%", context: "Across current topics", icon: TrendingUpIcon, progress: 68, tone: "#2A2622" },
+  { label: "Recent improvement", value: "+12%", context: "Vs last month", icon: TrendingUpIcon, tone: "#5C7A63" },
+  { label: "Current weak area", value: "Living Things", context: "45% mastery", icon: HelpOutlineIcon, tone: "#B4573F" },
+  { label: "Worksheets completed", value: "24", context: "This term", icon: DescriptionOutlinedIcon, tone: "#2A2622" },
 ];
+const strengths = ["Strong grasp of conceptual facts, especially in Physical Sciences.", "Excellent retention of visual information and diagrams.", "Consistently completes assigned homework on time."];
+const areasForGrowth = ["Needs precise scientific vocabulary in OEQ answers.", "Needs practice linking concepts in open-ended questions."];
+const topicMastery = [{ topic: "Cycles in Matter & Water", value: 75 }, { topic: "Energy Forms & Uses", value: 72 }, { topic: "Living Things & Environment", value: 45 }];
+const buttonBase = { minHeight: 40, textTransform: "none", fontSize: 13.5, fontWeight: 500, borderRadius: "10px", "&:focus-visible": { outline: "3px solid #E08A72", outlineOffset: 2 } };
+const barColor = (value: number) => value < 55 ? "#B4573F" : value < 72 ? "#D8B384" : "#93A896";
 
-const strengths = [
-  "Strong grasp of conceptual facts, especially in Physical Sciences.",
-  "Excellent retention of visual information and diagrams.",
-  "Consistently completes assigned homework on time.",
-];
-
-const areasForGrowth = [
-  "Struggles to articulate answers using precise scientific vocabulary.",
-  "Needs practice linking multiple concepts in open-ended questions.",
-];
-
-const topicMastery = [
-  {
-    topic: "Cycles in Matter & Water",
-    value: 75,
-    icon: WaterDropOutlinedIcon,
-    focus: false,
-  },
-  {
-    topic: "Energy Forms & Uses",
-    value: 72,
-    icon: FlashOnOutlinedIcon,
-    focus: false,
-  },
-  {
-    topic: "Living Things & Environment",
-    value: 45,
-    icon: ParkOutlinedIcon,
-    focus: true,
-  },
-];
-
-const aiInsight =
-  '"Bella understands the core concept well, but frequently loses marks because she needs help expressing her answers using standard exam keywords, particularly in Open-Ended Questions (OEQs)."';
-
-const suggestedActions = ["Generate Keyword Drill", "Review Past OEQ Errors"];
-
-// ---- Small presentational helpers ----
-
-function StatCard({
-  label,
-  value,
-  caption,
-  icon: Icon,
-  progress,
-}: {
-  label: string;
-  value: string;
-  caption?: string;
-  icon: React.ElementType;
-  progress?: number;
-}) {
-  return (
-    <Card
-      variant="outlined"
-      sx={{
-        p: 2.5,
-        borderRadius: 3,
-        borderColor: "rgba(0,0,0,0.08)",
-        backgroundColor: "#fff",
-        boxShadow: "none",
-        height: "100%",
-      }}
-    >
-      <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between", mb: 1 }}>
-        <Typography variant="body2" sx={{ color: "text.secondary", fontWeight: 500 }}>
-          {label}
-        </Typography>
-        <Icon fontSize="small" sx={{ color: "text.secondary" }} />
-      </Stack>
-      <Typography variant="h5" sx={{ fontWeight: 700, fontFamily: "Georgia, serif", color: "#1a1a1a" }}>
-        {value}
-      </Typography>
-      {caption && (
-        <Typography
-          variant="body2"
-          sx={{ color: label === "Current Weak Area" ? "#b3261e" : "text.secondary", mt: 0.5 }}
-        >
-          {caption}
-        </Typography>
-      )}
-      {typeof progress === "number" && (
-        <LinearProgress
-          variant="determinate"
-          value={progress}
-          sx={{
-            mt: 1.5,
-            height: 6,
-            borderRadius: 3,
-            backgroundColor: "rgba(0,0,0,0.08)",
-            "& .MuiLinearProgress-bar": { backgroundColor: "#b3261e", borderRadius: 3 },
-          }}
-        />
-      )}
-    </Card>
-  );
-}
-
-function TopicMasteryRow({
-  topic,
-  value,
-  icon: Icon,
-  focus,
-}: {
-  topic: string;
-  value: number;
-  icon: React.ElementType;
-  focus: boolean;
-}) {
-  const barColor = focus ? "#b3261e" : "#1a1a1a";
-  return (
-    <Card
-      variant="outlined"
-      sx={{
-        p: 2.5,
-        borderRadius: 3,
-        borderColor: focus ? "rgba(179,38,30,0.3)" : "rgba(0,0,0,0.08)",
-        backgroundColor: "#fff",
-        boxShadow: "none",
-      }}
-    >
-      <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between", mb: 1 }}>
-        <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-          <Typography sx={{ fontWeight: 700, minWidth: 40 }}>{value}%</Typography>
-          <Typography sx={{ fontWeight: 500 }}>{topic}</Typography>
-        </Stack>
-        <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-          {focus && (
-            <Chip
-              label="Focus Area"
-              size="small"
-              sx={{ fontWeight: 600, backgroundColor: "#f8ded6", color: "#b3261e" }}
-            />
-          )}
-          <Icon fontSize="small" sx={{ color: "text.secondary" }} />
-        </Stack>
-      </Stack>
-      <LinearProgress
-        variant="determinate"
-        value={value}
-        sx={{
-          height: 6,
-          borderRadius: 3,
-          backgroundColor: "rgba(0,0,0,0.08)",
-          "& .MuiLinearProgress-bar": { backgroundColor: barColor, borderRadius: 3 },
-        }}
-      />
-    </Card>
-  );
-}
+function Badge({ label, bg, color }: { label: string; bg: string; color: string }) { return <Chip label={label} size="small" sx={{ height: 24, borderRadius: 20, bgcolor: bg, color, fontSize: 9.5, fontWeight: 700, letterSpacing: ".05em", ".MuiChip-label": { px: 1.1 } }} />; }
 
 export default function Page() {
-  const initials = student.name
-    .split(" ")
-    .map((n) => n[0])
-    .join("");
-
-  return (
-    <Box
-      sx={{
-        backgroundColor: "#f7f5f0",
-        minHeight: "100vh",
-        py: 5,
-        px: { xs: 2, sm: 4, md: 6 },
-      }}
-    >
-      <Box sx={{ maxWidth: 1140, mx: "auto" }}>
-        {/* Header */}
-        <Stack
-          direction={{ xs: "column", sm: "row" }}
-          spacing={2}
-          sx={{
-            justifyContent: "space-between",
-            alignItems: { xs: "flex-start", sm: "center" },
-            mb: 4,
-          }}
-        >
-          <Stack direction="row" spacing={2} sx={{ alignItems: "center" }}>
-            <Avatar sx={{ width: 72, height: 72, bgcolor: "#d9714e", fontFamily: "Georgia, serif", fontSize: 24 }}>
-              {initials}
-            </Avatar>
-            <Box>
-              <Typography variant="h4" sx={{ fontFamily: "Georgia, serif", fontWeight: 700, color: "#1a1a1a" }}>
-                {student.name}
-              </Typography>
-              <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-                <Chip
-                  label={`${student.grade} · ${student.subject}`}
-                  size="small"
-                  variant="outlined"
-                  sx={{ fontWeight: 500, borderColor: "rgba(0,0,0,0.15)" }}
-                />
-                <Chip
-                  label={`● ${student.status}`}
-                  size="small"
-                  sx={{ fontWeight: 600, backgroundColor: "#f8ded6", color: "#b3261e" }}
-                />
-              </Stack>
-            </Box>
-          </Stack>
-
-          <Stack direction="row" spacing={1.5} sx={{ flexWrap: "wrap" }}>
-            <Button
-              variant="contained"
-              startIcon={<DescriptionIcon />}
-              sx={{
-                backgroundColor: "#d9714e",
-                textTransform: "none",
-                fontWeight: 600,
-                borderRadius: 2,
-                boxShadow: "none",
-                "&:hover": { backgroundColor: "#c25f3f", boxShadow: "none" },
-              }}
-            >
-              Generate Worksheet
-            </Button>
-            <Button
-              variant="outlined"
-              startIcon={<UploadFileIcon />}
-              sx={{
-                color: "#1a1a1a",
-                borderColor: "rgba(0,0,0,0.2)",
-                textTransform: "none",
-                fontWeight: 600,
-                borderRadius: 2,
-                "&:hover": { borderColor: "rgba(0,0,0,0.4)", backgroundColor: "transparent" },
-              }}
-            >
-              Upload Completed Worksheet
-            </Button>
-            <Button
-              variant="outlined"
-              sx={{
-                color: "#1a1a1a",
-                borderColor: "rgba(0,0,0,0.2)",
-                textTransform: "none",
-                fontWeight: 600,
-                borderRadius: 2,
-                "&:hover": { borderColor: "rgba(0,0,0,0.4)", backgroundColor: "transparent" },
-              }}
-            >
-              Create Parent Report
-            </Button>
-          </Stack>
-        </Stack>
-
-        {/* Stat cards */}
-        <Grid container spacing={2} sx={{ mb: 4 }}>
-          {stats.map((s) => (
-            <Grid size={{ xs: 6, md: 3 }} key={s.label}>
-              <StatCard {...s} />
-            </Grid>
-          ))}
-        </Grid>
-
-        {/* Main content */}
-        <Grid container spacing={3}>
-          <Grid size={{ xs: 12, md: 8 }}>
-            {/* Learning Profile */}
-            <Card
-              variant="outlined"
-              sx={{
-                p: 3,
-                borderRadius: 3,
-                borderColor: "rgba(0,0,0,0.08)",
-                backgroundColor: "#fff",
-                boxShadow: "none",
-                mb: 3,
-              }}
-            >
-              <Typography variant="h6" sx={{ fontFamily: "Georgia, serif", fontWeight: 700, mb: 2 }}>
-                Learning Profile
-              </Typography>
-              <Grid container spacing={3}>
-                <Grid size={{ xs: 12, sm: 6 }}>
-                  <Stack direction="row" spacing={1} sx={{ alignItems: "center", mb: 1.5 }}>
-                    <CheckCircleOutlineIcon fontSize="small" sx={{ color: "#3f7a34" }} />
-                    <Typography variant="overline" sx={{ fontWeight: 700, letterSpacing: 1 }}>
-                      Strengths
-                    </Typography>
-                  </Stack>
-                  <Stack spacing={1.5}>
-                    {strengths.map((item) => (
-                      <Typography key={item} variant="body2" sx={{ color: "text.secondary" }}>
-                        • {item}
-                      </Typography>
-                    ))}
-                  </Stack>
-                </Grid>
-                <Grid size={{ xs: 12, sm: 6 }}>
-                  <Stack direction="row" spacing={1} sx={{ alignItems: "center", mb: 1.5 }}>
-                    <OutlinedFlagIcon fontSize="small" sx={{ color: "#b3261e" }} />
-                    <Typography variant="overline" sx={{ fontWeight: 700, letterSpacing: 1 }}>
-                      Areas for Growth
-                    </Typography>
-                  </Stack>
-                  <Stack spacing={1.5}>
-                    {areasForGrowth.map((item) => (
-                      <Typography key={item} variant="body2" sx={{ color: "text.secondary" }}>
-                        • {item}
-                      </Typography>
-                    ))}
-                  </Stack>
-                </Grid>
-              </Grid>
-            </Card>
-
-            {/* Topic Mastery Map */}
-            <Typography variant="h5" sx={{ fontFamily: "Georgia, serif", fontWeight: 700, mb: 1.5 }}>
-              Topic Mastery Map
-            </Typography>
-            <Divider sx={{ mb: 2, borderColor: "rgba(0,0,0,0.1)" }} />
-            <Stack spacing={2}>
-              {topicMastery.map((t) => (
-                <TopicMasteryRow key={t.topic} {...t} />
-              ))}
-            </Stack>
-          </Grid>
-
-          <Grid size={{ xs: 12, md: 4 }}>
-            {/* AI Insight */}
-            <Card
-              sx={{
-                backgroundColor: "#1a1a1a",
-                color: "#fff",
-                borderRadius: 3,
-                p: 3,
-                boxShadow: "none",
-              }}
-            >
-              <Stack direction="row" spacing={2} sx={{ alignItems: "flex-start", mb: 2 }}>
-                <Avatar sx={{ bgcolor: "#d9714e", width: 36, height: 36 }}>
-                  <AutoAwesomeIcon fontSize="small" />
-                </Avatar>
-                <Typography variant="h6" sx={{ fontFamily: "Georgia, serif", fontWeight: 700 }}>
-                  AI Insight
-                </Typography>
-              </Stack>
-              <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.8)", mb: 3, fontStyle: "italic" }}>
-                {aiInsight}
-              </Typography>
-
-              <Typography
-                variant="overline"
-                sx={{ color: "rgba(255,255,255,0.6)", fontWeight: 700, letterSpacing: 1 }}
-              >
-                Suggested Actions
-              </Typography>
-              <Stack spacing={1.5} sx={{ mt: 1.5 }}>
-                {suggestedActions.map((action) => (
-                  <Button
-                    key={action}
-                    fullWidth
-                    endIcon={<ArrowForwardIcon fontSize="small" />}
-                    sx={{
-                      justifyContent: "space-between",
-                      color: "#fff",
-                      backgroundColor: "rgba(255,255,255,0.08)",
-                      textTransform: "none",
-                      fontWeight: 600,
-                      borderRadius: 2,
-                      py: 1.2,
-                      px: 2,
-                      "&:hover": { backgroundColor: "rgba(255,255,255,0.15)" },
-                    }}
-                  >
-                    {action}
-                  </Button>
-                ))}
-              </Stack>
-            </Card>
-          </Grid>
-        </Grid>
-      </Box>
-    </Box>
-  );
+  const [message, setMessage] = React.useState("");
+  const initials = "BT";
+  return <Box sx={{ minHeight: "100vh", bgcolor: "#F7F4EF", px: { xs: 2.5, sm: 3.75 }, py: 3.75, color: "#2A2622" }}><Box sx={{ maxWidth: 1420, mx: "auto", animation: "fadeUp .35s ease both" }}>
+    <Stack direction={{ xs: "column", lg: "row" }} alignItems={{ xs: "flex-start", lg: "center" }} justifyContent="space-between" gap={2.25} sx={{ mb: 3 }}>
+      <Stack direction="row" gap={2} alignItems="center"><Avatar sx={{ width: 66, height: 66, bgcolor: "#D8B384", color: "#3A332C", fontFamily: "'Playfair Display', Georgia, serif", fontSize: 24, fontWeight: 600 }}>{initials}</Avatar><Box><Typography component="h1" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: { xs: 32, sm: 38 }, fontWeight: 500, lineHeight: 1.05 }}>{student.name}</Typography><Stack direction="row" flexWrap="wrap" gap={.75} sx={{ mt: .9 }}><Chip label={`${student.grade} · ${student.subject}`} size="small" sx={{ height: 25, bgcolor: "#F4EFE6", color: "#6F675E", fontSize: 11.5, fontWeight: 500 }} /><Badge label={student.status} bg="#F7E3DC" color="#9E3A24" /><Typography sx={{ alignSelf: "center", fontSize: 11.5, color: "#A09488" }}>Joined Jan 2026</Typography></Stack></Box></Stack>
+      <Stack direction="row" flexWrap="wrap" gap={1}><Button onClick={() => setMessage("Worksheet generator prepared for Bella Tan.")} startIcon={<DescriptionIcon />} sx={{ ...buttonBase, bgcolor: "#E08A72", color: "#1B1917", px: 2, "&:hover": { bgcolor: "#D2795F" } }}>Generate Worksheet</Button><Button onClick={() => setMessage("Upload flow prepared for Bella Tan.")} startIcon={<UploadFileIcon />} variant="outlined" sx={{ ...buttonBase, borderColor: "#E4DCD0", bgcolor: "#FFFDFA", color: "#2A2622", px: 2, "&:hover": { bgcolor: "#F4EFE6" } }}>Upload worksheet</Button><Button onClick={() => setMessage("Parent report draft selected.")} variant="outlined" sx={{ ...buttonBase, borderColor: "#E4DCD0", bgcolor: "#FFFDFA", color: "#2A2622", px: 2, "&:hover": { bgcolor: "#F4EFE6" } }}>Create Parent Report</Button></Stack>
+    </Stack>
+    <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 1.75, mb: 2.75 }}>{stats.map(({ label, value, context, icon: Icon, progress, tone }) => <Card key={label} component="button" onClick={() => setMessage(`${label}: ${value}. ${context}.`)} variant="outlined" sx={{ cursor: "pointer", textAlign: "left", p: "16px 18px 18px", minHeight: 148, bgcolor: "#FFFDFA", borderColor: "#EBE4D9", borderRadius: "14px", boxShadow: "none", transition: "border-color .18s, transform .18s", "&:hover": { borderColor: "#DCCFBE", transform: "translateY(-2px)" }, "&:focus-visible": { outline: "3px solid #E08A72", outlineOffset: 2 } }}><Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.25 }}><Typography sx={{ fontSize: 11.5, fontWeight: 500, color: "#6F675E" }}>{label}</Typography><Icon aria-hidden="true" sx={{ fontSize: 17, color: "#A09488" }} /></Stack><Typography sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: label === "Current weak area" ? 21 : 34, lineHeight: 1.1, fontWeight: 500, color: tone, fontVariantNumeric: "tabular-nums" }}>{value}</Typography><Typography sx={{ fontSize: 11, color: "#A09488", mt: .9 }}>{context}</Typography>{progress !== undefined && <LinearProgress aria-label={`Mastery score ${progress}%`} variant="determinate" value={progress} sx={{ height: 5, borderRadius: 20, bgcolor: "#F0EAE0", mt: 1.2, ".MuiLinearProgress-bar": { bgcolor: "#D8B384", borderRadius: 20, transition: "transform .7s cubic-bezier(.2,.8,.3,1)" } }} />}</Card>)}</Box>
+    <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2.5 }}><Box sx={{ flex: "1 1 460px", minWidth: 0 }}><Card component="section" aria-labelledby="learning-profile" variant="outlined" sx={{ p: { xs: 2.25, sm: 3 }, borderColor: "#EBE4D9", bgcolor: "#FFFDFA", borderRadius: "14px", boxShadow: "none", mb: 2.5 }}><Typography id="learning-profile" component="h2" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 21, fontWeight: 500, mb: 2 }}>Learning Profile</Typography><Box sx={{ display: "flex", flexWrap: "wrap", gap: 3.25 }}><Box sx={{ flex: "1 1 200px" }}><Typography sx={{ fontSize: 10.5, fontWeight: 600, letterSpacing: ".13em", color: "#5C7A63", mb: 1.25 }}>STRENGTHS</Typography><Stack gap={1.2}>{strengths.map((item) => <Typography key={item} sx={{ pl: 1.5, borderLeft: "2px solid #DCE4DC", fontSize: 13, lineHeight: 1.6, color: "#4A443D" }}>{item}</Typography>)}</Stack></Box><Box sx={{ flex: "1 1 200px" }}><Typography sx={{ fontSize: 10.5, fontWeight: 600, letterSpacing: ".13em", color: "#9E3A24", mb: 1.25 }}>AREAS FOR GROWTH</Typography><Stack gap={1.2}>{areasForGrowth.map((item) => <Typography key={item} sx={{ pl: 1.5, borderLeft: "2px solid #EDD9D2", fontSize: 13, lineHeight: 1.6, color: "#4A443D" }}>{item}</Typography>)}</Stack></Box></Box></Card>
+      <Typography component="h2" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 21, fontWeight: 500, mb: 1.25 }}>Topic Mastery Map</Typography><Stack gap={1.25}>{topicMastery.map(({ topic, value }) => { const focus = value < 55; return <Card key={topic} variant="outlined" sx={{ p: { xs: 1.75, sm: "13px 16px" }, borderRadius: "10px", bgcolor: focus ? "#FDF6F3" : "#FFFDFA", borderColor: focus ? "#F0DCD4" : "#EFE8DE", boxShadow: "none", display: "flex", alignItems: "center", gap: 1.75 }}><Typography sx={{ flex: "0 0 44px", fontSize: 14, fontWeight: 600, color: focus ? "#9E3A24" : "#4A443D", fontVariantNumeric: "tabular-nums" }}>{value}%</Typography><Box sx={{ flex: 1, minWidth: 0 }}><Stack direction="row" alignItems="center" flexWrap="wrap" gap={.75} sx={{ mb: .85 }}><Typography sx={{ fontSize: 13, fontWeight: 500 }}>{topic}</Typography>{focus && <Badge label="FOCUS AREA" bg="#F1D9D1" color="#9E3A24" />}</Stack><LinearProgress aria-label={`${topic} mastery ${value}%`} variant="determinate" value={value} sx={{ height: 5, borderRadius: 20, bgcolor: "#F0EAE0", ".MuiLinearProgress-bar": { bgcolor: barColor(value), borderRadius: 20, transition: "transform .7s cubic-bezier(.2,.8,.3,1)" } }} /></Box></Card>; })}</Stack></Box>
+      <Box sx={{ flex: "0 1 320px", minWidth: 280 }}><Card component="section" aria-labelledby="ai-title" sx={{ bgcolor: "#1B1917", color: "#FBF9F5", p: 3, borderRadius: "14px", boxShadow: "none" }}><Stack direction="row" alignItems="center" gap={1.2} sx={{ mb: 1.75 }}><Box aria-hidden="true" sx={{ width: 22, height: 22, display: "grid", placeItems: "center", bgcolor: "#E08A72", color: "#1B1917", borderRadius: "50%" }}><AutoAwesomeIcon sx={{ fontSize: 14 }} /></Box><Typography id="ai-title" component="h2" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 20, fontWeight: 500 }}>AI Insight</Typography></Stack><Typography sx={{ maxWidth: "52ch", fontFamily: "'Playfair Display', Georgia, serif", fontSize: 19, lineHeight: 1.35, color: "#FBF9F5", mb: 1.25 }}>Bella needs more consistent OEQ keyword phrasing.</Typography><Typography sx={{ maxWidth: "52ch", fontSize: 13, lineHeight: 1.6, color: "#A8A096", mb: 1.25 }}>Her latest answers identify the concept but omit the mark-scheme mechanism. This can cost marks in Booklet B.</Typography><Typography sx={{ fontSize: 10.5, color: "#6E665D", mb: 1.5 }}>SUGGESTION ONLY — NOT SAVED</Typography><Typography sx={{ fontSize: 10.5, fontWeight: 600, letterSpacing: ".13em", color: "#7A7268", mb: 1 }}>SUGGESTED ACTIONS</Typography><Stack gap={1}>{["Generate Keyword Drill", "Review Past OEQ Errors"].map((action) => <Button key={action} onClick={() => setMessage(`${action} prepared for Bella Tan.`)} endIcon={<ArrowForwardIcon />} sx={{ ...buttonBase, minHeight: 42, justifyContent: "space-between", bgcolor: "#282522", border: "1px solid #35312C", color: "#E8E2D9", px: 1.5, "&:hover": { bgcolor: "#332F2A" } }}>{action}</Button>)}</Stack></Card></Box></Box>
+    <Box role="status" aria-live="polite" sx={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>{message}</Box>
+  </Box></Box>;
 }
-

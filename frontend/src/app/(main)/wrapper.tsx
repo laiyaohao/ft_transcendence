@@ -15,12 +15,11 @@ export default function Wrapper({ children }: Readonly<{ children: React.ReactNo
       sx={{
         position: 'relative',
         display: 'flex',
-        overflow: 'hidden',
         minHeight: '100vh',
         width: '100%',
       }}
     >
-      <Sidebar container={layoutContainer ?? undefined} />
+      <Sidebar container={layoutContainer ?? undefined} showRail={false} />
       <Box
         sx={{
           display: 'flex',
@@ -30,6 +29,7 @@ export default function Wrapper({ children }: Readonly<{ children: React.ReactNo
         }}
       >
         <Topbar />
+        <Sidebar container={layoutContainer ?? undefined} showDesktop={false} />
         <Box
           component="main"
           id="main-content"

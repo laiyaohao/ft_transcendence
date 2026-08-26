@@ -4,8 +4,8 @@ import * as React from "react";
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import Card from "@mui/material/Card";
-import Stack from "@mui/material/Stack";
 import Button from "@mui/material/Button";
+import Chip from "@mui/material/Chip";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import CameraAltOutlinedIcon from "@mui/icons-material/CameraAltOutlined";
@@ -14,343 +14,41 @@ import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 import CheckIcon from "@mui/icons-material/Check";
 import { useRouter, useSearchParams } from "next/navigation";
-import { accent, worksheets } from "@/lib/student-mock-data";
+import { worksheets } from "@/lib/student-mock-data";
+import Stack from "@/components/lumina-stack";
 
-const INK = "rgb(24,21,18)";
-const MUTED = "rgb(126,117,111)";
-const BORDER = "rgb(232,226,217)";
-const CARD_BG = "rgb(250,247,242)";
+const STEP_LABELS = ["Select", "Upload & Review", "Confirm", "Done"];
+const PAGES = [{ id: "p1", label: "Page 1", warn: null as string | null }, { id: "p2", label: "Page 2", warn: "Looks a little dark — check it is readable" }];
+const buttonBase = { minHeight: 42, textTransform: "none", fontSize: 13.5, fontWeight: 500, borderRadius: "10px", "&:focus-visible": { outline: "3px solid #E08A72", outlineOffset: 2 } };
+const secondaryButton = { ...buttonBase, borderColor: "#E4DCD0", color: "#2A2622", bgcolor: "#FFFDFA", "&:hover": { bgcolor: "#F4EFE6", borderColor: "#DCCFBE" } };
 
-const STEP_LABELS = [
-  { n: 1, label: "Select" },
-  { n: 2, label: "Upload & Review" },
-  { n: 3, label: "Confirm" },
-  { n: 4, label: "Done" },
-];
+function UploadStepper({ step, onJump }: { step: number; onJump: (target: number) => void }) {
+  return <Box aria-label={`Upload progress: ${STEP_LABELS[step - 1]}`} sx={{ display: "flex", alignItems: "flex-start", mb: 4.25, px: { xs: 0, sm: .75 }, overflowX: "auto", minWidth: 0 }}>{STEP_LABELS.map((label, index) => { const number = index + 1; const complete = number < step; const current = number === step; return <Box key={label} sx={{ flex: "1 0 130px", position: "relative", display: "flex", flexDirection: "column", alignItems: "center", "&::after": index < STEP_LABELS.length - 1 ? { content: '""', position: "absolute", top: 14, left: "50%", width: "100%", height: 2, bgcolor: complete ? "#9E3A24" : "#E4DCD0", zIndex: 0 } : undefined }}><Button aria-current={current ? "step" : undefined} aria-label={`${label}${complete ? ", completed" : current ? ", current step" : ", upcoming"}`} disabled={number > step} onClick={() => onJump(number)} sx={{ minWidth: 29, width: 29, height: 29, p: 0, zIndex: 1, borderRadius: "50%", border: "2px solid", borderColor: complete || current ? "#9E3A24" : "#E4DCD0", bgcolor: complete ? "#9E3A24" : current ? "#FFFDFA" : "#F4EFE6", color: complete ? "#FBF9F5" : current ? "#9E3A24" : "#BCB1A3", fontSize: 11.5, fontWeight: 700, "&.Mui-disabled": { borderColor: "#E4DCD0", bgcolor: "#F4EFE6", color: "#BCB1A3" }, "&:focus-visible": { outline: "3px solid #E08A72", outlineOffset: 2 } }}>{complete ? <CheckIcon sx={{ fontSize: 16 }} /> : number}</Button><Typography sx={{ mt: 1, fontSize: 11.5, fontWeight: current ? 600 : 400, color: current || complete ? "#2A2622" : "#A09488", whiteSpace: "nowrap", textAlign: "center" }}>{label}</Typography></Box>; })}</Box>;
+}
 
-const PAGES = [
-  { id: "p1", label: "Page 1", warn: null as string | null },
-  { id: "p2", label: "Page 2", warn: "Looks a little dark — check it's readable" },
-];
+function PageThumbnail({ small = false }: { small?: boolean }) { return <Box aria-hidden="true" sx={{ width: small ? 70 : 84, height: small ? 92 : 110, borderRadius: small ? "6px" : "8px", flexShrink: 0, backgroundImage: "repeating-linear-gradient(180deg, #FDFAF4, #FDFAF4 8px, #F2ECE1 8px, #F2ECE1 9px)", border: "1px solid #EBE4D9" }} />; }
 
 function UploadWizard() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const incomplete = worksheets.filter((w) => w.status === "incomplete");
+  const incomplete = worksheets.filter((worksheet) => worksheet.status === "incomplete");
   const preselected = searchParams.get("ws");
-
   const [step, setStep] = React.useState<1 | 2 | 3 | 4>(1);
-  const [selectedId, setSelectedId] = React.useState(
-    preselected && incomplete.some((w) => w.id === preselected) ? preselected : incomplete[0]?.id ?? "ws2",
-  );
+  const [selectedId, setSelectedId] = React.useState(preselected && incomplete.some((worksheet) => worksheet.id === preselected) ? preselected : incomplete[0]?.id ?? "ws2");
   const [dragOver, setDragOver] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
+  const selectedWs = worksheets.find((worksheet) => worksheet.id === selectedId) ?? incomplete[0];
+  const next = () => setStep((current) => Math.min(4, current + 1) as 1 | 2 | 3 | 4);
+  const prev = () => setStep((current) => Math.max(1, current - 1) as 1 | 2 | 3 | 4);
+  const submit = () => { setUploading(true); setTimeout(() => { setUploading(false); setStep(4); }, 1800); };
 
-  const selectedWs = worksheets.find((w) => w.id === selectedId) ?? incomplete[0];
-
-  const next = () => setStep((s) => (Math.min(4, s + 1) as 1 | 2 | 3 | 4));
-  const prev = () => setStep((s) => (Math.max(1, s - 1) as 1 | 2 | 3 | 4));
-
-  const submit = () => {
-    setUploading(true);
-    setTimeout(() => {
-      setUploading(false);
-      setStep(4);
-    }, 1800);
-  };
-
-  return (
-    <Box sx={{ backgroundColor: "rgb(253,251,247)", minHeight: "100vh", py: 5, px: { xs: 2, sm: 4, md: 6 } }}>
-      <Box sx={{ maxWidth: 900, mx: "auto" }}>
-        <Stack direction="row" sx={{ alignItems: "center", mb: 5, flexWrap: "wrap", rowGap: 1.5 }}>
-          {STEP_LABELS.map((s, i) => (
-            <React.Fragment key={s.n}>
-              <Stack direction="row" spacing={1.25} sx={{ alignItems: "center" }}>
-                <Box
-                  sx={{
-                    width: 30,
-                    height: 30,
-                    borderRadius: "50%",
-                    border: `1.5px solid ${step >= s.n ? accent : "rgb(207,196,189)"}`,
-                    backgroundColor: step >= s.n ? accent : "rgb(247,243,241)",
-                    color: step >= s.n ? "#fff" : "rgb(126,117,111)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 13,
-                    fontWeight: 600,
-                  }}
-                >
-                  {s.n}
-                </Box>
-                <Typography sx={{ fontSize: 14, fontWeight: 500, color: step >= s.n ? INK : "rgb(126,117,111)" }}>
-                  {s.label}
-                </Typography>
-              </Stack>
-              {i < STEP_LABELS.length - 1 && <Box sx={{ width: 36, height: "1.5px", backgroundColor: "rgb(207,196,189)", mx: 1.75 }} />}
-            </React.Fragment>
-          ))}
-        </Stack>
-
-        {step === 1 && (
-          <Box>
-            <Typography sx={{ fontFamily: "'EB Garamond', serif", fontWeight: 400, fontSize: 34, letterSpacing: "-0.6px", mb: 0.75 }}>
-              Which worksheet are you submitting?
-            </Typography>
-            <Typography sx={{ fontSize: 15, color: "rgb(77,69,64)", mb: 3.5 }}>
-              Choose the assigned worksheet these answers belong to.
-            </Typography>
-            <Stack spacing={1.5}>
-              {incomplete.map((w) => {
-                const active = w.id === selectedId;
-                return (
-                  <Card
-                    key={w.id}
-                    variant="outlined"
-                    onClick={() => setSelectedId(w.id)}
-                    sx={{
-                      cursor: "pointer",
-                      textAlign: "left",
-                      backgroundColor: CARD_BG,
-                      borderColor: active ? accent : BORDER,
-                      borderWidth: "1.5px",
-                      borderRadius: 3,
-                      boxShadow: "none",
-                      px: 2.5,
-                      py: 2.25,
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 2,
-                    }}
-                  >
-                    <Box sx={{ width: 20, height: 20, borderRadius: "50%", border: `1.5px solid ${active ? accent : BORDER}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                      <Box sx={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: active ? accent : "transparent" }} />
-                    </Box>
-                    <Box>
-                      <Typography sx={{ fontFamily: "'EB Garamond', serif", fontSize: 19, color: INK }}>{w.title}</Typography>
-                      <Typography sx={{ fontSize: 13, color: MUTED, mt: 0.25 }}>
-                        Science · {w.topic} · Assigned {w.assigned}
-                      </Typography>
-                    </Box>
-                  </Card>
-                );
-              })}
-            </Stack>
-            <Stack direction="row" sx={{ justifyContent: "flex-end", mt: 4 }}>
-              <Button
-                onClick={next}
-                endIcon={<ArrowForwardIcon sx={{ fontSize: 16 }} />}
-                sx={{ backgroundColor: accent, color: "#fff", textTransform: "none", fontWeight: 600, borderRadius: 2, px: 3, py: 1.5, "&:hover": { backgroundColor: accent, filter: "brightness(0.96)" } }}
-              >
-                Continue
-              </Button>
-            </Stack>
-          </Box>
-        )}
-
-        {step === 2 && (
-          <Box>
-            <Typography sx={{ fontFamily: "'EB Garamond', serif", fontWeight: 400, fontSize: 34, letterSpacing: "-0.6px", mb: 0.75 }}>
-              Upload your pages
-            </Typography>
-            <Typography sx={{ fontSize: 15, color: "rgb(77,69,64)", mb: 3 }}>
-              For <strong style={{ color: INK, fontWeight: 600 }}>{selectedWs?.title}</strong>. Add photos or a PDF of your
-              completed worksheet.
-            </Typography>
-
-            <Box
-              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={(e) => { e.preventDefault(); setDragOver(false); }}
-              sx={{
-                border: `2px dashed ${dragOver ? accent : "rgb(207,196,189)"}`,
-                backgroundColor: dragOver ? "rgb(253,248,247)" : CARD_BG,
-                borderRadius: 3.5,
-                py: 5,
-                px: 3,
-                textAlign: "center",
-                mb: 1.75,
-              }}
-            >
-              <Box sx={{ width: 52, height: 52, mx: "auto", mb: 1.75, borderRadius: "14px", backgroundColor: "rgb(236,231,224)", display: "flex", alignItems: "center", justifyContent: "center", color: "rgb(155,68,48)" }}>
-                <UploadFileIcon />
-              </Box>
-              <Typography sx={{ fontSize: 16, fontWeight: 600, color: INK }}>Drag &amp; drop files here</Typography>
-              <Typography sx={{ fontSize: 14, color: MUTED, my: 0.5 }}>or use one of the options below</Typography>
-              <Stack direction="row" spacing={1.25} sx={{ justifyContent: "center", flexWrap: "wrap", rowGap: 1.25, mt: 2 }}>
-                <Button
-                  startIcon={<DescriptionOutlinedIcon sx={{ fontSize: 15 }} />}
-                  variant="outlined"
-                  sx={{ borderColor: "rgb(45,41,38)", color: "rgb(45,41,38)", backgroundColor: "#fff", textTransform: "none", fontWeight: 600, borderRadius: 2, "&:hover": { backgroundColor: INK, color: "#fff" } }}
-                >
-                  Choose files
-                </Button>
-                <Button
-                  startIcon={<CameraAltOutlinedIcon sx={{ fontSize: 15 }} />}
-                  variant="outlined"
-                  sx={{ borderColor: "rgb(45,41,38)", color: "rgb(45,41,38)", backgroundColor: "#fff", textTransform: "none", fontWeight: 600, borderRadius: 2, "&:hover": { backgroundColor: INK, color: "#fff" } }}
-                >
-                  Take photo
-                </Button>
-              </Stack>
-              <Typography sx={{ fontSize: 12, color: "rgb(150,144,139)", mt: 2 }}>
-                Accepts JPG, PNG or PDF · up to 20 MB · multiple pages allowed
-              </Typography>
-            </Box>
-
-            <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", my: 1.75 }}>
-              <Typography sx={{ fontSize: 13, fontWeight: 600, letterSpacing: "0.6px", textTransform: "uppercase", color: "rgb(77,69,64)" }}>
-                2 pages detected
-              </Typography>
-              <Typography sx={{ fontSize: 12, color: MUTED }}>Drag to reorder</Typography>
-            </Stack>
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={1.75}>
-              {PAGES.map((p) => (
-                <Card key={p.id} variant="outlined" sx={{ flex: 1, borderColor: BORDER, backgroundColor: CARD_BG, borderRadius: 3, boxShadow: "none", p: 1.5, display: "flex", gap: 1.5 }}>
-                  <Box
-                    sx={{
-                      width: 70,
-                      height: 92,
-                      borderRadius: "6px",
-                      flexShrink: 0,
-                      backgroundImage: "repeating-linear-gradient(180deg, rgb(247,243,241), rgb(247,243,241) 8px, rgb(241,237,236) 8px, rgb(241,237,236) 9px)",
-                      border: `1px solid ${BORDER}`,
-                    }}
-                  />
-                  <Box sx={{ flexGrow: 1 }}>
-                    <Typography sx={{ fontSize: 14, fontWeight: 600, color: INK }}>{p.label}</Typography>
-                    {p.warn && (
-                      <Stack direction="row" spacing={0.75} sx={{ alignItems: "flex-start", mt: 0.75, fontSize: 12, color: "rgb(140,105,45)", lineHeight: 1.4 }}>
-                        <WarningAmberOutlinedIcon sx={{ fontSize: 13, mt: "1px", flexShrink: 0 }} />
-                        <span>{p.warn}</span>
-                      </Stack>
-                    )}
-                  </Box>
-                </Card>
-              ))}
-            </Stack>
-
-            <Stack direction="row" sx={{ justifyContent: "space-between", mt: 4 }}>
-              <Button onClick={prev} variant="outlined" sx={{ borderColor: "rgb(207,196,189)", color: "rgb(77,69,64)", textTransform: "none", fontWeight: 600, borderRadius: 2, px: 2.5, py: 1.5, "&:hover": { backgroundColor: "rgb(247,243,241)" } }}>
-                Back
-              </Button>
-              <Button
-                onClick={next}
-                endIcon={<ArrowForwardIcon sx={{ fontSize: 16 }} />}
-                sx={{ backgroundColor: accent, color: "#fff", textTransform: "none", fontWeight: 600, borderRadius: 2, px: 3, py: 1.5, "&:hover": { backgroundColor: accent, filter: "brightness(0.96)" } }}
-              >
-                Review submission
-              </Button>
-            </Stack>
-          </Box>
-        )}
-
-        {step === 3 && (
-          <Box>
-            <Typography sx={{ fontFamily: "'EB Garamond', serif", fontWeight: 400, fontSize: 34, letterSpacing: "-0.6px", mb: 0.75 }}>
-              Ready to submit?
-            </Typography>
-            <Typography sx={{ fontSize: 15, color: "rgb(77,69,64)", mb: 3.5 }}>
-              Check everything looks right. Our AI will mark it and give you feedback in a moment.
-            </Typography>
-            <Card variant="outlined" sx={{ borderColor: BORDER, backgroundColor: CARD_BG, borderRadius: 3.5, boxShadow: "none", p: 3, mb: 3 }}>
-              <Stack direction="row" sx={{ justifyContent: "space-between", pb: 2, borderBottom: `1px solid ${BORDER}` }}>
-                <Box>
-                  <Typography sx={{ fontFamily: "'EB Garamond', serif", fontSize: 22, color: INK }}>{selectedWs?.title}</Typography>
-                  <Typography sx={{ fontSize: 14, color: MUTED, mt: 0.5 }}>Science · {selectedWs?.topic}</Typography>
-                </Box>
-                <Box sx={{ textAlign: "right" }}>
-                  <Typography sx={{ fontSize: 22, fontWeight: 600, color: INK }}>2</Typography>
-                  <Typography sx={{ fontSize: 12, color: MUTED }}>pages</Typography>
-                </Box>
-              </Stack>
-              <Stack direction="row" spacing={1.5} sx={{ mt: 2 }}>
-                {PAGES.map((p) => (
-                  <Box
-                    key={p.id}
-                    sx={{
-                      width: 84,
-                      height: 110,
-                      borderRadius: "8px",
-                      backgroundImage: "repeating-linear-gradient(180deg, rgb(247,243,241), rgb(247,243,241) 9px, rgb(241,237,236) 9px, rgb(241,237,236) 10px)",
-                      border: `1px solid ${BORDER}`,
-                    }}
-                  />
-                ))}
-              </Stack>
-            </Card>
-            <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center" }}>
-              <Button onClick={prev} variant="outlined" sx={{ borderColor: "rgb(207,196,189)", color: "rgb(77,69,64)", textTransform: "none", fontWeight: 600, borderRadius: 2, px: 2.5, py: 1.5, "&:hover": { backgroundColor: "rgb(247,243,241)" } }}>
-                Back
-              </Button>
-              <Button
-                onClick={submit}
-                startIcon={uploading ? <Box sx={{ width: 16, height: 16, border: "2px solid rgba(255,255,255,0.4)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.7s linear infinite", "@keyframes spin": { to: { transform: "rotate(360deg)" } } }} /> : <AutoAwesomeIcon sx={{ fontSize: 18 }} />}
-                disabled={uploading}
-                sx={{ backgroundColor: accent, color: "#fff", textTransform: "none", fontWeight: 600, borderRadius: 2, px: 3.5, py: 1.6, "&:hover": { backgroundColor: accent, filter: "brightness(0.96)" }, "&.Mui-disabled": { backgroundColor: accent, opacity: 0.75, color: "#fff" } }}
-              >
-                Submit for AI Marking
-              </Button>
-            </Stack>
-            <Typography sx={{ fontSize: 13, color: MUTED, textAlign: "center", mt: 2 }}>
-              AI marking is checked by your tutor before it affects your profile.
-            </Typography>
-          </Box>
-        )}
-
-        {step === 4 && (
-          <Box sx={{ textAlign: "center", py: 4 }}>
-            <Box sx={{ width: 72, height: 72, mx: "auto", mb: 3, borderRadius: "50%", backgroundColor: "rgb(233,238,233)", display: "flex", alignItems: "center", justifyContent: "center", color: "rgb(70,92,70)" }}>
-              <CheckIcon sx={{ fontSize: 34 }} />
-            </Box>
-            <Typography sx={{ fontFamily: "'EB Garamond', serif", fontWeight: 400, fontSize: 36, letterSpacing: "-0.6px", mb: 1 }}>
-              Worksheet submitted!
-            </Typography>
-            <Typography sx={{ fontSize: 16, color: "rgb(77,69,64)", maxWidth: 440, mx: "auto", mb: 3.5 }}>
-              Great work. Our AI is marking your answers now — you&apos;ll get your results and feedback shortly.
-            </Typography>
-            <Card variant="outlined" sx={{ maxWidth: 420, mx: "auto", mb: 4, borderColor: BORDER, backgroundColor: CARD_BG, borderRadius: 3, boxShadow: "none", p: 2.5, textAlign: "left" }}>
-              <Stack direction="row" sx={{ justifyContent: "space-between", mb: 1.25 }}>
-                <Typography sx={{ fontSize: 14, color: MUTED }}>Worksheet</Typography>
-                <Typography sx={{ fontSize: 14, fontWeight: 600, color: INK }}>{selectedWs?.title}</Typography>
-              </Stack>
-              <Stack direction="row" sx={{ justifyContent: "space-between", mb: 1.25 }}>
-                <Typography sx={{ fontSize: 14, color: MUTED }}>Submitted</Typography>
-                <Typography sx={{ fontSize: 14, fontWeight: 600, color: INK }}>23 Jul 2026</Typography>
-              </Stack>
-              <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center" }}>
-                <Typography sx={{ fontSize: 14, color: MUTED }}>Status</Typography>
-                <Typography sx={{ fontSize: 12, fontWeight: 600, px: 1.25, py: 0.5, borderRadius: 9999, backgroundColor: "rgb(248,240,225)", color: "rgb(140,105,45)" }}>
-                  AI marking in progress
-                </Typography>
-              </Stack>
-            </Card>
-            <Stack direction="row" spacing={1.5} sx={{ justifyContent: "center" }}>
-              <Button
-                onClick={() => router.push("/worksheets")}
-                variant="outlined"
-                sx={{ borderColor: "rgb(45,41,38)", color: "rgb(45,41,38)", textTransform: "none", fontWeight: 600, borderRadius: 2, px: 2.75, py: 1.5, "&:hover": { backgroundColor: INK, color: "#fff" } }}
-              >
-                Back to Worksheets
-              </Button>
-              <Button
-                onClick={() => router.push("/worksheets/ws1")}
-                sx={{ backgroundColor: accent, color: "#fff", textTransform: "none", fontWeight: 600, borderRadius: 2, px: 2.75, py: 1.5, "&:hover": { backgroundColor: accent, filter: "brightness(0.96)" } }}
-              >
-                View a sample result
-              </Button>
-            </Stack>
-          </Box>
-        )}
-      </Box>
-    </Box>
-  );
+  return <Box sx={{ minHeight: "100vh", bgcolor: "#F7F4EF", px: { xs: 2.5, sm: 3.75 }, py: 3.75, color: "#2A2622" }}><Box sx={{ maxWidth: 900, mx: "auto", animation: "fadeUp .35s ease both" }}>
+    <UploadStepper step={step} onJump={(target) => setStep(target as 1 | 2 | 3 | 4)} />
+    {step === 1 && <Box><Typography component="h1" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: { xs: 29, sm: 31 }, fontWeight: 500, letterSpacing: "-.02em", mb: .75 }}>Which worksheet are you submitting?</Typography><Typography sx={{ fontSize: 14.5, color: "#4A443D", mb: 3.25, lineHeight: 1.65 }}>Choose the assigned worksheet these answers belong to.</Typography><Stack gap={1.25}>{incomplete.map((worksheet) => { const active = worksheet.id === selectedId; return <Card component="button" key={worksheet.id} variant="outlined" onClick={() => setSelectedId(worksheet.id)} aria-pressed={active} sx={{ width: "100%", minHeight: 92, cursor: "pointer", textAlign: "left", bgcolor: active ? "#FDF6F3" : "#FFFDFA", borderColor: active ? "#9E3A24" : "#EBE4D9", borderWidth: "1.5px", borderRadius: "12px", boxShadow: "none", px: 2.25, py: 2, display: "flex", alignItems: "center", gap: 1.75, transition: "border-color .18s, transform .18s", "&:hover": { borderColor: "#DCCFBE", transform: "translateY(-2px)" }, "&:focus-visible": { outline: "3px solid #E08A72", outlineOffset: 2 } }}><Box aria-hidden="true" sx={{ width: 20, height: 20, borderRadius: "50%", border: "1.5px solid", borderColor: active ? "#9E3A24" : "#E4DCD0", display: "grid", placeItems: "center", flexShrink: 0 }}><Box sx={{ width: 10, height: 10, borderRadius: "50%", bgcolor: active ? "#9E3A24" : "transparent" }} /></Box><Box><Typography sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 19, lineHeight: 1.2 }}>{worksheet.title}</Typography><Typography sx={{ fontSize: 12.5, color: "#8B837A", mt: .5 }}>Science · {worksheet.topic} · Assigned {worksheet.assigned}</Typography></Box></Card>; })}</Stack><Stack direction="row" justifyContent="flex-end" sx={{ mt: 3.5 }}><Button onClick={next} endIcon={<ArrowForwardIcon />} sx={{ ...buttonBase, bgcolor: "#9E3A24", color: "#FBF9F5", px: 2.75, "&:hover": { bgcolor: "#8A3120" } }}>Continue</Button></Stack></Box>}
+    {step === 2 && <Box><Typography component="h1" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: { xs: 29, sm: 31 }, fontWeight: 500, letterSpacing: "-.02em", mb: .75 }}>Upload your pages</Typography><Typography sx={{ fontSize: 14.5, color: "#4A443D", mb: 3, lineHeight: 1.65 }}>For <Box component="span" sx={{ fontWeight: 600, color: "#2A2622" }}>{selectedWs?.title}</Box>. Add photos or a PDF of your completed worksheet.</Typography><Box onDragOver={(event) => { event.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={(event) => { event.preventDefault(); setDragOver(false); }} sx={{ border: "1px dashed", borderWidth: 2, borderColor: dragOver ? "#9E3A24" : "#DCCFBE", bgcolor: dragOver ? "#FDF6F3" : "#FFFDFA", borderRadius: "14px", py: 4.75, px: 3, textAlign: "center", mb: 1.75 }}><Box aria-hidden="true" sx={{ width: 52, height: 52, mx: "auto", mb: 1.75, borderRadius: "14px", bgcolor: "#F4EFE6", display: "grid", placeItems: "center", color: "#B4573F" }}><UploadFileIcon /></Box><Typography sx={{ fontSize: 16, fontWeight: 600 }}>Drag and drop files here</Typography><Typography sx={{ fontSize: 13.5, color: "#8B837A", my: .5 }}>or use one of the options below</Typography><Stack direction="row" gap={1.25} justifyContent="center" flexWrap="wrap" sx={{ mt: 2 }}><Button startIcon={<DescriptionOutlinedIcon />} variant="outlined" sx={{ ...secondaryButton, px: 2 }}>Choose files</Button><Button startIcon={<CameraAltOutlinedIcon />} variant="outlined" sx={{ ...secondaryButton, px: 2 }}>Take photo</Button></Stack><Typography sx={{ fontSize: 11.5, color: "#A09488", mt: 2 }}>Accepts JPG, PNG or PDF · up to 20 MB · multiple pages allowed</Typography></Box><Stack direction="row" alignItems="center" justifyContent="space-between" gap={1} sx={{ my: 1.75 }}><Typography sx={{ fontSize: 10.5, fontWeight: 600, letterSpacing: ".13em", color: "#6F675E" }}>2 PAGES DETECTED</Typography><Typography sx={{ fontSize: 11.5, color: "#A09488" }}>Drag to reorder</Typography></Stack><Stack direction={{ xs: "column", sm: "row" }} gap={1.5}>{PAGES.map((page) => <Card key={page.id} variant="outlined" sx={{ flex: 1, borderColor: "#EBE4D9", bgcolor: "#FFFDFA", borderRadius: "12px", boxShadow: "none", p: 1.5, display: "flex", gap: 1.5 }}><PageThumbnail small /><Box><Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>{page.label}</Typography>{page.warn && <Stack direction="row" gap={.75} alignItems="flex-start" sx={{ mt: .75 }}><WarningAmberOutlinedIcon aria-hidden="true" sx={{ fontSize: 14, color: "#7A6238", mt: "1px" }} /><Typography sx={{ fontSize: 11.5, lineHeight: 1.45, color: "#7A6238" }}>{page.warn}</Typography></Stack>}</Box></Card>)}</Stack><Stack direction="row" justifyContent="space-between" sx={{ mt: 3.5 }}><Button onClick={prev} variant="outlined" sx={{ ...secondaryButton, px: 2.25 }}>Back</Button><Button onClick={next} endIcon={<ArrowForwardIcon />} sx={{ ...buttonBase, bgcolor: "#9E3A24", color: "#FBF9F5", px: 2.75, "&:hover": { bgcolor: "#8A3120" } }}>Review submission</Button></Stack></Box>}
+    {step === 3 && <Box><Typography component="h1" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: { xs: 29, sm: 31 }, fontWeight: 500, letterSpacing: "-.02em", mb: .75 }}>Ready to submit?</Typography><Typography sx={{ fontSize: 14.5, color: "#4A443D", mb: 3.25, lineHeight: 1.65 }}>Check everything looks right. AI will suggest marking for tutor review.</Typography><Card component="section" aria-label="Submission summary" variant="outlined" sx={{ borderColor: "#EBE4D9", bgcolor: "#FFFDFA", borderRadius: "14px", boxShadow: "none", p: 2.75, mb: 2.25 }}><Stack direction="row" justifyContent="space-between" gap={2} sx={{ pb: 2, borderBottom: "1px solid #F0EAE0" }}><Box><Typography sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 22 }}>{selectedWs?.title}</Typography><Typography sx={{ fontSize: 13, color: "#8B837A", mt: .5 }}>Science · {selectedWs?.topic}</Typography></Box><Box sx={{ textAlign: "right" }}><Typography sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 25, fontVariantNumeric: "tabular-nums" }}>2</Typography><Typography sx={{ fontSize: 11.5, color: "#8B837A" }}>pages</Typography></Box></Stack><Stack direction="row" gap={1.5} sx={{ mt: 2 }}>{PAGES.map((page) => <PageThumbnail key={page.id} />)}</Stack></Card><Stack direction="row" justifyContent="space-between" alignItems="center" gap={1.5}><Button onClick={prev} variant="outlined" sx={{ ...secondaryButton, px: 2.25 }}>Back</Button><Button onClick={submit} disabled={uploading} startIcon={uploading ? <Box aria-hidden="true" sx={{ width: 15, height: 15, border: "2px solid rgba(27,25,23,.35)", borderTopColor: "#1B1917", borderRadius: "50%", animation: "spin .7s linear infinite", "@keyframes spin": { to: { transform: "rotate(360deg)" } } }} /> : <AutoAwesomeIcon />} sx={{ ...buttonBase, bgcolor: "#E08A72", color: "#1B1917", px: 2.75, "&:hover": { bgcolor: "#D2795F" }, "&.Mui-disabled": { bgcolor: "#EDE6DB", color: "#B5AA9C" } }}>{uploading ? "Preparing submission" : "Submit for AI Marking"}</Button></Stack><Typography sx={{ fontSize: 12.5, color: "#6F675E", textAlign: "center", mt: 1.75 }}>AI marking is checked by your tutor before it affects your profile.</Typography></Box>}
+    {step === 4 && <Box sx={{ textAlign: "center", py: 3 }}><Box aria-hidden="true" sx={{ width: 58, height: 58, mx: "auto", mb: 2.5, borderRadius: "50%", bgcolor: "#E4EDE4", color: "#4A6B50", display: "grid", placeItems: "center" }}><CheckIcon sx={{ fontSize: 30 }} /></Box><Typography component="h1" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: { xs: 31, sm: 36 }, fontWeight: 500, letterSpacing: "-.02em", mb: 1 }}>Worksheet submitted</Typography><Typography sx={{ fontSize: 14.5, color: "#4A443D", maxWidth: 440, mx: "auto", mb: 3 }}>Your tutor will review the AI marking before it affects your profile.</Typography><Card variant="outlined" sx={{ maxWidth: 420, mx: "auto", mb: 3.5, borderColor: "#EBE4D9", bgcolor: "#FFFDFA", borderRadius: "14px", boxShadow: "none", p: 2.25, textAlign: "left" }}><Stack direction="row" justifyContent="space-between" sx={{ mb: 1.25 }}><Typography sx={{ fontSize: 13, color: "#6F675E" }}>Worksheet</Typography><Typography sx={{ fontSize: 13, fontWeight: 600 }}>{selectedWs?.title}</Typography></Stack><Stack direction="row" justifyContent="space-between" sx={{ mb: 1.25 }}><Typography sx={{ fontSize: 13, color: "#6F675E" }}>Submitted</Typography><Typography sx={{ fontSize: 13, fontWeight: 600 }}>23 Jul 2026</Typography></Stack><Stack direction="row" justifyContent="space-between" alignItems="center"><Typography sx={{ fontSize: 13, color: "#6F675E" }}>Status</Typography><Chip label="SUBMITTED" size="small" sx={{ height: 24, bgcolor: "#F7E3DC", color: "#9E3A24", fontSize: 9.5, fontWeight: 700, letterSpacing: ".05em" }} /></Stack></Card><Stack direction="row" gap={1.25} justifyContent="center" flexWrap="wrap"><Button onClick={() => router.push("/worksheets")} variant="outlined" sx={{ ...secondaryButton, px: 2.25 }}>Back to Worksheets</Button><Button onClick={() => router.push("/worksheets/ws1")} sx={{ ...buttonBase, bgcolor: "#9E3A24", color: "#FBF9F5", px: 2.25, "&:hover": { bgcolor: "#8A3120" } }}>View a sample result</Button></Stack></Box>}
+  </Box></Box>;
 }
 
-export default function Page() {
-  return (
-    <React.Suspense fallback={null}>
-      <UploadWizard />
-    </React.Suspense>
-  );
-}
+export default function Page() { return <React.Suspense fallback={null}><UploadWizard /></React.Suspense>; }

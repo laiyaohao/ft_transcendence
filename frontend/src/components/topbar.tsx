@@ -1,66 +1,54 @@
 'use client';
 
 import * as React from 'react';
-import AccountCircleOutlinedIcon from '@mui/icons-material/AccountCircleOutlined';
 import LogoutOutlinedIcon from '@mui/icons-material/LogoutOutlined';
-import MenuIcon from '@mui/icons-material/Menu';
 import PersonOutlineIcon from '@mui/icons-material/PersonOutlineOutlined';
 import MuiAppBar from '@mui/material/AppBar';
+import Avatar from '@mui/material/Avatar';
 import Box from '@mui/material/Box';
 import Divider from '@mui/material/Divider';
 import IconButton from '@mui/material/IconButton';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
-import Stack from '@mui/material/Stack';
 import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
 import { styled } from '@mui/material/styles';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
-import ViewportContext from '@/context/viewport-context';
-import {
-  clearAuthSession,
-  getBrowserSession,
-  getRoleHome,
-  type AuthSession,
-} from '@/lib/auth';
+import { clearAuthSession, getBrowserSession, getRoleHome, type AuthSession } from '@/lib/auth';
 import strings from '@/locales/en.json';
-import ColorModeSelect from '@/theme/color-mode-select';
 
-const AppBar = styled(MuiAppBar)(({ theme }) => ({
-  borderWidth: 0,
-  borderBottomWidth: 1,
-  borderStyle: 'solid',
-  borderColor: (theme.vars ?? theme).palette.divider,
+const AppBar = styled(MuiAppBar)({
+  position: 'sticky',
+  top: 0,
+  zIndex: 30,
+  border: 0,
+  borderBottom: '1px solid #EDE6DB',
+  backgroundColor: 'rgba(250,247,242,.92)',
+  backdropFilter: 'blur(10px)',
   boxShadow: 'none',
-  zIndex: theme.zIndex.drawer + 1,
-}));
+});
+
+function getInitials(email?: string) {
+  return email ? email.slice(0, 2).toUpperCase() : 'LA';
+}
 
 export default function Topbar() {
   const router = useRouter();
-  const viewportContext = React.useContext(ViewportContext);
-  if (!viewportContext) {
-    throw new Error('Viewport context was used without a provider.');
-  }
-
   const [session, setSession] = React.useState<AuthSession | null>(null);
   const [accountAnchor, setAccountAnchor] = React.useState<HTMLElement | null>(null);
 
   React.useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setSession(getBrowserSession());
-    }, 0);
+    const timer = window.setTimeout(() => setSession(getBrowserSession()), 0);
     return () => window.clearTimeout(timer);
   }, []);
 
   const closeAccountMenu = () => setAccountAnchor(null);
-
   const openProfile = () => {
     closeAccountMenu();
     router.push('/profile');
   };
-
   const handleLogout = () => {
     closeAccountMenu();
     clearAuthSession();
@@ -68,44 +56,29 @@ export default function Topbar() {
   };
 
   return (
-    <AppBar position="relative" sx={{ displayPrint: 'none' }} data-testid="topbar">
-      <Toolbar sx={{ backgroundColor: 'inherit', gap: 1 }}>
-        <IconButton
-          aria-label="Open navigation menu"
-          color="inherit"
-          edge="start"
-          onClick={() => viewportContext.handleToggleHeaderMenu(true)}
-          sx={{ display: { xs: 'inline-flex', md: 'none' } }}
-        >
-          <MenuIcon />
-        </IconButton>
-
-        <Link
-          href={session ? getRoleHome(session.role) : '/'}
-          style={{ color: 'inherit', textDecoration: 'none' }}
-        >
-          <Typography
-            variant="h5"
-            sx={{ fontWeight: 700, whiteSpace: 'nowrap', lineHeight: 1 }}
-          >
+    <AppBar data-testid="topbar">
+      <Toolbar sx={{ minHeight: 58, px: { xs: 2, sm: 3.75 }, gap: 2 }}>
+        <Box component="a" href="#main-content" sx={{ position: 'absolute', left: 12, top: -48, px: 1.5, py: 1, borderRadius: 1, bgcolor: '#FFFDFA', color: '#2A2622', '&:focus': { top: 8, zIndex: 1 } }}>
+          Skip to content
+        </Box>
+        <Link href={session ? getRoleHome(session.role) : '/'} style={{ color: 'inherit', textDecoration: 'none' }}>
+          <Typography variant="h6" sx={{ color: '#2A2622', fontSize: '1rem', fontWeight: 500, whiteSpace: 'nowrap' }}>
             {strings.common.topbarTitle}
           </Typography>
         </Link>
-
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', ml: 'auto' }}>
-          <ColorModeSelect />
-          <IconButton
-            aria-label="Open account menu"
-            aria-controls={accountAnchor ? 'account-menu' : undefined}
-            aria-expanded={accountAnchor ? 'true' : undefined}
-            aria-haspopup="menu"
-            color="inherit"
-            onClick={(event) => setAccountAnchor(event.currentTarget)}
-          >
-            <AccountCircleOutlinedIcon />
-          </IconButton>
-        </Stack>
-
+        <Box sx={{ flex: 1 }} />
+        <IconButton
+          aria-label="Open account menu"
+          aria-controls={accountAnchor ? 'account-menu' : undefined}
+          aria-expanded={accountAnchor ? 'true' : undefined}
+          aria-haspopup="menu"
+          onClick={(event) => setAccountAnchor(event.currentTarget)}
+          sx={{ width: 34, height: 34, p: 0, overflow: 'hidden', borderRadius: '50%', border: 'none', bgcolor: 'transparent', '&:hover': { bgcolor: 'transparent' } }}
+        >
+          <Avatar sx={{ width: 34, height: 34, bgcolor: '#C6D0C4', color: '#3A332C', fontSize: '0.75rem', fontWeight: 700 }}>
+            {getInitials(session?.email)}
+          </Avatar>
+        </IconButton>
         <Menu
           id="account-menu"
           anchorEl={accountAnchor}
@@ -118,20 +91,12 @@ export default function Topbar() {
           {session ? (
             <Box sx={{ px: 2, py: 1, maxWidth: 280 }}>
               <Typography variant="body2" noWrap>{session.email}</Typography>
-              <Typography variant="caption" color="text.secondary">
-                {session.role === 'TUTOR' ? 'Tutor' : 'Student'}
-              </Typography>
+              <Typography variant="caption" color="text.secondary">{session.role === 'TUTOR' ? 'Tutor' : 'Student'}</Typography>
             </Box>
           ) : null}
           <Divider />
-          <MenuItem onClick={openProfile}>
-            <PersonOutlineIcon fontSize="small" sx={{ mr: 1.5 }} />
-            Profile
-          </MenuItem>
-          <MenuItem onClick={handleLogout}>
-            <LogoutOutlinedIcon fontSize="small" sx={{ mr: 1.5 }} />
-            Logout
-          </MenuItem>
+          <MenuItem onClick={openProfile}><PersonOutlineIcon fontSize="small" sx={{ mr: 1.25 }} />Profile</MenuItem>
+          <MenuItem onClick={handleLogout}><LogoutOutlinedIcon fontSize="small" sx={{ mr: 1.25 }} />Logout</MenuItem>
         </Menu>
       </Toolbar>
     </AppBar>

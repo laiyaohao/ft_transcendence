@@ -1,5 +1,4 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { createTheme } from '@mui/material/styles';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -107,15 +106,11 @@ describe('Sidebar', () => {
     expect(within(navigation).queryByRole('link', { name: 'Classes', hidden: true })).not.toBeInTheDocument();
   });
 
-  it('closes the mobile drawer and leaves navigation links keyboard-focusable', async () => {
-    const user = userEvent.setup();
-    const { closeNavigation } = renderSidebar('TUTOR');
-
-    await user.click(screen.getByRole('button', { name: 'Close navigation menu' }));
-    expect(closeNavigation).toHaveBeenCalledOnce();
-
+  it('marks the active destination and leaves navigation links keyboard-focusable', async () => {
+    renderSidebar('TUTOR');
     const navigation = screen.getByRole('navigation', { name: 'Desktop navigation', hidden: true });
-    const classesLink = within(navigation).getByRole('link', { name: 'Classes', hidden: true });
+    const classesLink = await within(navigation).findByRole('link', { name: 'Classes', hidden: true });
+    expect(classesLink).toHaveAttribute('aria-current', 'page');
     expect(classesLink).not.toHaveAttribute('tabindex', '-1');
   });
 });

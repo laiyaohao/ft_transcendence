@@ -27,10 +27,6 @@ vi.mock('@/lib/auth', async (importOriginal) => {
   };
 });
 
-vi.mock('@/theme/color-mode-select', () => ({
-  default: () => <button type="button">Color mode</button>,
-}));
-
 function renderTopbar() {
   const handleToggleHeaderMenu = vi.fn();
   render(
@@ -64,13 +60,11 @@ describe('Topbar', () => {
     });
   });
 
-  it('opens mobile navigation from the menu button', async () => {
-    const user = userEvent.setup();
-    const { handleToggleHeaderMenu } = renderTopbar();
+  it('uses the light tutor shell without a color-mode control', () => {
+    renderTopbar();
 
-    await user.click(screen.getByRole('button', { name: 'Open navigation menu' }));
-
-    expect(handleToggleHeaderMenu).toHaveBeenCalledWith(true);
+    expect(screen.getByRole('link', { name: 'Skip to content' })).toHaveAttribute('href', '#main-content');
+    expect(screen.queryByText('Color mode')).not.toBeInTheDocument();
   });
 
   it('opens the account menu by keyboard and displays the signed-in identity', async () => {

@@ -137,7 +137,7 @@ class MistakeRecordRepositoryTest {
 
     @Test
     void cannotCreateHistoryFromAnUnapprovedAiSuggestion() {
-        SubmissionDocument document = readyDocument(307L, "pending.pdf", "g");
+        SubmissionDocument document = readyDocument(307L, "pending.pdf", "a");
         Submission pending = Submission.createAnswer(
             document,
             407L,

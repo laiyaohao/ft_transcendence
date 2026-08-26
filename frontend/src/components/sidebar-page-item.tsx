@@ -1,21 +1,12 @@
-'use client'
+'use client';
+
 import * as React from 'react';
-import { type Theme, SxProps } from '@mui/material/styles';
-import Avatar from '@mui/material/Avatar';
 import Box from '@mui/material/Box';
-import Collapse from '@mui/material/Collapse';
-import Grow from '@mui/material/Grow';
 import ListItem from '@mui/material/ListItem';
 import ListItemButton from '@mui/material/ListItemButton';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
-import Paper from '@mui/material/Paper';
-import Typography from '@mui/material/Typography';
-import type {} from '@mui/material/themeCssVarsAugmentation';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import Link from 'next/link';
-import DashboardSidebarContext from '../context/sidebar-context';
-import { MINI_DRAWER_WIDTH } from '@/utils/constants';
 
 export interface SidebarPageItemProps {
   id: string;
@@ -23,11 +14,8 @@ export interface SidebarPageItemProps {
   icon?: React.ReactNode;
   href: string;
   action?: React.ReactNode;
-  defaultExpanded?: boolean;
-  expanded?: boolean;
   selected?: boolean;
   disabled?: boolean;
-  nestedNavigation?: React.ReactNode;
 }
 
 export default function SidebarPageItem({
@@ -36,203 +24,36 @@ export default function SidebarPageItem({
   icon,
   href,
   action,
-  defaultExpanded = false,
-  expanded = defaultExpanded,
   selected = false,
   disabled = false,
-  nestedNavigation,
 }: SidebarPageItemProps) {
-  const sidebarContext = React.useContext(DashboardSidebarContext);
-  if (!sidebarContext) {
-    throw new Error('Sidebar context was used without a provider.');
-  }
-  const {
-    handlePageItemClick,
-    mini = false,
-    isFullyExpanded = true,
-    isFullyCollapsed = false,
-  } = sidebarContext;
-
-  const [isHovered, setIsHovered] = React.useState(false);
-
-  const handleClick = React.useCallback(() => {
-    if (handlePageItemClick) {
-      handlePageItemClick(id, !!nestedNavigation);
-    }
-  }, [handlePageItemClick, id, nestedNavigation]);
-
-  let nestedNavigationCollapseSx: SxProps<Theme> = { display: 'none' };
-  if (mini && isFullyCollapsed) {
-    nestedNavigationCollapseSx = {
-      fontSize: 18,
-      position: 'absolute',
-      top: '41.5%',
-      right: '2px',
-      transform: 'translateY(-50%) rotate(-90deg)',
-    };
-  } else if (!mini && isFullyExpanded) {
-    nestedNavigationCollapseSx = (theme: Theme) => ({
-      ml: 0.5,
-      fontSize: 20,
-      transform: `rotate(${expanded ? 0 : -90}deg)`,
-      transition: theme.transitions.create('transform', {
-        easing: theme.transitions.easing.sharp,
-        duration: 100,
-      }),
-    });
-  }
-
-  const hasExternalHref = href
-    ? href.startsWith('http://') || href.startsWith('https://')
-    : false;
-
-  const LinkComponent = hasExternalHref ? 'a' : Link;
+  const hasExternalHref = href.startsWith('http://') || href.startsWith('https://');
 
   return (
-    <React.Fragment>
-      <ListItem
-        {...(nestedNavigation && mini
-          ? {
-              onMouseEnter: () => {
-                setIsHovered(true);
-              },
-              onMouseLeave: () => {
-                setIsHovered(false);
-              },
-            }
-          : {})}
+    <ListItem disablePadding data-navigation-id={id}>
+      <ListItemButton
+        {...(hasExternalHref
+          ? { component: 'a', href, target: '_blank', rel: 'noopener noreferrer' }
+          : { component: Link, href })}
+        selected={selected}
+        disabled={disabled}
+        aria-current={selected ? 'page' : undefined}
         sx={{
-          display: 'block',
-          py: 1.2,
-          px: 2.2,
-          overflowX: 'hidden',
+          minHeight: 40,
+          px: 1.5,
+          py: 0.75,
+          gap: 1.25,
+          borderRadius: 2,
+          color: '#5A544C',
+          '&:hover': { bgcolor: '#FBF7F1' },
+          '&.Mui-selected, &.Mui-selected:hover': { bgcolor: '#F4E4DE', color: '#9E3A24' },
+          '&.Mui-selected .MuiListItemIcon-root': { color: '#9E3A24' },
         }}
       >
-        <ListItemButton
-          selected={selected}
-          disabled={disabled}
-          sx={{
-            height: mini ? 50 : 'auto',
-          }}
-          {...(nestedNavigation && !mini
-            ? {
-                onClick: handleClick,
-              }
-            : {})}
-          {...(!nestedNavigation
-            ? {
-                LinkComponent,
-                ...(hasExternalHref
-                  ? {
-                      target: '_blank',
-                      rel: 'noopener noreferrer',
-                    }
-                  : {}),
-                href,
-                onClick: handleClick,
-              }
-            : {})}
-        >
-          {icon || mini ? (
-            <Box
-              sx={
-                mini
-                  ? {
-                      position: 'absolute',
-                      left: '50%',
-                      top: 'calc(50% - 6px)',
-                      transform: 'translate(-50%, -50%)',
-                    }
-                  : {}
-              }
-            >
-              <ListItemIcon
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: mini ? 'center' : 'auto',
-                }}
-              >
-                {icon ?? null}
-                {!icon && mini ? (
-                  <Avatar
-                    sx={{
-                      fontSize: 10,
-                      height: 16,
-                      width: 16,
-                    }}
-                  >
-                    {title
-                      .split(' ')
-                      .slice(0, 2)
-                      .map((titleWord) => titleWord.charAt(0).toUpperCase())}
-                  </Avatar>
-                ) : null}
-              </ListItemIcon>
-              {mini ? (
-                <Typography
-                  variant="caption"
-                  sx={{
-                    position: 'absolute',
-                    bottom: -18,
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    fontSize: 10,
-                    fontWeight: 500,
-                    textAlign: 'center',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    maxWidth: MINI_DRAWER_WIDTH - 28,
-                  }}
-                >
-                  {title}
-                </Typography>
-              ) : null}
-            </Box>
-          ) : null}
-          {!mini ? (
-            <ListItemText
-              primary={title}
-              sx={{
-                whiteSpace: 'nowrap',
-                zIndex: 1,
-              }}
-            />
-          ) : null}
-          {action && !mini && isFullyExpanded ? action : null}
-          {nestedNavigation ? (
-            <ExpandMoreIcon sx={nestedNavigationCollapseSx} />
-          ) : null}
-        </ListItemButton>
-        {nestedNavigation && mini ? (
-          <Grow in={isHovered}>
-            <Box
-              sx={{
-                position: 'fixed',
-                left: MINI_DRAWER_WIDTH - 2,
-                pl: '6px',
-              }}
-            >
-              <Paper
-                elevation={8}
-                sx={{
-                  pt: 0.2,
-                  pb: 0.2,
-                  transform: 'translateY(-50px)',
-                }}
-              >
-                {nestedNavigation}
-              </Paper>
-            </Box>
-          </Grow>
-        ) : null}
-      </ListItem>
-      {nestedNavigation && !mini ? (
-        <Collapse in={expanded} timeout="auto" unmountOnExit>
-          {nestedNavigation}
-        </Collapse>
-      ) : null}
-    </React.Fragment>
+        {icon ? <ListItemIcon sx={{ minWidth: 0, color: 'inherit' }}>{icon}</ListItemIcon> : null}
+        <ListItemText primary={title} sx={{ my: 0, minWidth: 0 }} />
+        {action ? <Box sx={{ ml: 'auto' }}>{action}</Box> : null}
+      </ListItemButton>
+    </ListItem>
   );
 }
