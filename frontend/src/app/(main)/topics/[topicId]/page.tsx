@@ -1,169 +1,71 @@
 "use client";
 
 import * as React from "react";
+import ArrowBackOutlinedIcon from "@mui/icons-material/ArrowBackOutlined";
 import Box from "@mui/material/Box";
-import Typography from "@mui/material/Typography";
-import Card from "@mui/material/Card";
-import Grid from "@mui/material/Grid";
-import Stack from "@mui/material/Stack";
-import Chip from "@mui/material/Chip";
 import Button from "@mui/material/Button";
-import ArrowBackIcon from "@mui/icons-material/ArrowBack";
-import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
-import CheckBoxOutlineBlankIcon from "@mui/icons-material/CheckBoxOutlineBlank";
+import Card from "@mui/material/Card";
+import Chip from "@mui/material/Chip";
+import LinearProgress from "@mui/material/LinearProgress";
+import Skeleton from "@mui/material/Skeleton";
+import Typography from "@mui/material/Typography";
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { accent, topics, masteryMeta } from "@/lib/student-mock-data";
+import { useParams, useSearchParams } from "next/navigation";
 
-const INK = "rgb(24,21,18)";
-const MUTED = "rgb(126,117,111)";
-const BORDER = "rgb(232,226,217)";
-const CARD_BG = "rgb(250,247,242)";
+import { fetchMasteryTopic, type MasteryTopicDetail } from "@/services/mastery";
 
-export default function Page({ params }: { params: Promise<{ topicId: string }> }) {
-  const { topicId } = React.use(params);
-  const topic = topics.find((t) => t.id === topicId);
-  if (!topic) notFound();
+function validId(value: string | null | undefined) {
+  const id = Number(value);
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
 
-  const meta = masteryMeta[topic.status];
-  const trendMax = Math.max(100, ...topic.trend);
-  const trendBars = topic.trend.map((v, i) => ({ v, h: Math.round((v / trendMax) * 100), label: `WS${i + 1}` }));
+function barColour(score: number) {
+  return score < 55 ? "#B4573F" : score < 72 ? "#D8B384" : "#93A896";
+}
 
-  return (
-    <Box sx={{ backgroundColor: "rgb(253,251,247)", minHeight: "100vh", py: 5, px: { xs: 2, sm: 4, md: 6 } }}>
-      <Box sx={{ maxWidth: 1000, mx: "auto" }}>
-        <Button
-          component={Link}
-          href="/topics"
-          startIcon={<ArrowBackIcon sx={{ fontSize: 16 }} />}
-          sx={{ color: "rgb(77,69,64)", textTransform: "none", fontSize: 14, mb: 2, p: 0, minWidth: 0, "&:hover": { backgroundColor: "transparent", color: INK } }}
-        >
-          All topics
-        </Button>
+export default function TopicDetailPage() {
+  const params = useParams<{ topicId: string }>();
+  const search = useSearchParams();
+  const topicId = validId(params.topicId);
+  const studentId = validId(search.get("studentId"));
+  const [detail, setDetail] = React.useState<MasteryTopicDetail | null>(null);
+  const [error, setError] = React.useState<string | null>(topicId ? null : "This topic reference is invalid.");
+  const load = React.useCallback(async () => {
+    if (!topicId) return;
+    setError(null);
+    try { setDetail(await fetchMasteryTopic(topicId, studentId ?? undefined)); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "Topic mastery could not be loaded."); }
+  }, [studentId, topicId]);
+  React.useEffect(() => {
+    if (!topicId) return;
+    let current = true;
+    const request = async () => {
+      try {
+        const loaded = await fetchMasteryTopic(topicId, studentId ?? undefined);
+        if (current) setDetail(loaded);
+      } catch (reason) {
+        if (current) setError(reason instanceof Error ? reason.message : "Topic mastery could not be loaded.");
+      }
+    };
+    void request();
+    return () => { current = false; };
+  }, [studentId, topicId]);
 
-        <Stack direction="row" spacing={1.75} sx={{ alignItems: "flex-start", mb: 1 }}>
-          <Typography sx={{ fontFamily: "'EB Garamond', serif", fontWeight: 400, fontSize: 38, lineHeight: 1.1, letterSpacing: "-0.8px" }}>
-            {topic.name}
-          </Typography>
-          <Chip label={meta.label} size="small" sx={{ mt: 1.25, whiteSpace: "nowrap", fontSize: 12, fontWeight: 600, backgroundColor: meta.bg, color: meta.fg }} />
-        </Stack>
-        <Typography sx={{ fontSize: 16, color: "rgb(77,69,64)", lineHeight: 1.5, mb: 3.5 }}>{topic.desc}</Typography>
-
-        <Grid container spacing={3}>
-          <Grid size={{ xs: 12, md: 8 }}>
-            <Stack spacing={2.5}>
-              <Grid container spacing={1.5}>
-                {[
-                  { label: "Complete", value: `${topic.completion}%` },
-                  { label: "Latest score", value: topic.latestScore != null ? `${topic.latestScore}%` : "Not attempted" },
-                  { label: "Accuracy", value: topic.accuracy != null ? `${topic.accuracy}%` : "—" },
-                  { label: "Attempts", value: topic.attempts },
-                ].map((s) => (
-                  <Grid size={{ xs: 6, sm: 3 }} key={s.label}>
-                    <Card variant="outlined" sx={{ borderColor: BORDER, backgroundColor: CARD_BG, borderRadius: 3, boxShadow: "none", p: 2 }}>
-                      <Typography sx={{ fontFamily: "'EB Garamond', serif", fontSize: 26, color: INK }}>{s.value}</Typography>
-                      <Typography sx={{ fontSize: 12, color: MUTED, mt: 0.25 }}>{s.label}</Typography>
-                    </Card>
-                  </Grid>
-                ))}
-              </Grid>
-
-              {trendBars.length > 0 && (
-                <Card variant="outlined" sx={{ borderColor: BORDER, backgroundColor: CARD_BG, borderRadius: 3.5, boxShadow: "none", p: 2.75 }}>
-                  <Typography sx={{ fontFamily: "'EB Garamond', serif", fontSize: 19, color: INK, mb: 2 }}>Progress trend</Typography>
-                  <Stack direction="row" spacing={2.5} sx={{ alignItems: "flex-end", height: 120 }}>
-                    {trendBars.map((b) => (
-                      <Box key={b.label} sx={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 0.75, height: "100%", justifyContent: "flex-end" }}>
-                        <Typography sx={{ fontSize: 12, fontWeight: 600, color: "rgb(45,41,38)" }}>{b.v}%</Typography>
-                        <Box sx={{ width: "100%", maxWidth: 48, borderRadius: "6px 6px 0 0", backgroundColor: meta.bar, height: `${b.h}%` }} />
-                        <Typography sx={{ fontSize: 11, color: MUTED }}>{b.label}</Typography>
-                      </Box>
-                    ))}
-                  </Stack>
-                </Card>
-              )}
-
-              <Card variant="outlined" sx={{ borderColor: BORDER, backgroundColor: CARD_BG, borderRadius: 3.5, boxShadow: "none", p: 2.75 }}>
-                <Typography sx={{ fontFamily: "'EB Garamond', serif", fontSize: 19, color: INK, mb: 1.75 }}>Skills in this topic</Typography>
-                <Stack spacing={1.25}>
-                  {topic.skills.map((sk) => (
-                    <Stack key={sk} direction="row" spacing={1.25} sx={{ alignItems: "center", fontSize: 14, color: "rgb(45,41,38)" }}>
-                      <Box sx={{ width: 22, height: 22, borderRadius: "6px", backgroundColor: "rgb(236,231,224)", color: MUTED, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                        <CheckBoxOutlineBlankIcon sx={{ fontSize: 13 }} />
-                      </Box>
-                      <span>{sk}</span>
-                    </Stack>
-                  ))}
-                </Stack>
-              </Card>
-
-              <Grid container spacing={2}>
-                {topic.understood.length > 0 && (
-                  <Grid size={{ xs: 12, sm: 6 }}>
-                    <Box sx={{ borderLeft: "3px solid rgb(138,154,138)", backgroundColor: "rgb(233,238,233)", borderRadius: "0 10px 10px 0", p: 2.25, height: "100%" }}>
-                      <Typography sx={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.4px", textTransform: "uppercase", color: "rgb(50,66,50)", mb: 1 }}>
-                        You&apos;ve got this
-                      </Typography>
-                      {topic.understood.map((u) => (
-                        <Typography key={u} sx={{ fontSize: 14, color: "rgb(45,41,38)", mb: 0.625 }}>• {u}</Typography>
-                      ))}
-                    </Box>
-                  </Grid>
-                )}
-                {topic.practice.length > 0 && (
-                  <Grid size={{ xs: 12, sm: 6 }}>
-                    <Box sx={{ borderLeft: "3px solid rgb(194,155,98)", backgroundColor: "rgb(248,240,225)", borderRadius: "0 10px 10px 0", p: 2.25, height: "100%" }}>
-                      <Typography sx={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.4px", textTransform: "uppercase", color: "rgb(120,88,35)", mb: 1 }}>
-                        Worth practising
-                      </Typography>
-                      {topic.practice.map((p) => (
-                        <Typography key={p} sx={{ fontSize: 14, color: "rgb(45,41,38)", mb: 0.625 }}>• {p}</Typography>
-                      ))}
-                    </Box>
-                  </Grid>
-                )}
-              </Grid>
-            </Stack>
-          </Grid>
-
-          <Grid size={{ xs: 12, md: 4 }}>
-            <Stack spacing={2}>
-              <Card variant="outlined" sx={{ borderColor: BORDER, backgroundColor: "rgb(26,28,30)", color: "rgb(253,251,247)", borderRadius: 3.5, boxShadow: "none", p: 2.75 }}>
-                <Typography sx={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.5px", textTransform: "uppercase", color: "rgb(255,180,163)", mb: 1 }}>
-                  Recommended next
-                </Typography>
-                <Typography sx={{ fontFamily: "'EB Garamond', serif", fontSize: 20, lineHeight: 1.2, mb: 2 }}>{topic.recWs}</Typography>
-                <Button
-                  component={Link}
-                  href={topic.recWsId ? `/upload?ws=${topic.recWsId}` : "/worksheets"}
-                  fullWidth
-                  endIcon={<ArrowForwardIcon sx={{ fontSize: 15 }} />}
-                  sx={{ backgroundColor: accent, color: "#fff", textTransform: "none", fontWeight: 600, borderRadius: 2, py: 1.375, "&:hover": { backgroundColor: accent, filter: "brightness(0.96)" } }}
-                >
-                  Open worksheet
-                </Button>
-              </Card>
-
-              {topic.teacher && (
-                <Card variant="outlined" sx={{ borderColor: BORDER, backgroundColor: CARD_BG, borderRadius: 3.5, boxShadow: "none", p: 2.5 }}>
-                  <Stack direction="row" spacing={1} sx={{ alignItems: "center", mb: 1.25 }}>
-                    <Box sx={{ width: 28, height: 28, borderRadius: "50%", backgroundColor: "rgb(221,217,216)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 600, color: "rgb(77,69,64)" }}>
-                      EV
-                    </Box>
-                    <Box>
-                      <Typography sx={{ fontSize: 13, fontWeight: 600, color: INK }}>From your tutor</Typography>
-                      <Typography sx={{ fontSize: 11, color: MUTED }}>Prof. E. Vance</Typography>
-                    </Box>
-                  </Stack>
-                  <Typography sx={{ fontSize: 14, color: "rgb(45,41,38)", lineHeight: 1.5, fontStyle: "italic" }}>
-                    &ldquo;{topic.teacher}&rdquo;
-                  </Typography>
-                </Card>
-              )}
-            </Stack>
-          </Grid>
-        </Grid>
-      </Box>
+  const backHref = studentId ? `/students/${studentId}` : "/topics";
+  return <Box sx={{ minHeight: "100vh", bgcolor: "#F7F4EF", px: { xs: 2.5, sm: 3.75 }, py: 3.75, color: "#2A2622" }}>
+    <Box sx={{ maxWidth: 980, mx: "auto" }}>
+      <Button component={Link} href={backHref} startIcon={<ArrowBackOutlinedIcon aria-hidden="true" />} sx={{ mb: 1.5, color: "#6F675E", textTransform: "none", fontWeight: 600 }}>Back to {studentId ? "student" : "topics"}</Button>
+      {!detail && !error ? <Card aria-label="Loading topic mastery" variant="outlined" sx={{ borderColor: "#EBE4D9", bgcolor: "#FFFDFA", p: 2.5 }}><Skeleton height={42} width="48%" /><Skeleton height={12} sx={{ mt: 2 }} /></Card> : null}
+      {error ? <Card component="section" role="alert" variant="outlined" sx={{ borderColor: "#F0DCD4", bgcolor: "#FDF6F3", p: 2.5 }}><Typography component="h1" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 26, mb: .75 }}>Topic could not be loaded</Typography><Typography sx={{ color: "#6F675E", fontSize: 13.5, mb: 1.5 }}>{error}</Typography><Button onClick={() => void load()} variant="outlined" sx={{ borderColor: "#E4DCD0", color: "#2A2622", textTransform: "none" }}>Try again</Button></Card> : null}
+      {detail ? <Box sx={{ display: "grid", gap: 2 }}>
+        <Card component="section" variant="outlined" sx={{ borderColor: "#EBE4D9", bgcolor: "#FFFDFA", borderRadius: "14px", p: { xs: 2, sm: 3 } }}>
+          <Typography sx={{ color: "#A09488", fontSize: 10.5, fontWeight: 700, letterSpacing: ".1em", mb: .75 }}>{detail.node.topicCode}</Typography>
+          <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", justifyContent: "space-between", gap: 1.25 }}><Typography component="h1" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: { xs: 30, sm: 38 }, fontWeight: 500 }}>{detail.node.topicName}</Typography><Chip label={detail.node.status.replaceAll("_", " ")} size="small" sx={{ bgcolor: "#F0EAE0", color: "#6F675E", fontWeight: 700, fontSize: 10 }} /></Box>
+          <Box sx={{ mt: 2.5, display: "flex", alignItems: "center", gap: 1.5 }}><Typography aria-label={`${Math.round(detail.node.score)} percent mastery`} sx={{ fontSize: 27, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{Math.round(detail.node.score)}%</Typography><Box sx={{ flex: 1 }}><LinearProgress aria-label={`${detail.node.topicName} mastery`} variant="determinate" value={detail.node.score} sx={{ height: 8, borderRadius: 20, bgcolor: "#F0EAE0", ".MuiLinearProgress-bar": { bgcolor: barColour(detail.node.score), borderRadius: 20 } }} /></Box></Box>
+          <Typography sx={{ color: "#6F675E", fontSize: 12.5, mt: 1.1 }}>{detail.node.attemptCount === 1 ? "1 approved attempt" : `${detail.node.attemptCount} approved attempts`}</Typography>
+        </Card>
+        <Card component="section" aria-labelledby="mastery-history-heading" variant="outlined" sx={{ borderColor: "#EBE4D9", bgcolor: "#FFFDFA", borderRadius: "14px", p: { xs: 2, sm: 2.5 } }}><Typography id="mastery-history-heading" component="h2" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 22, fontWeight: 500, mb: 1.25 }}>Approved evidence history</Typography>{detail.history.length ? <Box sx={{ display: "grid", gap: 1 }}>{detail.history.map((item, index) => <Box key={`${item.occurredAt ?? "history"}-${index}`} sx={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 1, py: 1, borderBottom: index === detail.history.length - 1 ? 0 : "1px solid #F0EAE0" }}><Box><Typography sx={{ fontSize: 13, fontWeight: 600 }}>{item.reason}</Typography><Typography sx={{ color: "#8B837A", fontSize: 11.5, mt: .25 }}>{item.occurredAt ? new Date(item.occurredAt).toLocaleDateString() : "Date not recorded"}</Typography></Box><Typography sx={{ fontSize: 13, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{Math.round(item.previousScore)}% → {Math.round(item.newScore)}%</Typography></Box>)}</Box> : <Typography role="status" sx={{ color: "#6F675E", fontSize: 13 }}>No approved evidence has been recorded for this topic yet.</Typography>}</Card>
+      </Box> : null}
     </Box>
-  );
+  </Box>;
 }
