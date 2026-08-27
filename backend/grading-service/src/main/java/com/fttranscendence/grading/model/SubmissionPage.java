@@ -112,6 +112,7 @@ public class SubmissionPage {
     public Long getId() {
         return id;
     }
+    public SubmissionDocument getDocument() { return document; }
 
     public int getPageNumber() {
         return pageNumber;

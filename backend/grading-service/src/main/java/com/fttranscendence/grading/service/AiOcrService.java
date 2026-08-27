@@ -29,6 +29,14 @@ public class AiOcrService {
     }
 
     public String extractTextFromImage(String base64Image) {
+        return extractBase64(base64Image).text();
+    }
+
+    public OcrResult extract(byte[] bytes, String mediaType) {
+        return extractBase64(java.util.Base64.getEncoder().encodeToString(bytes));
+    }
+
+    private OcrResult extractBase64(String base64Image) {
         // Strict prompt specifically optimized for handwritten math & equations
         String prompt = "You are a precise mathematical OCR engine. " +
                         "Extract all printed text and handwritten calculations exactly as written. " +
@@ -66,14 +74,14 @@ public class AiOcrService {
                 String rawContent = (String) message.get("content");
 
                 // Remove <think>...</think> blocks and trim surrounding whitespace
-                return cleanModelOutput(rawContent);
+                String text = cleanModelOutput(rawContent);
+                if (text.isBlank()) return new OcrResult("", 0, true);
+                return new OcrResult(text, confidence(text), false);
             }
         } catch (Exception e) {
-            System.err.println("OCR Vision Engine Failure: " + e.getMessage());
-            return "Error: Could not extract text. " + e.getMessage();
+            return new OcrResult("Error: Could not extract text. " + e.getMessage(), 0, true);
         }
-
-        return "Error: Empty response from OCR engine.";
+        return new OcrResult("Error: Empty response from OCR engine.", 0, true);
     }
 
     /**
@@ -84,4 +92,6 @@ public class AiOcrService {
         // (?s) enables dotall mode so .* matches newlines across multi-line thinking blocks
         return rawText.replaceAll("(?s)<think>.*?</think>", "").trim();
     }
+    private double confidence(String text) { return text.matches(".*[A-Za-z0-9].*") ? (text.length() < 8 ? .65 : .94) : .4; }
+    public record OcrResult(String text, double confidence, boolean unreadable) { }
 }

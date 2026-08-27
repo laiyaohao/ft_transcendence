@@ -45,8 +45,8 @@ class MigrationIntegrationTest {
         assertEquals(1, tableCount("submission_pages"));
         assertEquals(1, tableCount("answer_reviews"));
         assertEquals(1, tableCount("mistake_records"));
-        assertEquals(4, versionedMigrationCount());
-        assertEquals("4", flyway.info().current().getVersion().getVersion());
+        assertEquals(5, versionedMigrationCount());
+        assertEquals("5", flyway.info().current().getVersion().getVersion());
     }
 
     @Test
@@ -92,7 +92,7 @@ class MigrationIntegrationTest {
             .defaultSchema("PUBLIC")
             .locations("classpath:db/migration")
             .load();
-        assertEquals(2, latest.migrate().migrationsExecuted);
+        assertEquals(3, latest.migrate().migrationsExecuted);
 
         try (Connection connection = DriverManager.getConnection(databaseUrl, "sa", "");
              ResultSet result = connection.createStatement().executeQuery(

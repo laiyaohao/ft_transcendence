@@ -3,6 +3,7 @@ const ACCEPTED_TYPES = new Set(["application/pdf", "image/jpeg", "image/png"]);
 const gradingUrl = process.env.NEXT_PUBLIC_GRADING_API_URL || "http://localhost:8082";
 
 export type UploadPage = { id: string; file: File; previewUrl: string | null; rotation: 0 | 90 | 180 | 270; warning: string | null };
+export type OcrPage = { pageId: number; extractionId: number; text: string; confidence: number; status: "READY" | "REQUIRES_REVIEW" | "UNREADABLE" };
 export class SubmissionApiError extends Error { constructor(message: string, readonly status = 0) { super(message); this.name = "SubmissionApiError"; } }
 
 const fileKey = (file: File) => `${file.name}:${file.size}:${file.lastModified}`;
@@ -31,3 +32,5 @@ export async function submitSubmission(worksheetId: string, pages: UploadPage[],
   }
   return { pageCount: pages.length, submittedAt: new Date().toISOString() };
 }
+export async function createOcrDocument(input:{studentId:number;worksheetId:number;worksheetQuestionId?:number;pages:UploadPage[]}):Promise<{documentId:number;pages:OcrPage[]}>{ if(!Number.isSafeInteger(input.studentId)||!Number.isSafeInteger(input.worksheetId)||!input.pages.length)throw new SubmissionApiError("Submission details are invalid.",400); const form=new FormData(); form.append("studentId",String(input.studentId)); form.append("worksheetId",String(input.worksheetId)); if(input.worksheetQuestionId)form.append("worksheetQuestionId",String(input.worksheetQuestionId)); input.pages.forEach(p=>form.append("files",p.file)); const response=await fetch(`${gradingUrl}/api/grading/submission-documents`,{method:"POST",headers:headers(),body:form}); if(!response.ok){const b=await response.json().catch(()=>null) as {error?:string}|null;throw new SubmissionApiError(b?.error||"OCR could not be started.",response.status);} const body=await response.json() as {id:number;pages:Array<{id:number;extractionId:number;text:string;confidence:number;status:OcrPage["status"]}>}; return {documentId:body.id,pages:body.pages.map(p=>({pageId:p.id,extractionId:p.extractionId,text:p.text,confidence:p.confidence,status:p.status}))}; }
+export async function correctOcrExtraction(extractionId:number,correctedText:string):Promise<OcrPage>{const response=await fetch(`${gradingUrl}/api/grading/ocr-extractions/${extractionId}`,{method:"PATCH",headers:{...headers(),"Content-Type":"application/json"},body:JSON.stringify({correctedText})});if(!response.ok)throw new SubmissionApiError("OCR correction could not be saved.",response.status);const b=await response.json() as {id:number;text:string;confidence:number;status:OcrPage["status"]};return {pageId:0,extractionId:b.id,text:b.text,confidence:b.confidence,status:b.status};}
