@@ -29,8 +29,7 @@ public class SecurityConfig {
         .authorizeHttpRequests(authorize -> authorize
             .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
             .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
-            .requestMatchers(HttpMethod.GET, "/api/grading/submissions").hasRole("TUTOR")
-            .requestMatchers(HttpMethod.POST, "/api/grading/analyze").hasRole("TUTOR")
+            .requestMatchers("/api/grading/tutor/**").hasRole("TUTOR")
             .requestMatchers(HttpMethod.POST, "/api/grading/ocr").hasAnyRole("TUTOR", "STUDENT")
             .anyRequest().authenticated())
         .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

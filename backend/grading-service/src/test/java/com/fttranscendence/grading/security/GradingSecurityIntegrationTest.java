@@ -26,34 +26,34 @@ class GradingSecurityIntegrationTest {
   @Autowired private MockMvc mockMvc;
 
   @Test
-  void tutorCanReadSubmissionsButStudentCannot() throws Exception {
-    mockMvc.perform(get("/api/grading/submissions")
+  void tutorCanReachReviewApiButStudentCannot() throws Exception {
+    mockMvc.perform(get("/api/grading/tutor/reviews/1")
             .header(HttpHeaders.AUTHORIZATION, bearerToken("TUTOR", 3_600_000)))
-        .andExpect(status().isOk());
+        .andExpect(status().isNotFound());
 
-    mockMvc.perform(get("/api/grading/submissions")
+    mockMvc.perform(get("/api/grading/tutor/reviews/1")
             .header(HttpHeaders.AUTHORIZATION, bearerToken("STUDENT", 3_600_000)))
         .andExpect(status().isForbidden());
   }
 
   @Test
   void missingMalformedExpiredAndUnsupportedRoleTokensAreRejected() throws Exception {
-    mockMvc.perform(get("/api/grading/submissions"))
+    mockMvc.perform(get("/api/grading/tutor/reviews/1"))
         .andExpect(status().isUnauthorized());
 
-    mockMvc.perform(get("/api/grading/submissions")
+    mockMvc.perform(get("/api/grading/tutor/reviews/1")
             .header(HttpHeaders.AUTHORIZATION, "Bearer malformed"))
         .andExpect(status().isUnauthorized());
 
-    mockMvc.perform(get("/api/grading/submissions")
+    mockMvc.perform(get("/api/grading/tutor/reviews/1")
             .header(HttpHeaders.AUTHORIZATION, bearerToken("TUTOR", -1)))
         .andExpect(status().isUnauthorized());
 
-    mockMvc.perform(get("/api/grading/submissions")
+    mockMvc.perform(get("/api/grading/tutor/reviews/1")
             .header(HttpHeaders.AUTHORIZATION, bearerToken("PARENT", 3_600_000)))
         .andExpect(status().isUnauthorized());
 
-    mockMvc.perform(get("/api/grading/submissions")
+    mockMvc.perform(get("/api/grading/tutor/reviews/1")
             .header(HttpHeaders.AUTHORIZATION, bearerToken("TUTOR", 3_600_000, null)))
         .andExpect(status().isUnauthorized());
 

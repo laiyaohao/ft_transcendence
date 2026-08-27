@@ -34,3 +34,44 @@ export async function submitSubmission(worksheetId: string, pages: UploadPage[],
 }
 export async function createOcrDocument(input:{studentId:number;worksheetId:number;worksheetQuestionId?:number;pages:UploadPage[]}):Promise<{documentId:number;pages:OcrPage[]}>{ if(!Number.isSafeInteger(input.studentId)||!Number.isSafeInteger(input.worksheetId)||!input.pages.length)throw new SubmissionApiError("Submission details are invalid.",400); const form=new FormData(); form.append("studentId",String(input.studentId)); form.append("worksheetId",String(input.worksheetId)); if(input.worksheetQuestionId)form.append("worksheetQuestionId",String(input.worksheetQuestionId)); input.pages.forEach(p=>form.append("files",p.file)); const response=await fetch(`${gradingUrl}/api/grading/submission-documents`,{method:"POST",headers:headers(),body:form}); if(!response.ok){const b=await response.json().catch(()=>null) as {error?:string}|null;throw new SubmissionApiError(b?.error||"OCR could not be started.",response.status);} const body=await response.json() as {id:number;pages:Array<{id:number;extractionId:number;text:string;confidence:number;status:OcrPage["status"]}>}; return {documentId:body.id,pages:body.pages.map(p=>({pageId:p.id,extractionId:p.extractionId,text:p.text,confidence:p.confidence,status:p.status}))}; }
 export async function correctOcrExtraction(extractionId:number,correctedText:string):Promise<OcrPage>{const response=await fetch(`${gradingUrl}/api/grading/ocr-extractions/${extractionId}`,{method:"PATCH",headers:{...headers(),"Content-Type":"application/json"},body:JSON.stringify({correctedText})});if(!response.ok)throw new SubmissionApiError("OCR correction could not be saved.",response.status);const b=await response.json() as {id:number;text:string;confidence:number;status:OcrPage["status"]};return {pageId:0,extractionId:b.id,text:b.text,confidence:b.confidence,status:b.status};}
+
+export type MarkingReviewStatus = "PENDING_REVIEW" | "FLAGGED" | "APPROVED";
+export type MarkingReview = {
+  id: number; studentId: number; worksheetId: number; worksheetQuestionId: number; questionBankId: number;
+  extractedAnswer: string; modelAnswer: string; maxMarks: number; aiSuggestedMarks: number | null;
+  aiSuggestedOutcome: string | null; aiErrorCategory: string | null; missingKeywords: string[];
+  aiSuggestedFeedback: string | null; reviewStatus: MarkingReviewStatus; approvedMarks: number | null;
+  approvedFeedback: string | null; reviewedByUserId: number | null; reviewedAt: string | null;
+  providerResponseValid: boolean | null;
+  history: Array<{ id: number; action: "APPROVED" | "REVISED" | "FLAGGED" | "RESET_TO_AI"; reviewerUserId: number; previousStatus: MarkingReviewStatus; newStatus: MarkingReviewStatus; previousMarks: number | null; newMarks: number | null; previousFeedback: string | null; newFeedback: string | null; createdAt: string }>;
+};
+
+const reviewStatuses = new Set<MarkingReviewStatus>(["PENDING_REVIEW", "FLAGGED", "APPROVED"]);
+const numberValue = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? value : null;
+const stringValue = (value: unknown) => typeof value === "string" ? value : null;
+export function parseMarkingReview(value: unknown): MarkingReview {
+  if (!value || typeof value !== "object") throw new SubmissionApiError("The marking review response is invalid.");
+  const raw = value as Record<string, unknown>;
+  const ids = [raw.id, raw.studentId, raw.worksheetId, raw.worksheetQuestionId, raw.questionBankId].map(numberValue);
+  if (ids.some((id) => id === null || id <= 0) || !reviewStatuses.has(raw.reviewStatus as MarkingReviewStatus)
+    || typeof raw.extractedAnswer !== "string" || typeof raw.modelAnswer !== "string" || numberValue(raw.maxMarks) === null
+    || !Array.isArray(raw.missingKeywords) || !Array.isArray(raw.history)) throw new SubmissionApiError("The marking review response is invalid.");
+  return {
+    id: ids[0]!, studentId: ids[1]!, worksheetId: ids[2]!, worksheetQuestionId: ids[3]!, questionBankId: ids[4]!, extractedAnswer: raw.extractedAnswer,
+    modelAnswer: raw.modelAnswer, maxMarks: numberValue(raw.maxMarks)!, aiSuggestedMarks: numberValue(raw.aiSuggestedMarks), aiSuggestedOutcome: stringValue(raw.aiSuggestedOutcome), aiErrorCategory: stringValue(raw.aiErrorCategory),
+    missingKeywords: raw.missingKeywords.filter((keyword): keyword is string => typeof keyword === "string"), aiSuggestedFeedback: stringValue(raw.aiSuggestedFeedback), reviewStatus: raw.reviewStatus as MarkingReviewStatus,
+    approvedMarks: numberValue(raw.approvedMarks), approvedFeedback: stringValue(raw.approvedFeedback), reviewedByUserId: numberValue(raw.reviewedByUserId), reviewedAt: stringValue(raw.reviewedAt), providerResponseValid: typeof raw.providerResponseValid === "boolean" ? raw.providerResponseValid : null,
+    history: raw.history.map((entry) => {
+      if (!entry || typeof entry !== "object") throw new SubmissionApiError("The marking review history is invalid.");
+      const item = entry as Record<string, unknown>; const id = numberValue(item.id); const reviewer = numberValue(item.reviewerUserId);
+      if (id === null || reviewer === null || !reviewStatuses.has(item.previousStatus as MarkingReviewStatus) || !reviewStatuses.has(item.newStatus as MarkingReviewStatus) || typeof item.action !== "string" || typeof item.createdAt !== "string") throw new SubmissionApiError("The marking review history is invalid.");
+      return { id, action: item.action as MarkingReview["history"][number]["action"], reviewerUserId: reviewer, previousStatus: item.previousStatus as MarkingReviewStatus, newStatus: item.newStatus as MarkingReviewStatus, previousMarks: numberValue(item.previousMarks), newMarks: numberValue(item.newMarks), previousFeedback: stringValue(item.previousFeedback), newFeedback: stringValue(item.newFeedback), createdAt: item.createdAt };
+    }),
+  };
+}
+async function reviewRequest(path: string, init?: RequestInit): Promise<MarkingReview> { const response = await fetch(`${gradingUrl}/api/grading/tutor/reviews${path}`, { ...init, headers: { ...headers(), "Content-Type": "application/json", ...(init?.headers || {}) } }); if (!response.ok) { const body = await response.json().catch(() => null) as { error?: string } | null; throw new SubmissionApiError(body?.error || "The marking review could not be updated.", response.status); } return parseMarkingReview(await response.json()); }
+export function createMarkingReview(input: { submissionDocumentId: number; worksheetQuestionId: number; questionBankId: number }): Promise<MarkingReview> { if (![input.submissionDocumentId, input.worksheetQuestionId, input.questionBankId].every((id) => Number.isSafeInteger(id) && id > 0)) return Promise.reject(new SubmissionApiError("The submission review context is invalid.", 400)); return reviewRequest("", { method: "POST", body: JSON.stringify(input) }); }
+export function fetchMarkingReview(submissionId: number): Promise<MarkingReview> { if (!Number.isSafeInteger(submissionId) || submissionId <= 0) return Promise.reject(new SubmissionApiError("The submission id is invalid.", 400)); return reviewRequest(`/${submissionId}`); }
+export function approveMarkingReview(submissionId: number, marks: number, feedback: string): Promise<MarkingReview> { if (!Number.isFinite(marks) || marks < 0 || !feedback.trim()) return Promise.reject(new SubmissionApiError("Marks and tutor feedback are required.", 400)); return reviewRequest(`/${submissionId}/approve`, { method: "POST", body: JSON.stringify({ marks, feedback }) }); }
+export function flagMarkingReview(submissionId: number, reason: string): Promise<MarkingReview> { if (!reason.trim()) return Promise.reject(new SubmissionApiError("A flag reason is required.", 400)); return reviewRequest(`/${submissionId}/flag`, { method: "POST", body: JSON.stringify({ reason }) }); }
+export function resetMarkingReview(submissionId: number): Promise<MarkingReview> { return reviewRequest(`/${submissionId}/reset`, { method: "POST", body: "{}" }); }
