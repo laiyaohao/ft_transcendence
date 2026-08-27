@@ -6,6 +6,7 @@ const PUBLIC_PATHS = ['/login', '/signup'];
 const PROTECTED_PATHS = [
   '/',
   '/tutor/dashboard',
+  '/tutor/worksheets',
   '/classes',
   '/students',
   '/questions',
@@ -47,6 +48,7 @@ export const config = {
   matcher: [
     '/',
     '/tutor/dashboard/:path*',
+    '/tutor/worksheets/:path*',
     '/classes/:path*',
     '/students/:path*',
     '/questions/:path*',

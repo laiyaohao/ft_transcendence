@@ -30,6 +30,11 @@ describe("route proxy", () => {
     expect(response.headers.get("location")).toBe("http://localhost:3000/");
   });
 
+  it("allows the Tutor worksheet builder but keeps the Student worksheet area separate", () => {
+    expect(proxy(request("/tutor/worksheets/new", "TUTOR")).status).toBe(200);
+    expect(proxy(request("/tutor/worksheets/new", "STUDENT")).headers.get("location")).toBe("http://localhost:3000/");
+  });
+
   it("sends a signed-in Tutor away from login to the Tutor dashboard", () => {
     const response = proxy(request("/login", "TUTOR"));
 

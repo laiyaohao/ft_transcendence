@@ -1,0 +1,1 @@
+"use client"; import { useSearchParams } from "next/navigation"; import { WorksheetBuilder } from "@/components/worksheets/WorksheetBuilder"; export default function Page(){const params=useSearchParams();return <WorksheetBuilder classId={Number(params.get("classId"))||0}/>;}

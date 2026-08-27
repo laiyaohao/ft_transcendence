@@ -25,6 +25,7 @@ const TUTOR_NAVIGATION: readonly NavigationItem[] = [
   { id: 'dashboard', title: 'Dashboard', href: '/tutor/dashboard', icon: DashboardOutlinedIcon },
   { id: 'classes', title: 'Classes', href: '/classes', icon: SchoolOutlinedIcon },
   { id: 'students', title: 'Students', href: '/students', icon: GroupsOutlinedIcon },
+  { id: 'worksheets', title: 'Worksheets', href: '/tutor/worksheets', icon: DescriptionOutlinedIcon },
   { id: 'questions', title: 'Question Bank', href: '/questions', icon: QuizOutlinedIcon },
   { id: 'upload', title: 'Upload', href: '/upload', icon: FileUploadOutlinedIcon },
   { id: 'profile', title: 'Profile', href: '/profile', icon: PersonIcon },

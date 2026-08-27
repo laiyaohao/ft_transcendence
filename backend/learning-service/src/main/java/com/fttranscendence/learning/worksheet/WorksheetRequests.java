@@ -1,0 +1,58 @@
+package com.fttranscendence.learning.worksheet;
+
+import com.fttranscendence.learning.question.Question;
+import jakarta.validation.constraints.Future;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
+
+import java.time.LocalDateTime;
+import java.util.List;
+
+public final class WorksheetRequests {
+    private WorksheetRequests() { }
+
+    public record GenerateWorksheetRequest(
+        @NotNull WorksheetGenerationRequest.TargetMode targetMode,
+        @NotEmpty @Size(max = 100) List<@Positive Long> topicIds,
+        @NotNull @Positive @Max(100) Integer questionCount,
+        Question.QuestionType questionType,
+        @Future LocalDateTime dueAt,
+        @Size(max = 200) String title,
+        @Size(max = 2000) String instructions,
+        @Size(max = 100) List<@Positive Long> studentIds
+    ) { }
+
+    public record UpdateWorksheetRequest(
+        @Size(max = 200) String title,
+        @Size(max = 2000) String instructions,
+        @Size(min = 1, max = 100) List<@Positive Long> questionIds
+    ) { }
+
+    public record ApproveWorksheetRequest(@Future LocalDateTime dueAt) { }
+
+    public record QuestionSummary(Long id, String code, String prompt, Question.QuestionType questionType,
+                                  Long syllabusTopicId, String syllabusTopicName) { }
+
+    public record WorksheetResponse(Long id, String code, String title, String instructions,
+                                    Worksheet.AudienceType audienceType, Worksheet.Status status,
+                                    Long generationRequestId, List<QuestionSummary> questions) {
+        static WorksheetResponse from(Worksheet worksheet) {
+            return new WorksheetResponse(worksheet.getId(), worksheet.getCode(), worksheet.getTitle(),
+                worksheet.getInstructions(), worksheet.getAudienceType(), worksheet.getStatus(),
+                worksheet.getGenerationRequestId(), worksheet.getQuestions().stream().map(item -> {
+                    Question question = item.getQuestion();
+                    return new QuestionSummary(question.getId(), question.getCode(), question.getPrompt(),
+                        question.getQuestionType(), question.getSyllabusTopic().getId(), question.getSyllabusTopic().getName());
+                }).toList());
+        }
+    }
+
+    public record GenerationRequestResponse(Long id, Long classId, WorksheetGenerationRequest.TargetMode targetMode,
+        List<Long> topicIds, List<Long> studentIds, int questionCount, Question.QuestionType questionType,
+        LocalDateTime dueAt, WorksheetGenerationRequest.Status status, String failureCode, String failureMessage,
+        WorksheetResponse worksheet) { }
+}

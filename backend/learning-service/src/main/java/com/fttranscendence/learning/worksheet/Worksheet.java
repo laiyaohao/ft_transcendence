@@ -12,6 +12,8 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.OrderBy;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.JoinColumn;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
@@ -86,6 +88,10 @@ public class Worksheet {
 
     @Column(name = "approved_at")
     private LocalDateTime approvedAt;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "generation_request_id")
+    private WorksheetGenerationRequest generationRequest;
 
     @Valid
     @Size(max = 100)
@@ -257,6 +263,14 @@ public class Worksheet {
         status = Status.ARCHIVED;
     }
 
+    public void replaceQuestions(List<Question> replacement) {
+        ensureDraft();
+        questions.clear();
+        for (Question question : replacement) {
+            addQuestion(question);
+        }
+    }
+
     public WorksheetAssignment assignToClass(Long classId, LocalDateTime dueAt) {
         requireAudience(AudienceType.CLASS);
         ensureApproved();
@@ -372,5 +386,13 @@ public class Worksheet {
 
     public LocalDateTime getUpdatedAt() {
         return updatedAt;
+    }
+
+    public Long getGenerationRequestId() {
+        return generationRequest == null ? null : generationRequest.getId();
+    }
+
+    public void setGenerationRequest(WorksheetGenerationRequest generationRequest) {
+        this.generationRequest = generationRequest;
     }
 }

@@ -66,6 +66,7 @@ describe('authentication sessions', () => {
     expect(getRoleHome('STUDENT')).toBe('/');
     expect(isPathAllowed('TUTOR', '/classes/42')).toBe(true);
     expect(isPathAllowed('TUTOR', '/questions/42/edit')).toBe(true);
+    expect(isPathAllowed('TUTOR', '/tutor/worksheets/new')).toBe(true);
     expect(isPathAllowed('TUTOR', '/progress')).toBe(false);
     expect(isPathAllowed('STUDENT', '/progress')).toBe(true);
     expect(isPathAllowed('STUDENT', '/classes')).toBe(false);

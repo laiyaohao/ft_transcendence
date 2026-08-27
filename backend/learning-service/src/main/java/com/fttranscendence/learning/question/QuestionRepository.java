@@ -38,6 +38,19 @@ public interface QuestionRepository extends Repository<Question, Long> {
         @Param("archiveState") Question.ArchiveState archiveState
     );
 
+    @Query("""
+        select question from Question question
+        join fetch question.syllabusTopic topic
+        where topic.id in :topicIds
+          and question.archiveState = com.fttranscendence.learning.question.Question.ArchiveState.ACTIVE
+          and (:questionType is null or question.questionType = :questionType)
+        order by topic.id asc, question.code asc, question.id asc
+        """)
+    List<Question> findDeterministicActiveQuestionBank(
+        @Param("topicIds") List<Long> topicIds,
+        @Param("questionType") Question.QuestionType questionType
+    );
+
     @Query(
         value = """
             select question
