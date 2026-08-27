@@ -1,0 +1,138 @@
+package com.fttranscendence.learning.worksheet;
+
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.SignatureAlgorithm;
+import io.jsonwebtoken.security.Keys;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.util.Date;
+
+import static org.hamcrest.Matchers.containsString;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+@SpringBootTest
+@AutoConfigureMockMvc
+@Transactional
+class WorksheetDetailIntegrationTest {
+    private static final String SECRET = "test-secret-key-that-is-at-least-thirty-two-bytes-long";
+    private static final long OWNER_ID = 101L;
+
+    @Autowired private MockMvc mockMvc;
+    @Autowired private JdbcTemplate jdbcTemplate;
+
+    @BeforeEach
+    void clearWorksheets() {
+        jdbcTemplate.update("DELETE FROM worksheet_assignments");
+        jdbcTemplate.update("DELETE FROM worksheet_questions");
+        jdbcTemplate.update("DELETE FROM worksheets");
+    }
+
+    @Test
+    void downloadsAnOwnedApprovedWorksheetAsAnAttachment() throws Exception {
+        long worksheetId = worksheet(OWNER_ID, "WS-PDF-HTTP-1", "APPROVED");
+        addQuestion(worksheetId, "PDF-QUESTION-1", "What is 2 + 2? Explain & show your work.", 0);
+
+        byte[] pdf = mockMvc.perform(get("/api/learning/tutor/worksheets/{worksheetId}/pdf", worksheetId)
+                .header(HttpHeaders.AUTHORIZATION, bearer("TUTOR", OWNER_ID)))
+            .andExpect(status().isOk())
+            .andExpect(content().contentType(MediaType.APPLICATION_PDF))
+            .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, containsString("attachment;")))
+            .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, containsString("worksheet-WS-PDF-HTTP-1.pdf")))
+            .andReturn().getResponse().getContentAsByteArray();
+
+        assertTrue(pdf.length > 0);
+        assertArrayEquals("%PDF-".getBytes(StandardCharsets.US_ASCII), java.util.Arrays.copyOf(pdf, 5));
+    }
+
+    @Test
+    void returnsOwnerScopedDetailWithQuestionsAndAssignmentMetadata() throws Exception {
+        long classId = tutorClass(OWNER_ID);
+        long worksheetId = worksheet(OWNER_ID, "WS-DETAIL-1", "APPROVED");
+        addQuestion(worksheetId, "DETAIL-QUESTION-1", "Explain evaporation.", 0);
+        jdbcTemplate.update("INSERT INTO worksheet_assignments (worksheet_id, tutor_id, assignment_type, target_id, class_id, assigned_at, due_at) VALUES (?, ?, 'CLASS', ?, ?, CURRENT_TIMESTAMP, DATEADD('DAY', 7, CURRENT_TIMESTAMP))",
+            worksheetId, OWNER_ID, classId, classId);
+
+        mockMvc.perform(get("/api/learning/tutor/worksheets/{worksheetId}", worksheetId)
+                .header(HttpHeaders.AUTHORIZATION, bearer("TUTOR", OWNER_ID)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("APPROVED"))
+            .andExpect(jsonPath("$.audienceType").value("CLASS"))
+            .andExpect(jsonPath("$.questions[0].code").value("DETAIL-QUESTION-1"))
+            .andExpect(jsonPath("$.questions[0].totalMarks").value(1))
+            .andExpect(jsonPath("$.assignments[0].assignmentType").value("CLASS"))
+            .andExpect(jsonPath("$.assignments[0].classId").value(classId));
+
+        mockMvc.perform(get("/api/learning/tutor/worksheets/{worksheetId}", worksheetId)
+                .header(HttpHeaders.AUTHORIZATION, bearer("TUTOR", 202L)))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.code").value("WORKSHEET_RESOURCE_NOT_FOUND"));
+    }
+
+    @Test
+    void protectsPdfDownloadsByRoleOwnershipAndApprovedState() throws Exception {
+        long approved = worksheet(OWNER_ID, "WS-PDF-HTTP-2", "APPROVED");
+        addQuestion(approved, "PDF-QUESTION-2", "Explain condensation.", 0);
+        long draft = worksheet(OWNER_ID, "WS-PDF-DRAFT", "DRAFT");
+
+        mockMvc.perform(get("/api/learning/tutor/worksheets/{worksheetId}/pdf", approved))
+            .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/learning/tutor/worksheets/{worksheetId}/pdf", approved)
+                .header(HttpHeaders.AUTHORIZATION, bearer("STUDENT", 700L)))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/learning/tutor/worksheets/{worksheetId}/pdf", approved)
+                .header(HttpHeaders.AUTHORIZATION, bearer("TUTOR", 202L)))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.code").value("WORKSHEET_RESOURCE_NOT_FOUND"));
+        mockMvc.perform(get("/api/learning/tutor/worksheets/{worksheetId}/pdf", draft)
+                .header(HttpHeaders.AUTHORIZATION, bearer("TUTOR", OWNER_ID)))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.code").value("WORKSHEET_NOT_APPROVED"));
+    }
+
+    private long worksheet(long tutorId, String code, String status) {
+        jdbcTemplate.update("INSERT INTO worksheets (tutor_id, code, title, instructions, audience_type, status, approved_at) VALUES (?, ?, ?, ?, 'CLASS', ?, CASE WHEN ? = 'APPROVED' THEN CURRENT_TIMESTAMP ELSE NULL END)",
+            tutorId, code, "Worksheet " + code, "Answer every question.", status, status);
+        return jdbcTemplate.queryForObject("SELECT id FROM worksheets WHERE tutor_id = ? AND code = ?", Long.class, tutorId, code);
+    }
+
+    private void addQuestion(long worksheetId, String code, String prompt, int position) {
+        long topicId = jdbcTemplate.queryForObject("SELECT id FROM syllabus_topics WHERE code = ?", Long.class, "SCI_P5_CYCLES_MATTER_WATER_WATER");
+        jdbcTemplate.update("INSERT INTO questions (code, syllabus_topic_id, syllabus_topic_type, question_type, prompt, total_marks, model_answer, archive_state) VALUES (?, ?, 'SUBTOPIC', 'OPEN_ENDED', ?, ?, 'Answer', 'ACTIVE')",
+            code, topicId, prompt, BigDecimal.ONE);
+        long questionId = jdbcTemplate.queryForObject("SELECT id FROM questions WHERE code = ?", Long.class, code);
+        jdbcTemplate.update("INSERT INTO marking_components (question_id, position, description, marks) VALUES (?, 0, 'Criterion', ?)", questionId, BigDecimal.ONE);
+        jdbcTemplate.update("INSERT INTO worksheet_questions (worksheet_id, question_id, position) VALUES (?, ?, ?)", worksheetId, questionId, position);
+    }
+
+    private long tutorClass(long tutorId) {
+        jdbcTemplate.update("INSERT INTO tutor_classes (tutor_id, class_name, normalized_class_name, subject, class_level, status) VALUES (?, ?, ?, ?, ?, 'ACTIVE')",
+            tutorId, "Detail class", "detail class", "Science", "P5");
+        return jdbcTemplate.queryForObject("SELECT id FROM tutor_classes WHERE tutor_id = ? AND normalized_class_name = ?", Long.class, tutorId, "detail class");
+    }
+
+    private String bearer(String role, long userId) {
+        Instant now = Instant.now();
+        String token = Jwts.builder().setSubject("tutor@example.com").claim("role", role).claim("userId", userId)
+            .setIssuedAt(Date.from(now)).setExpiration(Date.from(now.plusSeconds(600)))
+            .signWith(Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8)), SignatureAlgorithm.HS256).compact();
+        return "Bearer " + token;
+    }
+}

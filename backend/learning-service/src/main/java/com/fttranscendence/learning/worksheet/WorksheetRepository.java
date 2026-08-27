@@ -15,7 +15,7 @@ public interface WorksheetRepository extends Repository<Worksheet, Long> {
 
     Optional<Worksheet> findByTutorIdAndCode(Long tutorId, String code);
 
-    Optional<Worksheet> findByGenerationRequestIdAndTutorId(Long generationRequestId, Long tutorId);
+    Optional<Worksheet> findByGenerationRequest_IdAndTutorId(Long generationRequestId, Long tutorId);
 
     List<Worksheet> findAllByTutorIdAndStatusOrderByTitleAsc(
         Long tutorId,

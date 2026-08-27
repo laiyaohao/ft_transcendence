@@ -132,7 +132,7 @@ public class WorksheetService {
     }
 
     private WorksheetRequests.GenerationRequestResponse generationResponse(WorksheetGenerationRequest request, long tutorId) {
-        WorksheetRequests.WorksheetResponse worksheet = worksheets.findByGenerationRequestIdAndTutorId(request.getId(), tutorId)
+        WorksheetRequests.WorksheetResponse worksheet = worksheets.findByGenerationRequest_IdAndTutorId(request.getId(), tutorId)
             .map(WorksheetRequests.WorksheetResponse::from).orElse(null);
         return new WorksheetRequests.GenerationRequestResponse(request.getId(), request.getClassId(), request.getTargetMode(),
             request.getTopicIds(), request.getStudentIds().stream().sorted().toList(), request.getQuestionCount(), request.getQuestionType(),

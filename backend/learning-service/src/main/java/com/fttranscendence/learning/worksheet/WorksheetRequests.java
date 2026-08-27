@@ -10,6 +10,7 @@ import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 
 import java.time.LocalDateTime;
+import java.math.BigDecimal;
 import java.util.List;
 
 public final class WorksheetRequests {
@@ -35,19 +36,27 @@ public final class WorksheetRequests {
     public record ApproveWorksheetRequest(@Future LocalDateTime dueAt) { }
 
     public record QuestionSummary(Long id, String code, String prompt, Question.QuestionType questionType,
-                                  Long syllabusTopicId, String syllabusTopicName) { }
+                                  BigDecimal totalMarks, Long syllabusTopicId, String syllabusTopicName) { }
+
+    /** Assignment data is only exposed through the owner-scoped Tutor worksheet endpoint. */
+    public record AssignmentSummary(Long id, Worksheet.AudienceType assignmentType, Long classId,
+                                    Long studentProfileId, LocalDateTime assignedAt, LocalDateTime dueAt) { }
 
     public record WorksheetResponse(Long id, String code, String title, String instructions,
                                     Worksheet.AudienceType audienceType, Worksheet.Status status,
-                                    Long generationRequestId, List<QuestionSummary> questions) {
+                                    Long generationRequestId, List<QuestionSummary> questions,
+                                    List<AssignmentSummary> assignments) {
         static WorksheetResponse from(Worksheet worksheet) {
             return new WorksheetResponse(worksheet.getId(), worksheet.getCode(), worksheet.getTitle(),
                 worksheet.getInstructions(), worksheet.getAudienceType(), worksheet.getStatus(),
                 worksheet.getGenerationRequestId(), worksheet.getQuestions().stream().map(item -> {
                     Question question = item.getQuestion();
                     return new QuestionSummary(question.getId(), question.getCode(), question.getPrompt(),
-                        question.getQuestionType(), question.getSyllabusTopic().getId(), question.getSyllabusTopic().getName());
-                }).toList());
+                        question.getQuestionType(), question.getTotalMarks(), question.getSyllabusTopic().getId(), question.getSyllabusTopic().getName());
+                }).toList(), worksheet.getAssignments().stream().map(assignment -> new AssignmentSummary(
+                    assignment.getId(), assignment.getAssignmentType(), assignment.getClassId(),
+                    assignment.getStudentProfileId(), assignment.getAssignedAt(), assignment.getDueAt()
+                )).toList());
         }
     }
 

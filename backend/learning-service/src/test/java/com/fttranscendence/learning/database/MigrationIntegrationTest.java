@@ -76,8 +76,8 @@ class MigrationIntegrationTest {
         assertEquals(1, tableCount("class_insight_ranking_overrides"));
         assertEquals(1, tableCount("class_insight_refresh_queue"));
         assertEquals(1, tableCount("tutor_notes"));
-        assertEquals("12", flyway.info().current().getVersion().getVersion());
-        assertEquals(12, versionedMigrationCount());
+        assertEquals("13", flyway.info().current().getVersion().getVersion());
+        assertEquals(13, versionedMigrationCount());
 
         long appliedBefore = versionedMigrationCount();
         flyway.migrate();

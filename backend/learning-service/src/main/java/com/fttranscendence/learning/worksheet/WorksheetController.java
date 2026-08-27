@@ -1,10 +1,13 @@
 package com.fttranscendence.learning.worksheet;
 
 import com.fttranscendence.learning.classroom.ClassController;
+import com.fttranscendence.learning.pdf.PdfDocumentService;
 import com.fttranscendence.learning.security.AuthenticatedUser;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -23,15 +26,17 @@ import org.springframework.web.method.annotation.HandlerMethodValidationExceptio
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.nio.charset.StandardCharsets;
 
 @RestController
 @RequestMapping(value = "/api/learning/tutor", produces = MediaType.APPLICATION_JSON_VALUE)
 public class WorksheetController {
     private final WorksheetService worksheets;
     private final DiagnosticWorksheetService diagnostics;
+    private final WorksheetPdfService worksheetPdfs;
 
-    public WorksheetController(WorksheetService worksheets, DiagnosticWorksheetService diagnostics) {
-        this.worksheets = worksheets; this.diagnostics = diagnostics;
+    public WorksheetController(WorksheetService worksheets, DiagnosticWorksheetService diagnostics, WorksheetPdfService worksheetPdfs) {
+        this.worksheets = worksheets; this.diagnostics = diagnostics; this.worksheetPdfs = worksheetPdfs;
     }
 
     @PostMapping(value = "/classes/{classId}/worksheet-generation-requests", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -52,6 +57,17 @@ public class WorksheetController {
     @GetMapping("/worksheets/{worksheetId}")
     public WorksheetRequests.WorksheetResponse worksheet(@AuthenticationPrincipal AuthenticatedUser user,
             @PathVariable @Positive long worksheetId) { return worksheets.getWorksheet(user.userId(), worksheetId); }
+
+    @GetMapping(value = "/worksheets/{worksheetId}/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
+    public ResponseEntity<byte[]> worksheetPdf(@AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable @Positive long worksheetId) {
+        WorksheetPdfService.PdfExport export = worksheetPdfs.export(user.userId(), worksheetId);
+        return ResponseEntity.ok()
+            .contentType(MediaType.APPLICATION_PDF)
+            .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
+                .filename(export.filename(), StandardCharsets.UTF_8).build().toString())
+            .body(export.bytes());
+    }
 
     @PatchMapping(value = "/worksheets/{worksheetId}", consumes = MediaType.APPLICATION_JSON_VALUE)
     public WorksheetRequests.WorksheetResponse updateWorksheet(@AuthenticationPrincipal AuthenticatedUser user,
@@ -76,6 +92,10 @@ public class WorksheetController {
     ResponseEntity<ClassController.ApiError> conflict(WorksheetService.IdempotencyConflictException exception) { return error(HttpStatus.CONFLICT, "IDEMPOTENCY_KEY_REUSED", "This idempotency key was already used for a different request."); }
     @ExceptionHandler({WorksheetService.WorksheetNotDraftException.class, WorksheetService.WorksheetNotGeneratedException.class})
     ResponseEntity<ClassController.ApiError> invalidState(RuntimeException exception) { return error(HttpStatus.CONFLICT, "WORKSHEET_STATE_CONFLICT", "This worksheet cannot be changed in its current state."); }
+    @ExceptionHandler(WorksheetPdfService.WorksheetNotApprovedException.class)
+    ResponseEntity<ClassController.ApiError> pdfUnavailable(WorksheetPdfService.WorksheetNotApprovedException exception) { return error(HttpStatus.CONFLICT, "WORKSHEET_NOT_APPROVED", "Only approved worksheets can be exported as PDFs."); }
+    @ExceptionHandler(PdfDocumentService.PdfGenerationException.class)
+    ResponseEntity<ClassController.ApiError> pdfFailure(PdfDocumentService.PdfGenerationException exception) { return error(HttpStatus.SERVICE_UNAVAILABLE, "WORKSHEET_PDF_UNAVAILABLE", "Worksheet PDF generation is temporarily unavailable."); }
     @ExceptionHandler(WorksheetService.InvalidWorksheetRequestException.class)
     ResponseEntity<ClassController.ApiError> invalid(WorksheetService.InvalidWorksheetRequestException exception) { return error(HttpStatus.BAD_REQUEST, "INVALID_WORKSHEET_REQUEST", exception.getMessage()); }
     @ExceptionHandler(MethodArgumentNotValidException.class)
