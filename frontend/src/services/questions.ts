@@ -71,6 +71,7 @@ export class QuestionApiError extends Error {
 const LEARNING_API_URL = process.env.NEXT_PUBLIC_LEARNING_API_URL || "http://localhost:8083";
 const QUESTION_BANK_PATH = "/api/learning/tutor/questions";
 const QUESTION_TYPES: readonly QuestionType[] = ["MULTIPLE_CHOICE", "TRUE_FALSE", "FILL_IN_THE_BLANK", "SHORT_ANSWER", "OPEN_ENDED", "CALCULATION", "DIAGRAM"];
+const WORKSHEET_DRAFT_QUESTION_IDS_KEY = "worksheet_draft_question_ids";
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
@@ -227,4 +228,38 @@ export function createTutorQuestion(request: QuestionMutationRequest): Promise<T
 export function updateTutorQuestion(questionId: number, request: QuestionMutationRequest): Promise<TutorQuestion> {
   if (!isPositiveId(questionId)) return Promise.reject(new QuestionApiError("Question reference is invalid.", 400));
   return saveQuestion(`${QUESTION_BANK_PATH}/${questionId}`, "PUT", request);
+}
+
+/**
+ * Keeps a Tutor's in-progress question selection available to the worksheet
+ * editor once that Phase 4 flow is connected. It is deliberately browser-only:
+ * a selection is not a worksheet, assignment, or server-side mutation.
+ */
+function readWorksheetDraftQuestionIds(): number[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const stored = JSON.parse(window.sessionStorage.getItem(WORKSHEET_DRAFT_QUESTION_IDS_KEY) ?? "[]") as unknown;
+    if (!Array.isArray(stored)) return [];
+    return [...new Set(stored.filter(isPositiveId))];
+  } catch {
+    return [];
+  }
+}
+
+export function isQuestionInWorksheetDraft(questionId: number): boolean {
+  return isPositiveId(questionId) && readWorksheetDraftQuestionIds().includes(questionId);
+}
+
+/** Adds one active question to the local worksheet draft selection. */
+export function addQuestionToWorksheetDraft(questionId: number): { ids: number[]; added: boolean; storageUnavailable?: boolean } {
+  if (!isPositiveId(questionId)) throw new QuestionApiError("Question reference is invalid.", 400);
+  const ids = readWorksheetDraftQuestionIds();
+  if (ids.includes(questionId)) return { ids, added: false };
+  const next = [...ids, questionId];
+  try {
+    if (typeof window !== "undefined") window.sessionStorage.setItem(WORKSHEET_DRAFT_QUESTION_IDS_KEY, JSON.stringify(next));
+  } catch {
+    return { ids, added: false, storageUnavailable: true };
+  }
+  return { ids: next, added: true };
 }

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { QuestionApiError, createTutorQuestion, fetchTutorQuestion, fetchTutorQuestions, parseQuestionBankPage, parseTutorQuestion, updateTutorQuestion } from "./questions";
+import { QuestionApiError, addQuestionToWorksheetDraft, createTutorQuestion, fetchTutorQuestion, fetchTutorQuestions, isQuestionInWorksheetDraft, parseQuestionBankPage, parseTutorQuestion, updateTutorQuestion } from "./questions";
 
 const response = {
   items: [{
@@ -34,7 +34,7 @@ const mutation = {
 };
 
 describe("question bank service", () => {
-  beforeEach(() => { vi.stubGlobal("fetch", vi.fn()); });
+  beforeEach(() => { vi.stubGlobal("fetch", vi.fn()); sessionStorage.clear(); localStorage.clear(); });
 
   it("serializes combined filters and the Tutor bearer token", async () => {
     localStorage.setItem("jwt_token", "stored-token");
@@ -91,5 +91,19 @@ describe("question bank service", () => {
     await expect(createTutorQuestion({ ...mutation, markingComponents: [] })).rejects.toMatchObject({ status: 400 });
     await expect(updateTutorQuestion(0, mutation)).rejects.toMatchObject({ status: 400 });
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("keeps worksheet-draft question selections locally and de-duplicates retries", () => {
+    expect(isQuestionInWorksheetDraft(7)).toBe(false);
+    expect(addQuestionToWorksheetDraft(7)).toEqual({ ids: [7], added: true });
+    expect(addQuestionToWorksheetDraft(7)).toEqual({ ids: [7], added: false });
+    expect(isQuestionInWorksheetDraft(7)).toBe(true);
+    expect(() => addQuestionToWorksheetDraft(0)).toThrow("Question reference is invalid");
+  });
+
+  it("reports browser storage failures without throwing from a worksheet selection", () => {
+    vi.spyOn(Storage.prototype, "setItem").mockImplementationOnce(() => { throw new Error("Storage blocked"); });
+    expect(addQuestionToWorksheetDraft(7)).toEqual({ ids: [], added: false, storageUnavailable: true });
+    expect(isQuestionInWorksheetDraft(7)).toBe(false);
   });
 });

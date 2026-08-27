@@ -63,4 +63,10 @@ describe("QuestionList", () => {
     await user.click(screen.getByRole("button", { name: "Retry loading questions" }));
     expect(await screen.findByText("Explain evaporation.")).toBeVisible();
   });
+
+  it("links each question to its detail page while keeping the edit shortcut", async () => {
+    render(<QuestionList loadQuestions={async () => firstPage} />);
+    expect(await screen.findByRole("link", { name: "View question" })).toHaveAttribute("href", "/questions/1");
+    expect(screen.getByRole("link", { name: "Edit question" })).toHaveAttribute("href", "/questions/1/edit");
+  });
 });
