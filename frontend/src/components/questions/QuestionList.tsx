@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import SearchIcon from "@mui/icons-material/Search";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
@@ -12,6 +11,7 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import Link from "next/link";
 
+import SyllabusPicker from "@/components/syllabus/SyllabusPicker";
 import {
   fetchTutorQuestions,
   type QuestionArchiveState,
@@ -20,9 +20,11 @@ import {
   type QuestionBankPage,
   type QuestionType,
 } from "@/services/questions";
+import type { SyllabusTree } from "@/services/syllabus";
 
 export interface QuestionListProps {
   loadQuestions?: (filters: QuestionBankFilters) => Promise<QuestionBankPage>;
+  loadSyllabus?: () => Promise<SyllabusTree>;
 }
 
 const serif = "'Playfair Display', Georgia, serif";
@@ -56,10 +58,9 @@ function QuestionCard({ item, selected, onToggle }: { item: QuestionBankItem; se
   </Card>;
 }
 
-export default function QuestionList({ loadQuestions = fetchTutorQuestions }: QuestionListProps) {
+export default function QuestionList({ loadQuestions = fetchTutorQuestions, loadSyllabus }: QuestionListProps) {
   const [pageData, setPageData] = React.useState<QuestionBankPage | null>(null);
   const [error, setError] = React.useState<string | null>(null);
-  const [topicInput, setTopicInput] = React.useState("");
   const [topicId, setTopicId] = React.useState<number | undefined>();
   const [questionType, setQuestionType] = React.useState<QuestionType | undefined>();
   const [archiveState, setArchiveState] = React.useState<QuestionArchiveState>("ACTIVE");
@@ -75,19 +76,12 @@ export default function QuestionList({ loadQuestions = fetchTutorQuestions }: Qu
 
   React.useEffect(() => { queueMicrotask(() => { void load(); }); }, [load]);
 
-  const applyTopic = () => {
-    const normalized = topicInput.trim();
-    if (!normalized) { setTopicId(undefined); setPage(0); return; }
-    const parsed = Number(normalized);
-    if (Number.isSafeInteger(parsed) && parsed > 0) { setTopicId(parsed); setPage(0); }
-    else setError("Enter a positive syllabus topic ID, or clear the field to view every topic.");
-  };
   const toggleSelection = (id: number) => setSelectedIds((current) => {
     const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next;
   });
   const clearFilters = () => {
-    const alreadyDefault = !topicInput && topicId === undefined && questionType === undefined && archiveState === "ACTIVE" && page === 0;
-    setTopicInput(""); setTopicId(undefined); setQuestionType(undefined); setArchiveState("ACTIVE"); setPage(0);
+    const alreadyDefault = topicId === undefined && questionType === undefined && archiveState === "ACTIVE" && page === 0;
+    setTopicId(undefined); setQuestionType(undefined); setArchiveState("ACTIVE"); setPage(0);
     if (alreadyDefault) void load();
   };
   const changeArchive = (value: QuestionArchiveState) => { setArchiveState(value); setPage(0); };
@@ -99,7 +93,7 @@ export default function QuestionList({ loadQuestions = fetchTutorQuestions }: Qu
 
   return <Box component="section" aria-labelledby="question-list-title"><Typography id="question-list-title" sx={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>Question bank list</Typography>
     <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1, mb: 1.25 }}><Button onClick={() => changeArchive("ACTIVE")} aria-pressed={archiveState === "ACTIVE"} sx={chipStyle(archiveState === "ACTIVE")}>Active</Button><Button onClick={() => changeArchive("ARCHIVED")} aria-pressed={archiveState === "ARCHIVED"} sx={chipStyle(archiveState === "ARCHIVED")}>Archived</Button><Box sx={{ flex: 1, minWidth: { xs: "100%", sm: 120 } }} /><Typography aria-live="polite" sx={{ color: "#6F675E", fontSize: 12.5 }}>{selectedIds.size} selected</Typography><Button component={Link} href="/questions/new" sx={{ minHeight: 36, border: "1px solid #E0B9AC", borderRadius: "9px", bgcolor: "#FDF6F3", color: "#9E3A24", textTransform: "none", fontWeight: 500 }}>Add question</Button></Box>
-    <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "flex-end", gap: 1, mb: 2 }}><TextField label="Syllabus topic ID" value={topicInput} onChange={(event) => setTopicInput(event.target.value)} onBlur={applyTopic} inputMode="numeric" slotProps={{ htmlInput: { "aria-label": "Syllabus topic ID" }, input: { startAdornment: <SearchIcon aria-hidden="true" sx={{ fontSize: 17, color: "#A09488", mr: 1 }} /> } }} sx={{ flex: "1 1 180px", ".MuiOutlinedInput-root": { bgcolor: "#FFFDFA", borderRadius: "9px", fontSize: 13, "& fieldset": { borderColor: "#E4DCD0" }, "&.Mui-focused fieldset": { borderColor: "#E08A72" } }, ".MuiInputLabel-root": { fontSize: 12.5, color: "#6F675E" } }} />
+    <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "flex-end", gap: 1, mb: 2 }}><Box sx={{ flex: "1 1 420px", minWidth: 0 }}><SyllabusPicker value={topicId ?? null} onChange={(nextTopicId) => { setTopicId(nextTopicId ?? undefined); setPage(0); }} label="Syllabus filter" helperText="Filter questions by a topic or subtopic." loadSyllabus={loadSyllabus} /></Box>
       <Box sx={{ display: "flex", flexWrap: "wrap", gap: .65, flex: "2 1 370px" }}><Button onClick={() => changeType(undefined)} aria-pressed={!questionType} sx={chipStyle(!questionType)}>All types</Button>{questionTypes.map((type) => <Button key={type.value} onClick={() => changeType(type.value)} aria-pressed={questionType === type.value} sx={chipStyle(questionType === type.value)}>{type.label}</Button>)}</Box>
     </Box>
     {pageData.items.length === 0 ? <Card variant="outlined" sx={{ minHeight: 260, display: "grid", placeItems: "center", textAlign: "center", p: 3, borderRadius: "14px", borderStyle: "dashed", borderColor: "#DCCFBE", bgcolor: "#FFFDFA", boxShadow: "none" }}><Box sx={{ maxWidth: 430 }}><Typography component="h2" sx={{ fontFamily: serif, fontSize: 22, fontWeight: 500, mb: .75 }}>No questions match these filters</Typography><Typography sx={{ color: "#8B837A", fontSize: 13, lineHeight: 1.6, mb: 1.75 }}>Try another topic, question type, or archive state.</Typography><Button onClick={clearFilters} sx={{ minHeight: 40, border: "1px solid #E4DCD0", borderRadius: "10px", color: "#2A2622", textTransform: "none", fontWeight: 500 }}>Clear filters</Button></Box></Card> : <><Box sx={{ display: "grid", gap: 1.25 }}>{pageData.items.map((item) => <QuestionCard key={item.id} item={item} selected={selectedIds.has(item.id)} onToggle={() => toggleSelection(item.id)} />)}</Box><Box sx={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 1.25, mt: 2 }}><Typography sx={{ color: "#8B837A", fontSize: 12.5 }}>Page {pageData.page + 1} of {Math.max(pageData.totalPages, 1)} · {pageData.totalElements} questions</Typography><Box sx={{ display: "flex", gap: .75 }}><Button onClick={() => setPage((current) => Math.max(0, current - 1))} disabled={pageData.page === 0} sx={{ minHeight: 38, border: "1px solid #E4DCD0", borderRadius: "9px", color: "#2A2622", textTransform: "none", "&.Mui-disabled": { bgcolor: "#EDE6DB", color: "#B5AA9C" } }}>Previous</Button><Button onClick={() => setPage((current) => current + 1)} disabled={!pageData.hasNext} sx={{ minHeight: 38, border: "1px solid #E4DCD0", borderRadius: "9px", color: "#2A2622", textTransform: "none", "&.Mui-disabled": { bgcolor: "#EDE6DB", color: "#B5AA9C" } }}>Next</Button></Box></Box></>}

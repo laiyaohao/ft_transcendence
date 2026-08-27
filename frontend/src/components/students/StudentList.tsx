@@ -17,7 +17,8 @@ import Link from "next/link";
 import { fetchTutorStudents, type TutorStudent } from "@/services/students";
 
 export interface StudentListProps {
-  loadStudents?: () => Promise<TutorStudent[]>;
+  classId?: number;
+  loadStudents?: (classId?: number) => Promise<TutorStudent[]>;
 }
 
 const AVATAR_BACKGROUNDS = ["#D8B384", "#C6D0C4", "#E3C3B4", "#CFC0D6", "#D9CBA8", "#BFD0D6"];
@@ -58,23 +59,23 @@ function StudentListSkeleton() {
   return <Box data-testid="student-list-skeleton" aria-label="Loading students" sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(310px, 1fr))", gap: 2 }}>{[0, 1, 2].map((index) => <Card key={index} variant="outlined" sx={{ p: 2.5, minHeight: 190, borderRadius: "14px", bgcolor: "#FFFDFA", borderColor: "#EBE4D9", boxShadow: "none" }}><Skeleton variant="rounded" width="55%" height={28} sx={{ bgcolor: "#F0EAE0" }} /><Skeleton variant="text" width="78%" height={24} sx={{ bgcolor: "#F0EAE0", mt: 1.5 }} /><Skeleton variant="rounded" width="42%" height={24} sx={{ bgcolor: "#F0EAE0", mt: 1.5 }} /></Card>)}</Box>;
 }
 
-export default function StudentList({ loadStudents = fetchTutorStudents }: StudentListProps) {
+export default function StudentList({ classId, loadStudents = fetchTutorStudents }: StudentListProps) {
   const [students, setStudents] = React.useState<TutorStudent[] | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [query, setQuery] = React.useState("");
-  const [classFilter, setClassFilter] = React.useState("ALL");
+  const [classFilter, setClassFilter] = React.useState(classId ? String(classId) : "ALL");
 
   const load = React.useCallback(async () => {
     setStudents(null); setError(null);
-    try { setStudents(await loadStudents()); }
+    try { setStudents(await loadStudents(classId)); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "Your students could not be loaded. Please try again."); }
-  }, [loadStudents]);
+  }, [classId, loadStudents]);
 
   React.useEffect(() => {
     let current = true;
     const requestStudents = async () => {
       try {
-        const loaded = await loadStudents();
+        const loaded = await loadStudents(classId);
         if (current) setStudents(loaded);
       } catch (reason) {
         if (current) setError(reason instanceof Error ? reason.message : "Your students could not be loaded. Please try again.");
@@ -82,7 +83,9 @@ export default function StudentList({ loadStudents = fetchTutorStudents }: Stude
     };
     void requestStudents();
     return () => { current = false; };
-  }, [loadStudents]);
+  }, [classId, loadStudents]);
+
+  React.useEffect(() => { setClassFilter(classId ? String(classId) : "ALL"); }, [classId]);
 
   const availableClasses = React.useMemo(() => {
     const items = new Map<number, string>();

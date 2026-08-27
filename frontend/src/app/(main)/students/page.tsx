@@ -5,10 +5,14 @@ import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Typography from "@mui/material/Typography";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 
 import StudentList from "@/components/students/StudentList";
 
 export default function StudentsPage() {
+  const params = useSearchParams();
+  const parsedClassId = Number(params.get("classId"));
+  const classId = Number.isSafeInteger(parsedClassId) && parsedClassId > 0 ? parsedClassId : undefined;
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "#F7F4EF", px: { xs: 2.5, sm: 3.75 }, py: 3.75, color: "#2A2622" }}>
       <Box sx={{ maxWidth: 1420, mx: "auto", animation: "fadeUp .35s ease both" }}>
@@ -20,7 +24,7 @@ export default function StudentsPage() {
           </Box>
           <Button component={Link} href="/students/new" startIcon={<AddIcon />} sx={{ minHeight: 42, borderRadius: "10px", bgcolor: "#9E3A24", color: "#FBF9F5", textTransform: "none", fontWeight: 500, px: 2.25, "&:hover": { bgcolor: "#8A3120" } }}>Create student</Button>
         </Box>
-        <StudentList />
+        <StudentList classId={classId} />
       </Box>
     </Box>
   );

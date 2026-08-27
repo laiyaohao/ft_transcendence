@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchTutorWorksheet, generateWorksheet, parseTutorWorksheet, WorksheetApiError } from "./worksheets";
+import { fetchTutorWorksheet, fetchTutorWorksheets, generateWorksheet, parseTutorWorksheet, WorksheetApiError } from "./worksheets";
 
 const worksheet = {
   id: 9, code: "GEN-9", title: "Water drill", instructions: null, audienceType: "CLASS", status: "DRAFT", generationRequestId: 3,
@@ -27,5 +27,11 @@ describe("worksheet service", () => {
     expect(() => parseTutorWorksheet({ id: 1 })).toThrow(/invalid worksheet/i);
     await expect(generateWorksheet(0, { targetMode: "CLASS", topicIds: [], questionCount: 0 }, "x")).rejects.toBeInstanceOf(WorksheetApiError);
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("lists worksheets with an optional owner-scoped class filter", async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify([worksheet]), { status: 200 }));
+    await expect(fetchTutorWorksheets(2)).resolves.toHaveLength(1);
+    expect(fetch).toHaveBeenLastCalledWith(expect.stringContaining("/api/learning/tutor/worksheets?classId=2"), expect.anything());
   });
 });

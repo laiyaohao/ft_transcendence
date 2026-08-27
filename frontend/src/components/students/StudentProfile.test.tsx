@@ -27,8 +27,10 @@ describe("StudentProfile", () => {
     expect(screen.getByText("Tutor records")).toBeVisible();
     expect(screen.getByText("Adaptation practice")).toBeVisible();
     expect(screen.getByRole("link", { name: "Edit student" })).toHaveAttribute("href", "/students/31/edit");
+    expect(screen.getByRole("link", { name: "Upload completed worksheet" })).toHaveAttribute("href", "/upload?studentId=31");
     expect(screen.getByRole("link", { name: /Primary 5 Science/ })).toHaveAttribute("href", "/classes/12");
     expect(screen.getByText("48%")).toBeVisible();
+    expect(screen.getByText("+6%")).toBeVisible();
   });
 
   it("shows safe partial and new-profile states without fabricated values", async () => {

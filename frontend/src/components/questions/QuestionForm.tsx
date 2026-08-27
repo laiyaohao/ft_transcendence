@@ -11,6 +11,7 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import Link from "next/link";
 
+import SyllabusPicker from "@/components/syllabus/SyllabusPicker";
 import {
   QuestionApiError,
   type QuestionArchiveState,
@@ -18,6 +19,7 @@ import {
   type QuestionType,
   type TutorQuestion,
 } from "@/services/questions";
+import type { SyllabusTree } from "@/services/syllabus";
 
 const questionTypes: readonly { value: QuestionType; label: string }[] = [
   { value: "MULTIPLE_CHOICE", label: "Multiple choice" },
@@ -42,6 +44,7 @@ export interface QuestionFormProps {
   submitQuestion: (request: QuestionMutationRequest) => Promise<TutorQuestion>;
   onComplete: (question: TutorQuestion) => void;
   cancelHref?: string;
+  loadSyllabus?: () => Promise<SyllabusTree>;
 }
 
 const fieldSx = {
@@ -76,7 +79,7 @@ export function validateQuestionForm(values: FormValues): FieldErrors {
   if (!values.code.trim()) errors.code = "Question code is required.";
   else if (values.code.trim().length > 120) errors.code = "Question code must be 120 characters or fewer.";
   const topicId = Number(values.syllabusTopicId);
-  if (!Number.isSafeInteger(topicId) || topicId <= 0) errors.syllabusTopicId = "Enter an existing syllabus topic or subtopic ID.";
+  if (!Number.isSafeInteger(topicId) || topicId <= 0) errors.syllabusTopicId = "Choose an existing syllabus topic or subtopic.";
   if (!values.prompt.trim()) errors.prompt = "Question prompt is required.";
   else if (values.prompt.trim().length > 4000) errors.prompt = "Question prompt must be 4,000 characters or fewer.";
   if (!values.modelAnswer.trim()) errors.modelAnswer = "Model answer is required.";
@@ -109,7 +112,7 @@ function requestFor(values: FormValues): QuestionMutationRequest {
   };
 }
 
-export default function QuestionForm({ mode, initialQuestion, submitQuestion, onComplete, cancelHref = "/questions" }: QuestionFormProps) {
+export default function QuestionForm({ mode, initialQuestion, submitQuestion, onComplete, cancelHref = "/questions", loadSyllabus }: QuestionFormProps) {
   const [values, setValues] = React.useState<FormValues>(() => initialValues(initialQuestion));
   const [errors, setErrors] = React.useState<FieldErrors>({});
   const [submitError, setSubmitError] = React.useState<string | null>(null);
@@ -141,7 +144,7 @@ export default function QuestionForm({ mode, initialQuestion, submitQuestion, on
   return <Card component="form" noValidate onSubmit={submit} variant="outlined" sx={{ maxWidth: 940, p: { xs: 2.25, sm: 3 }, borderRadius: "14px", bgcolor: "#FFFDFA", borderColor: "#EBE4D9", boxShadow: "none" }}>
     <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "minmax(0, 1fr) minmax(0, 1fr)" }, gap: 2 }}>
       <TextField required fullWidth label="Question code" value={values.code} onChange={(event) => update("code", event.target.value)} error={Boolean(errors.code)} helperText={errors.code || "A stable reference; it will be stored in uppercase."} slotProps={{ htmlInput: { maxLength: 120, "aria-label": "Question code" } }} sx={fieldSx} />
-      <TextField required fullWidth label="Syllabus topic ID" value={values.syllabusTopicId} onChange={(event) => update("syllabusTopicId", event.target.value)} error={Boolean(errors.syllabusTopicId)} helperText={errors.syllabusTopicId || "Use an existing active topic or subtopic."} slotProps={{ htmlInput: { inputMode: "numeric", "aria-label": "Syllabus topic ID" } }} sx={fieldSx} />
+      <Box sx={{ minWidth: 0 }}><SyllabusPicker value={Number(values.syllabusTopicId) || null} onChange={(topicId) => update("syllabusTopicId", topicId ? String(topicId) : "")} label="Syllabus topic" required error={errors.syllabusTopicId} helperText="Choose an active topic, then optionally refine it to a subtopic." loadSyllabus={loadSyllabus} /></Box>
       <TextField select fullWidth required label="Question type" value={values.questionType} onChange={(event) => update("questionType", event.target.value as QuestionType)} sx={fieldSx}>{questionTypes.map((type) => <MenuItem key={type.value} value={type.value}>{type.label}</MenuItem>)}</TextField>
       <TextField select fullWidth required label="Availability" value={values.archiveState} onChange={(event) => update("archiveState", event.target.value as QuestionArchiveState)} sx={fieldSx}><MenuItem value="ACTIVE">Active — can be used in worksheets</MenuItem><MenuItem value="ARCHIVED">Archived — kept for records only</MenuItem></TextField>
       <TextField required fullWidth multiline minRows={4} label="Question prompt" value={values.prompt} onChange={(event) => update("prompt", event.target.value)} error={Boolean(errors.prompt)} helperText={errors.prompt} slotProps={{ htmlInput: { maxLength: 4000, "aria-label": "Question prompt" } }} sx={{ ...fieldSx, gridColumn: { sm: "1 / -1" } }} />

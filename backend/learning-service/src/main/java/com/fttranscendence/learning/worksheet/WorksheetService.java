@@ -96,6 +96,14 @@ public class WorksheetService {
         return WorksheetRequests.WorksheetResponse.from(ownedWorksheet(tutorId, worksheetId));
     }
 
+    @Transactional(readOnly = true)
+    public List<WorksheetRequests.WorksheetResponse> listWorksheets(long tutorId, Long classId) {
+        List<Worksheet> owned = classId == null
+            ? worksheets.findAllByTutorIdWithAssignments(tutorId)
+            : classWorksheets(tutorId, classId);
+        return owned.stream().map(WorksheetRequests.WorksheetResponse::from).toList();
+    }
+
     @Transactional
     public WorksheetRequests.WorksheetResponse updateWorksheet(long tutorId, long worksheetId, WorksheetRequests.UpdateWorksheetRequest input) {
         Worksheet worksheet = ownedWorksheet(tutorId, worksheetId);
@@ -141,6 +149,10 @@ public class WorksheetService {
 
     private Worksheet ownedWorksheet(long tutorId, long worksheetId) {
         return worksheets.findByIdAndTutorId(worksheetId, tutorId).orElseThrow(WorksheetNotFoundException::new);
+    }
+    private List<Worksheet> classWorksheets(long tutorId, long classId) {
+        requireClass(tutorId, classId);
+        return worksheets.findClassAssignedWorksheetsByTutorId(tutorId, classId);
     }
     private void requireClass(long tutorId, long classId) { if (classes.findByIdAndTutorId(classId, tutorId).isEmpty()) throw new ClassNotFoundException(); }
     private void requireTopics(List<Long> topicIds) {

@@ -4,6 +4,7 @@ import * as React from "react";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import UploadFileOutlinedIcon from "@mui/icons-material/UploadFileOutlined";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
@@ -74,16 +75,21 @@ function Metric({ label, value, detail }: { label: string; value: string; detail
 function ProfileContent({ profile }: { profile: TutorStudentProfile }) {
   const displayMastery = [...profile.mastery].sort((left, right) => right.score - left.score || left.topicName.localeCompare(right.topicName));
   const avatarIndex = profile.id % avatarBackgrounds.length;
+  const recentImprovement = profile.history
+    .filter((item) => item.previousScore !== null && item.newScore !== null)
+    .map((item) => item.newScore! - item.previousScore!)
+    .at(0) ?? null;
   return <>
     <Card component="section" aria-label="Student profile summary" variant="outlined" sx={{ ...card, p: { xs: 2.25, sm: 3 }, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 2, mb: 2 }}>
       <Box aria-hidden="true" sx={{ width: 66, height: 66, borderRadius: "50%", flex: "0 0 auto", bgcolor: avatarBackgrounds[avatarIndex], display: "grid", placeItems: "center", fontFamily: serif, fontSize: 24, fontWeight: 600, color: "#3A332C" }}>{initials(profile.fullName)}</Box>
       <Box sx={{ flex: "1 1 260px", minWidth: 0 }}><Typography component="h1" sx={{ fontFamily: serif, fontSize: { xs: 31, sm: 36 }, fontWeight: 500, lineHeight: 1.1, letterSpacing: "-.02em" }}>{profile.fullName}</Typography><Box sx={{ display: "flex", flexWrap: "wrap", gap: .65, mt: 1 }}>{profile.classes.length ? profile.classes.map((item) => <Chip key={item.id} label={`${item.level} · ${item.subject}`} size="small" sx={{ height: 24, bgcolor: "#F4EFE6", color: "#6F675E", fontSize: 10.5, fontWeight: 500 }} />) : <Typography sx={{ color: "#8B837A", fontSize: 13 }}>No class memberships yet</Typography>}</Box></Box>
-      <Button component={Link} href={`/students/${profile.id}/edit`} startIcon={<EditOutlinedIcon aria-hidden="true" />} sx={{ minHeight: 42, border: "1px solid #E4DCD0", borderRadius: "10px", bgcolor: "#FFFDFA", color: "#2A2622", textTransform: "none", fontWeight: 500, px: 2, "&:hover": { bgcolor: "#F4EFE6" } }}>Edit student</Button>
+      <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}><Button component={Link} href={`/upload?studentId=${profile.id}`} startIcon={<UploadFileOutlinedIcon aria-hidden="true" />} sx={{ minHeight: 42, borderRadius: "10px", bgcolor: "#E08A72", color: "#1B1917", textTransform: "none", fontWeight: 600, px: 2, "&:hover": { bgcolor: "#D2795F" } }}>Upload completed worksheet</Button><Button component={Link} href={`/students/${profile.id}/edit`} startIcon={<EditOutlinedIcon aria-hidden="true" />} sx={{ minHeight: 42, border: "1px solid #E4DCD0", borderRadius: "10px", bgcolor: "#FFFDFA", color: "#2A2622", textTransform: "none", fontWeight: 500, px: 2, "&:hover": { bgcolor: "#F4EFE6" } }}>Edit student</Button></Box>
     </Card>
 
     <Box component="section" aria-label="Learning metrics" sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(168px, 1fr))", gap: 1.75, mb: 2.5 }}>
       <Metric label="OVERALL MASTERY" value={percent(profile.metrics.averageMastery)} detail={profile.metrics.topicCount ? `Across ${profile.metrics.topicCount} topics` : "No mastery records yet"} />
       <Metric label="LEARNING ATTEMPTS" value={String(profile.metrics.totalAttempts)} detail={profile.metrics.totalAttempts === 1 ? "Recorded attempt" : "Recorded attempts"} />
+      <Metric label="RECENT IMPROVEMENT" value={recentImprovement === null ? "—" : `${recentImprovement >= 0 ? "+" : ""}${Math.round(recentImprovement)}%`} detail={recentImprovement === null ? "No scored change recorded" : "Latest recorded topic change"} />
       <Metric label="FOCUS AREAS" value={String(profile.learningProfile.focusAreas.length)} detail={profile.learningProfile.focusAreas.length ? "Topics needing practice" : "No focus topics identified"} />
       <Metric label="LAST UPDATED" value={profile.metrics.lastCalculatedAt ? dateLabel(profile.metrics.lastCalculatedAt) : "—"} detail={profile.metrics.lastCalculatedAt ? "Latest mastery calculation" : "No calculation yet"} />
     </Box>

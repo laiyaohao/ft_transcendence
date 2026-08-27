@@ -28,4 +28,11 @@ describe("StudentList", () => {
     rerender(<StudentList loadStudents={vi.fn().mockRejectedValue(new Error("Student service unavailable"))} />);
     expect(await screen.findByRole("alert")).toHaveTextContent("Student service unavailable");
   });
+
+  it("passes a class deep-link filter through to the owner-scoped service", async () => {
+    const loadStudents = vi.fn().mockResolvedValue([students[0]]);
+    render(<StudentList classId={12} loadStudents={loadStudents} />);
+    await screen.findByText("Bella Tan");
+    expect(loadStudents).toHaveBeenCalledWith(12);
+  });
 });

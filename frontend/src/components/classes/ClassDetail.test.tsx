@@ -57,10 +57,11 @@ describe("ClassDetail", () => {
     expect(screen.getByText("Tutor note: Prioritise before Friday.")).toBeVisible();
     expect(screen.getByText("Review keywords before the next worksheet.")).toBeVisible();
     expect(screen.getByText("P5 Science — Adaptation Mini Test")).toBeVisible();
-    expect(screen.getByText("Generate Worksheet")).toBeDisabled();
+    expect(screen.getByRole("link", { name: "Generate Worksheet" })).toHaveAttribute("href", "/tutor/worksheets/new?classId=12");
     expect(screen.getByRole("link", { name: "Edit class" })).toHaveAttribute("href", "/classes/12/edit");
     expect(screen.getByRole("link", { name: "View students" })).toHaveAttribute("href", "/students?classId=12");
-    expect(screen.getByRole("link", { name: "View worksheets" })).toHaveAttribute("href", "/worksheets?classId=12");
+    expect(screen.getByRole("link", { name: "View worksheets" })).toHaveAttribute("href", "/tutor/worksheets?classId=12");
+    expect(screen.getByRole("link", { name: "Open Bella Tan's profile" })).toHaveAttribute("href", "/students/21");
   });
 
   it("shows actionable empty states for a class without learning data", async () => {

@@ -5,6 +5,7 @@ import com.fttranscendence.learning.pdf.PdfDocumentService;
 import com.fttranscendence.learning.security.AuthenticatedUser;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
@@ -57,6 +58,12 @@ public class WorksheetController {
     @GetMapping("/worksheets/{worksheetId}")
     public WorksheetRequests.WorksheetResponse worksheet(@AuthenticationPrincipal AuthenticatedUser user,
             @PathVariable @Positive long worksheetId) { return worksheets.getWorksheet(user.userId(), worksheetId); }
+
+    @GetMapping("/worksheets")
+    public java.util.List<WorksheetRequests.WorksheetResponse> worksheets(@AuthenticationPrincipal AuthenticatedUser user,
+            @RequestParam(required = false) @Positive Long classId) {
+        return worksheets.listWorksheets(user.userId(), classId);
+    }
 
     @GetMapping(value = "/worksheets/{worksheetId}/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
     public ResponseEntity<byte[]> worksheetPdf(@AuthenticationPrincipal AuthenticatedUser user,

@@ -190,6 +190,15 @@ export async function fetchTutorWorksheet(worksheetId: number): Promise<TutorWor
   return parseTutorWorksheet(await json(await fetch(`${base}/api/learning/tutor/worksheets/${worksheetId}`, { headers: headers() })));
 }
 
+/** Lists only worksheets owned by the current Tutor; class filtering is owner-scoped server-side. */
+export async function fetchTutorWorksheets(classId?: number): Promise<TutorWorksheet[]> {
+  if (classId !== undefined) requireId(classId, "Class reference is invalid.");
+  const suffix = classId === undefined ? "" : `?classId=${classId}`;
+  const payload = await json(await fetch(`${base}/api/learning/tutor/worksheets${suffix}`, { headers: headers() }));
+  if (!Array.isArray(payload)) throw new Error("The learning service returned an invalid worksheet list. Please try again.");
+  return payload.map(parseTutorWorksheet);
+}
+
 export async function updateWorksheet(worksheetId: number, request: UpdateWorksheetRequest): Promise<TutorWorksheet> {
   requireId(worksheetId, "Worksheet reference is invalid.");
   if (!nonEmpty(request.title) || !Array.isArray(request.questionIds) || request.questionIds.length === 0 || !request.questionIds.every(positiveId)) {

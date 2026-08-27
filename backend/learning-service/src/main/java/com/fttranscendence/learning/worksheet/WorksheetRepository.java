@@ -25,6 +25,15 @@ public interface WorksheetRepository extends Repository<Worksheet, Long> {
     @Query("""
         SELECT DISTINCT worksheet
         FROM Worksheet worksheet
+        LEFT JOIN FETCH worksheet.assignments
+        WHERE worksheet.tutorId = :tutorId
+        ORDER BY worksheet.title ASC, worksheet.id ASC
+        """)
+    List<Worksheet> findAllByTutorIdWithAssignments(@Param("tutorId") Long tutorId);
+
+    @Query("""
+        SELECT DISTINCT worksheet
+        FROM Worksheet worksheet
         JOIN worksheet.assignments assignment
         WHERE assignment.assignmentType = :assignmentType
           AND assignment.targetId = :targetId

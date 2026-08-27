@@ -87,6 +87,28 @@ class WorksheetDetailIntegrationTest {
     }
 
     @Test
+    void listsOnlyTheOwnersWorksheetsAndHonoursAnOwnedClassFilter() throws Exception {
+        long classId = tutorClass(OWNER_ID);
+        long otherClassId = tutorClass(OWNER_ID, "Another class");
+        long included = worksheet(OWNER_ID, "WS-LIST-INCLUDED", "APPROVED");
+        long excluded = worksheet(OWNER_ID, "WS-LIST-EXCLUDED", "APPROVED");
+        worksheet(202L, "WS-LIST-FOREIGN", "APPROVED");
+        jdbcTemplate.update("INSERT INTO worksheet_assignments (worksheet_id, tutor_id, assignment_type, target_id, class_id, assigned_at) VALUES (?, ?, 'CLASS', ?, ?, CURRENT_TIMESTAMP)", included, OWNER_ID, classId, classId);
+        jdbcTemplate.update("INSERT INTO worksheet_assignments (worksheet_id, tutor_id, assignment_type, target_id, class_id, assigned_at) VALUES (?, ?, 'CLASS', ?, ?, CURRENT_TIMESTAMP)", excluded, OWNER_ID, otherClassId, otherClassId);
+
+        mockMvc.perform(get("/api/learning/tutor/worksheets?classId={classId}", classId)
+                .header(HttpHeaders.AUTHORIZATION, bearer("TUTOR", OWNER_ID)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.length()").value(1))
+            .andExpect(jsonPath("$[0].code").value("WS-LIST-INCLUDED"));
+
+        mockMvc.perform(get("/api/learning/tutor/worksheets?classId={classId}", classId)
+                .header(HttpHeaders.AUTHORIZATION, bearer("TUTOR", 202L)))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.code").value("WORKSHEET_RESOURCE_NOT_FOUND"));
+    }
+
+    @Test
     void protectsPdfDownloadsByRoleOwnershipAndApprovedState() throws Exception {
         long approved = worksheet(OWNER_ID, "WS-PDF-HTTP-2", "APPROVED");
         addQuestion(approved, "PDF-QUESTION-2", "Explain condensation.", 0);
@@ -123,9 +145,13 @@ class WorksheetDetailIntegrationTest {
     }
 
     private long tutorClass(long tutorId) {
+        return tutorClass(tutorId, "Detail class");
+    }
+
+    private long tutorClass(long tutorId, String name) {
         jdbcTemplate.update("INSERT INTO tutor_classes (tutor_id, class_name, normalized_class_name, subject, class_level, status) VALUES (?, ?, ?, ?, ?, 'ACTIVE')",
-            tutorId, "Detail class", "detail class", "Science", "P5");
-        return jdbcTemplate.queryForObject("SELECT id FROM tutor_classes WHERE tutor_id = ? AND normalized_class_name = ?", Long.class, tutorId, "detail class");
+            tutorId, name, name.toLowerCase(), "Science", "P5");
+        return jdbcTemplate.queryForObject("SELECT id FROM tutor_classes WHERE tutor_id = ? AND normalized_class_name = ?", Long.class, tutorId, name.toLowerCase());
     }
 
     private String bearer(String role, long userId) {
