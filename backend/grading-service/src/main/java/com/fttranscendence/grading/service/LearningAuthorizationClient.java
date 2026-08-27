@@ -84,6 +84,41 @@ public class LearningAuthorizationClient {
         }
     }
 
+    /**
+     * Verifies the Tutor-owned worksheet, its question, and its assignment to
+     * the selected student before a page-less manual result is recorded.
+     */
+    public QuestionContext validateManualResultContext(
+        AuthenticatedUser user,
+        String bearer,
+        long studentId,
+        long worksheetId,
+        long questionBankId
+    ) {
+        if (user == null || !"TUTOR".equals(user.role())) {
+            throw new Forbidden();
+        }
+        try {
+            Map<?, ?> student = get(bearer, "/api/learning/tutor/students/" + studentId).getBody();
+            Map<?, ?> worksheet = get(bearer, "/api/learning/tutor/worksheets/" + worksheetId).getBody();
+            if (!sameId(student, studentId) || !sameId(worksheet, worksheetId)
+                || !"APPROVED".equals(worksheet.get("status"))
+                || !hasQuestion(worksheet, questionBankId)
+                || !isAssignedToStudent(worksheet, student, studentId)) {
+                throw new ManualResultContextNotFound();
+            }
+            QuestionContext question = loadQuestion(user, bearer, questionBankId);
+            if (!question.totalMarks().equals(questionMarks(worksheet, questionBankId))) {
+                throw new ManualResultContextNotFound();
+            }
+            return question;
+        } catch (Forbidden | QuestionUnavailable | ManualResultContextNotFound exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new ManualResultContextNotFound();
+        }
+    }
+
     private ResponseEntity<Map> get(String bearer, String path) {
         HttpHeaders headers = new HttpHeaders();
         headers.set(HttpHeaders.AUTHORIZATION, bearer);
@@ -93,6 +128,44 @@ public class LearningAuthorizationClient {
     private static boolean sameId(Map<?, ?> body, long expected) {
         Object id = body == null ? null : body.get("id");
         return id instanceof Number number && number.longValue() == expected;
+    }
+
+    private static boolean hasQuestion(Map<?, ?> worksheet, long questionBankId) {
+        return questionMarks(worksheet, questionBankId) != null;
+    }
+
+    private static BigDecimal questionMarks(Map<?, ?> worksheet, long questionBankId) {
+        Object questions = worksheet == null ? null : worksheet.get("questions");
+        if (!(questions instanceof List<?> values)) return null;
+        for (Object value : values) {
+            if (value instanceof Map<?, ?> question && sameId(question, questionBankId)) {
+                return decimal(question.get("totalMarks"));
+            }
+        }
+        return null;
+    }
+
+    private static boolean isAssignedToStudent(Map<?, ?> worksheet, Map<?, ?> student, long studentId) {
+        Object assignments = worksheet == null ? null : worksheet.get("assignments");
+        if (!(assignments instanceof List<?> values)) return false;
+        for (Object value : values) {
+            if (!(value instanceof Map<?, ?> assignment)) continue;
+            if ("STUDENT".equals(assignment.get("assignmentType"))
+                && sameIdValue(assignment.get("studentProfileId"), studentId)) return true;
+            if ("CLASS".equals(assignment.get("assignmentType")) && studentIsInClass(student, assignment.get("classId"))) return true;
+        }
+        return false;
+    }
+
+    private static boolean studentIsInClass(Map<?, ?> student, Object classId) {
+        Object classes = student == null ? null : student.get("classes");
+        if (!(classes instanceof List<?> values)) return false;
+        return values.stream().filter(Map.class::isInstance).map(Map.class::cast)
+            .anyMatch(item -> sameIdValue(item.get("id"), classId));
+    }
+
+    private static boolean sameIdValue(Object first, Object second) {
+        return first instanceof Number left && second instanceof Number right && left.longValue() == right.longValue();
     }
 
     private static String text(Object value) {
@@ -133,4 +206,5 @@ public class LearningAuthorizationClient {
 
     public static class Forbidden extends RuntimeException { }
     public static class QuestionUnavailable extends RuntimeException { }
+    public static class ManualResultContextNotFound extends RuntimeException { }
 }

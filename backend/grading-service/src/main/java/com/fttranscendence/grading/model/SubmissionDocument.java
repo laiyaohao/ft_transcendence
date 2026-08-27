@@ -34,7 +34,9 @@ public class SubmissionDocument {
 
     public enum SourceType {
         PDF,
-        IMAGES
+        IMAGES,
+        /** A Tutor-entered result with no uploaded source pages. */
+        MANUAL
     }
 
     public enum Status {
@@ -62,6 +64,13 @@ public class SubmissionDocument {
     @Enumerated(EnumType.STRING)
     @Column(name = "source_type", nullable = false, length = 16)
     private SourceType sourceType;
+
+    /**
+     * A durable, unique scope for page-less manual documents. It prevents
+     * retrying a manual result from creating another hidden document.
+     */
+    @Column(name = "manual_scope_key", length = 160, unique = true)
+    private String manualScopeKey;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
@@ -97,10 +106,16 @@ public class SubmissionDocument {
         this.worksheetId = requirePositive(worksheetId, "Worksheet id");
         this.studentId = requirePositive(studentId, "Student id");
         this.sourceType = requireValue(sourceType, "Source type");
+        this.manualScopeKey = sourceType == SourceType.MANUAL
+            ? manualScopeKey(ownerUserId, ownerRole, worksheetId, studentId)
+            : null;
     }
 
     public SubmissionPage addPage(DocumentStorage.StoredFile storedFile) {
         ensureUploading();
+        if (sourceType == SourceType.MANUAL) {
+            throw new IllegalStateException("A manual result cannot contain uploaded pages");
+        }
         if (storedFile == null) {
             throw new IllegalArgumentException("Stored file metadata is required");
         }
@@ -120,6 +135,9 @@ public class SubmissionDocument {
 
     public void movePage(int fromPageNumber, int toPageNumber) {
         ensureUploading();
+        if (sourceType == SourceType.MANUAL) {
+            throw new IllegalStateException("A manual result cannot contain uploaded pages");
+        }
         if (sourceType == SourceType.PDF) {
             throw new IllegalStateException("A PDF source cannot be reordered");
         }
@@ -139,6 +157,9 @@ public class SubmissionDocument {
 
     public void removePage(int pageNumber) {
         ensureUploading();
+        if (sourceType == SourceType.MANUAL) {
+            throw new IllegalStateException("A manual result cannot contain uploaded pages");
+        }
         pages.sort(Comparator.comparingInt(SubmissionPage::getPageNumber));
         if (pageNumber <= 0 || pageNumber > pages.size()) {
             throw new IllegalArgumentException("Page number is outside the document");
@@ -182,6 +203,14 @@ public class SubmissionDocument {
         requirePositive(studentId, "Student id");
         requireValue(sourceType, "Source type");
         requireValue(status, "Status");
+        if (sourceType == SourceType.MANUAL) {
+            String expectedKey = manualScopeKey(ownerUserId, ownerRole, worksheetId, studentId);
+            if (!expectedKey.equals(manualScopeKey) || !pages.isEmpty()) {
+                throw new IllegalStateException("Manual result document metadata is inconsistent");
+            }
+        } else if (manualScopeKey != null) {
+            throw new IllegalStateException("Uploaded submission documents cannot have a manual scope key");
+        }
         if (status == Status.READY) {
             validatePages();
         } else {
@@ -190,6 +219,9 @@ public class SubmissionDocument {
     }
 
     private void validatePages() {
+        if (sourceType == SourceType.MANUAL) {
+            return;
+        }
         if (pages.isEmpty()) {
             throw new IllegalStateException("A submission document requires at least one page");
         }
@@ -223,6 +255,15 @@ public class SubmissionDocument {
         if (!validPdf && !validImage) {
             throw new IllegalArgumentException("File media type does not match document source type");
         }
+    }
+
+    private static String manualScopeKey(
+        Long ownerUserId,
+        OwnerRole ownerRole,
+        Long worksheetId,
+        Long studentId
+    ) {
+        return "manual:" + ownerUserId + ":" + ownerRole + ":" + worksheetId + ":" + studentId;
     }
 
     private void renumberPages() {

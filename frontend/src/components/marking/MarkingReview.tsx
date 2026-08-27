@@ -59,6 +59,9 @@ export default function MarkingReview({
   const parsedMarks = Number(marks);
   const validMarks = Number.isFinite(parsedMarks) && parsedMarks >= 0 && parsedMarks <= review.maxMarks;
   const statusLabel = review.reviewStatus.replace("_", " ");
+  const isManualResult = review.aiSuggestedMarks === null
+    && review.aiSuggestedOutcome === null
+    && review.aiSuggestedFeedback === null;
 
   return (
     <Box sx={{ maxWidth: 1120, mx: "auto", py: { xs: 2, sm: 4 }, px: { xs: 1.5, sm: 2.5 } }}>
@@ -68,7 +71,7 @@ export default function MarkingReview({
             Tutor marking review
           </Typography>
           <Typography sx={{ color: "#6F675E", mt: .5 }}>
-            AI suggestions are advisory. Student results are final only after your approval.
+            {isManualResult ? "This is a Tutor-entered result with a recorded approval history." : "AI suggestions are advisory. Student results are final only after your approval."}
           </Typography>
         </Box>
         <Chip label={statusLabel} sx={{ alignSelf: "flex-start", fontWeight: 700, bgcolor: review.reviewStatus === "APPROVED" ? "#DDEFE5" : review.reviewStatus === "FLAGGED" ? "#F7E4D5" : "#EEE8DF", color: "#473E36" }} />
@@ -88,11 +91,11 @@ export default function MarkingReview({
         </Stack>
         <Stack sx={{ gap: 2 }}>
           <Card variant="outlined" sx={card}>
-            <Typography sx={label}>AI ADVISORY</Typography>
+            <Typography sx={label}>{isManualResult ? "MANUAL RESULT" : "AI ADVISORY"}</Typography>
             <Typography sx={{ fontWeight: 700, mt: .8 }}>
-              {review.aiSuggestedOutcome || "Manual review required"} · {review.aiSuggestedMarks?.toFixed(2) ?? "—"} / {review.maxMarks.toFixed(2)}
+              {isManualResult ? "Tutor-entered score" : review.aiSuggestedOutcome || "Manual review required"} · {(isManualResult ? review.approvedMarks : review.aiSuggestedMarks)?.toFixed(2) ?? "—"} / {review.maxMarks.toFixed(2)}
             </Typography>
-            <Typography sx={{ color: "#5F574E", fontSize: 13.5, lineHeight: 1.55, mt: .8 }}>{review.aiSuggestedFeedback || "No AI feedback is available."}</Typography>
+            <Typography sx={{ color: "#5F574E", fontSize: 13.5, lineHeight: 1.55, mt: .8 }}>{isManualResult ? review.approvedFeedback : review.aiSuggestedFeedback || "No AI feedback is available."}</Typography>
             {review.missingKeywords.length > 0 && <Stack direction="row" sx={{ mt: 1.25, gap: .75, flexWrap: "wrap" }}>
               {review.missingKeywords.map((keyword) => <Chip key={keyword} label={keyword} size="small" variant="outlined" />)}
             </Stack>}

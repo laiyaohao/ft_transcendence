@@ -122,6 +122,9 @@ export default function TutorWorksheetDetail({
             </Button>
           ) : (
             <>
+              <Button component={Link} href={`/tutor/worksheets/${current.id}/results/new`} sx={{ border: "1px solid #E4DCD0", color: "#2A2622", textTransform: "none" }}>
+                Enter result manually
+              </Button>
               <Button component={Link} href={`/upload?worksheetId=${current.id}`} sx={{ border: "1px solid #E4DCD0", color: "#2A2622", textTransform: "none" }}>
                 Upload marked work
               </Button>

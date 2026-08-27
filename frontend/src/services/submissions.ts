@@ -36,6 +36,14 @@ export async function createOcrDocument(input:{studentId:number;worksheetId:numb
 export async function correctOcrExtraction(extractionId:number,correctedText:string):Promise<OcrPage>{const response=await fetch(`${gradingUrl}/api/grading/ocr-extractions/${extractionId}`,{method:"PATCH",headers:{...headers(),"Content-Type":"application/json"},body:JSON.stringify({correctedText})});if(!response.ok)throw new SubmissionApiError("OCR correction could not be saved.",response.status);const b=await response.json() as {id:number;text:string;confidence:number;status:OcrPage["status"]};return {pageId:0,extractionId:b.id,text:b.text,confidence:b.confidence,status:b.status};}
 
 export type MarkingReviewStatus = "PENDING_REVIEW" | "FLAGGED" | "APPROVED";
+export type ManualResultRequest = {
+  worksheetId: number;
+  studentId: number;
+  questionBankId: number;
+  answer: string;
+  marks: number;
+  feedback: string;
+};
 export type MarkingReview = {
   id: number; studentId: number; worksheetId: number; worksheetQuestionId: number; questionBankId: number;
   extractedAnswer: string; modelAnswer: string; maxMarks: number; aiSuggestedMarks: number | null;
@@ -71,6 +79,14 @@ export function parseMarkingReview(value: unknown): MarkingReview {
 }
 async function reviewRequest(path: string, init?: RequestInit): Promise<MarkingReview> { const response = await fetch(`${gradingUrl}/api/grading/tutor/reviews${path}`, { ...init, headers: { ...headers(), "Content-Type": "application/json", ...(init?.headers || {}) } }); if (!response.ok) { const body = await response.json().catch(() => null) as { error?: string } | null; throw new SubmissionApiError(body?.error || "The marking review could not be updated.", response.status); } return parseMarkingReview(await response.json()); }
 export function createMarkingReview(input: { submissionDocumentId: number; worksheetQuestionId: number; questionBankId: number }): Promise<MarkingReview> { if (![input.submissionDocumentId, input.worksheetQuestionId, input.questionBankId].every((id) => Number.isSafeInteger(id) && id > 0)) return Promise.reject(new SubmissionApiError("The submission review context is invalid.", 400)); return reviewRequest("", { method: "POST", body: JSON.stringify(input) }); }
+/** Creates a Tutor-approved fallback result without pretending that OCR source pages exist. */
+export function createManualResult(input: ManualResultRequest): Promise<MarkingReview> {
+  if (![input.worksheetId, input.studentId, input.questionBankId].every((id) => Number.isSafeInteger(id) && id > 0)
+    || !Number.isFinite(input.marks) || input.marks < 0 || !input.answer.trim() || !input.feedback.trim()) {
+    return Promise.reject(new SubmissionApiError("Student, question, answer, marks and tutor feedback are required.", 400));
+  }
+  return reviewRequest("/manual", { method: "POST", body: JSON.stringify(input) });
+}
 export function fetchMarkingReview(submissionId: number): Promise<MarkingReview> { if (!Number.isSafeInteger(submissionId) || submissionId <= 0) return Promise.reject(new SubmissionApiError("The submission id is invalid.", 400)); return reviewRequest(`/${submissionId}`); }
 export function approveMarkingReview(submissionId: number, marks: number, feedback: string): Promise<MarkingReview> { if (!Number.isFinite(marks) || marks < 0 || !feedback.trim()) return Promise.reject(new SubmissionApiError("Marks and tutor feedback are required.", 400)); return reviewRequest(`/${submissionId}/approve`, { method: "POST", body: JSON.stringify({ marks, feedback }) }); }
 export function flagMarkingReview(submissionId: number, reason: string): Promise<MarkingReview> { if (!reason.trim()) return Promise.reject(new SubmissionApiError("A flag reason is required.", 400)); return reviewRequest(`/${submissionId}/flag`, { method: "POST", body: JSON.stringify({ reason }) }); }

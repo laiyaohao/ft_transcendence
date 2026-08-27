@@ -9,6 +9,7 @@ import com.fttranscendence.grading.repository.SubmissionDocumentRepository;
 import com.fttranscendence.grading.repository.SubmissionRepository;
 import com.fttranscendence.grading.security.AuthenticatedUser;
 import jakarta.transaction.Transactional;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -72,6 +73,42 @@ public class MarkingReviewService {
         return MarkingReview.from(submissions.saveAndFlush(submission), suggestion.providerResponseValid());
     }
 
+    /**
+     * Persists a Tutor-entered result through the same canonical submission,
+     * approval, score-boundary and audit-history path as an OCR review.
+     */
+    @Transactional
+    public MarkingReview createManualResult(
+        AuthenticatedUser user,
+        String bearer,
+        ManualResultRequest request
+    ) {
+        requirePositiveManual(request.worksheetId(), "Worksheet id");
+        requirePositiveManual(request.studentId(), "Student id");
+        requirePositiveManual(request.questionBankId(), "Question bank id");
+        String answer = requireText(request.answer(), "Student answer");
+        String feedback = requireText(request.feedback(), "Tutor feedback");
+        LearningAuthorizationClient.QuestionContext question = learning.validateManualResultContext(
+            user, bearer, request.studentId(), request.worksheetId(), request.questionBankId());
+        validateManualScore(request.marks(), question.totalMarks());
+
+        SubmissionDocument document = manualDocument(user.userId(), request.worksheetId(), request.studentId());
+        if (submissions.findBySubmissionDocumentIdAndWorksheetQuestionId(document.getId(), request.questionBankId()).isPresent()) {
+            throw new ManualResultAlreadyExists();
+        }
+        try {
+            // Learning currently exposes question-bank IDs in worksheet detail.
+            // Store that same authoritative ID in worksheetQuestionId until its
+            // cross-service question-instance identifier is exposed.
+            Submission submission = Submission.createAnswer(document, request.questionBankId(), request.questionBankId(),
+                answer, question.modelAnswer(), question.totalMarks());
+            submission.approve(user.userId(), request.marks(), feedback);
+            return MarkingReview.from(submissions.saveAndFlush(submission), null);
+        } catch (DataIntegrityViolationException exception) {
+            throw new ManualResultAlreadyExists();
+        }
+    }
+
     @Transactional
     public MarkingReview get(AuthenticatedUser user, String bearer, long submissionId) {
         Submission submission = ownedSubmission(user, bearer, submissionId);
@@ -113,6 +150,36 @@ public class MarkingReviewService {
         return submission;
     }
 
+    private SubmissionDocument manualDocument(long tutorId, long worksheetId, long studentId) {
+        return documents.findByOwnerUserIdAndOwnerRoleAndWorksheetIdAndStudentIdAndSourceType(
+            tutorId,
+            SubmissionDocument.OwnerRole.TUTOR,
+            worksheetId,
+            studentId,
+            SubmissionDocument.SourceType.MANUAL
+        ).orElseGet(() -> {
+            SubmissionDocument created = new SubmissionDocument(
+                tutorId,
+                SubmissionDocument.OwnerRole.TUTOR,
+                worksheetId,
+                studentId,
+                SubmissionDocument.SourceType.MANUAL
+            );
+            created.markReady();
+            try {
+                return documents.saveAndFlush(created);
+            } catch (DataIntegrityViolationException exception) {
+                return documents.findByOwnerUserIdAndOwnerRoleAndWorksheetIdAndStudentIdAndSourceType(
+                    tutorId,
+                    SubmissionDocument.OwnerRole.TUTOR,
+                    worksheetId,
+                    studentId,
+                    SubmissionDocument.SourceType.MANUAL
+                ).orElseThrow(() -> exception);
+            }
+        });
+    }
+
     private String effectiveText(OcrExtraction extraction) {
         String corrected = extraction.getCorrectedText();
         return corrected != null && !corrected.isBlank() ? corrected : extraction.getExtractedText();
@@ -124,7 +191,42 @@ public class MarkingReviewService {
         }
     }
 
+    private static String requireText(String value, String field) {
+        if (value == null || value.isBlank()) {
+            throw new InvalidManualResultRequest(field + " is required.");
+        }
+        return value.trim();
+    }
+
+    private static void requirePositiveManual(Long value, String field) {
+        if (value == null || value <= 0) {
+            throw new InvalidManualResultRequest(field + " must be positive.");
+        }
+    }
+
+    private static void validateManualScore(BigDecimal marks, BigDecimal maximum) {
+        if (marks == null) {
+            throw new InvalidManualResultRequest("Marks are required.");
+        }
+        try {
+            BigDecimal normalized = marks.setScale(2);
+            if (normalized.signum() < 0 || normalized.compareTo(maximum) > 0) {
+                throw new InvalidManualResultRequest("Marks must be between zero and the question maximum.");
+            }
+        } catch (ArithmeticException exception) {
+            throw new InvalidManualResultRequest("Marks may have at most two decimal places.");
+        }
+    }
+
     public record CreateRequest(Long submissionDocumentId, Long worksheetQuestionId, Long questionBankId) { }
+    public record ManualResultRequest(
+        Long worksheetId,
+        Long studentId,
+        Long questionBankId,
+        String answer,
+        BigDecimal marks,
+        String feedback
+    ) { }
     public record ApprovalRequest(BigDecimal marks, String feedback) { }
     public record FlagRequest(String reason) { }
 
@@ -177,4 +279,8 @@ public class MarkingReviewService {
     public static class InvalidReviewRequest extends RuntimeException {
         public InvalidReviewRequest(String message) { super(message); }
     }
+    public static class InvalidManualResultRequest extends RuntimeException {
+        public InvalidManualResultRequest(String message) { super(message); }
+    }
+    public static class ManualResultAlreadyExists extends RuntimeException { }
 }

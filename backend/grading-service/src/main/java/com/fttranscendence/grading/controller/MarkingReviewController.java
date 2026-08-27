@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 
 import java.util.Map;
 
@@ -33,6 +34,15 @@ public class MarkingReviewController {
         @RequestBody MarkingReviewService.CreateRequest request
     ) {
         return ResponseEntity.status(HttpStatus.CREATED).body(reviews.createAdvisoryReview(user, bearer, request));
+    }
+
+    @PostMapping("/manual")
+    public ResponseEntity<MarkingReviewService.MarkingReview> createManualResult(
+        @AuthenticationPrincipal AuthenticatedUser user,
+        @RequestHeader("Authorization") String bearer,
+        @RequestBody MarkingReviewService.ManualResultRequest request
+    ) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(reviews.createManualResult(user, bearer, request));
     }
 
     @GetMapping("/{submissionId}")
@@ -86,6 +96,26 @@ public class MarkingReviewController {
     @ExceptionHandler(LearningAuthorizationClient.QuestionUnavailable.class)
     ResponseEntity<Map<String, String>> unavailableQuestion() {
         return error(HttpStatus.SERVICE_UNAVAILABLE, "QUESTION_CONTEXT_UNAVAILABLE", "Question context is temporarily unavailable.");
+    }
+
+    @ExceptionHandler(LearningAuthorizationClient.ManualResultContextNotFound.class)
+    ResponseEntity<Map<String, String>> manualContextNotFound() {
+        return error(HttpStatus.NOT_FOUND, "MANUAL_RESULT_CONTEXT_NOT_FOUND", "Worksheet result context was not found.");
+    }
+
+    @ExceptionHandler(MarkingReviewService.ManualResultAlreadyExists.class)
+    ResponseEntity<Map<String, String>> duplicateManualResult() {
+        return error(HttpStatus.CONFLICT, "MANUAL_RESULT_EXISTS", "A manual result already exists for this student and question.");
+    }
+
+    @ExceptionHandler(MarkingReviewService.InvalidManualResultRequest.class)
+    ResponseEntity<Map<String, String>> invalidManualResult(MarkingReviewService.InvalidManualResultRequest exception) {
+        return error(HttpStatus.BAD_REQUEST, "INVALID_MANUAL_RESULT", exception.getMessage());
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    ResponseEntity<Map<String, String>> malformedRequest() {
+        return error(HttpStatus.BAD_REQUEST, "INVALID_REVIEW_REQUEST", "Review request contains invalid JSON or values.");
     }
 
     @ExceptionHandler({MarkingReviewService.InvalidReviewRequest.class, IllegalArgumentException.class, IllegalStateException.class})
