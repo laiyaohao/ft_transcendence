@@ -5,6 +5,7 @@ import FileUploadOutlinedIcon from '@mui/icons-material/FileUploadOutlined';
 import GroupsOutlinedIcon from '@mui/icons-material/GroupsOutlined';
 import HomeOutlinedIcon from '@mui/icons-material/HomeOutlined';
 import PersonIcon from '@mui/icons-material/Person';
+import QuizOutlinedIcon from '@mui/icons-material/QuizOutlined';
 import SchoolOutlinedIcon from '@mui/icons-material/SchoolOutlined';
 import SubjectOutlinedIcon from '@mui/icons-material/SubjectOutlined';
 import TopicOutlinedIcon from '@mui/icons-material/TopicOutlined';
@@ -24,6 +25,7 @@ const TUTOR_NAVIGATION: readonly NavigationItem[] = [
   { id: 'dashboard', title: 'Dashboard', href: '/tutor/dashboard', icon: DashboardOutlinedIcon },
   { id: 'classes', title: 'Classes', href: '/classes', icon: SchoolOutlinedIcon },
   { id: 'students', title: 'Students', href: '/students', icon: GroupsOutlinedIcon },
+  { id: 'questions', title: 'Question Bank', href: '/questions', icon: QuizOutlinedIcon },
   { id: 'upload', title: 'Upload', href: '/upload', icon: FileUploadOutlinedIcon },
   { id: 'profile', title: 'Profile', href: '/profile', icon: PersonIcon },
 ];

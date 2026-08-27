@@ -92,6 +92,7 @@ describe('Sidebar', () => {
       );
     });
     expect(within(navigation).getByRole('link', { name: 'Students', hidden: true })).toBeInTheDocument();
+    expect(within(navigation).getByRole('link', { name: 'Question Bank', hidden: true })).toHaveAttribute('href', '/questions');
     expect(within(navigation).queryByRole('link', { name: 'Progress', hidden: true })).not.toBeInTheDocument();
   });
 

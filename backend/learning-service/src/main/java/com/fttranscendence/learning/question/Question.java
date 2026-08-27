@@ -250,6 +250,35 @@ public class Question {
         keywords.add(normalized);
     }
 
+    /** Replaces marking criteria atomically while retaining the entity aggregate. */
+    public void replaceMarkingComponents(List<MarkingComponent> replacements) {
+        int shared = Math.min(markingComponents.size(), replacements.size());
+        for (int index = 0; index < shared; index++) {
+            MarkingComponent existing = markingComponents.get(index);
+            MarkingComponent replacement = replacements.get(index);
+            existing.setDescription(replacement.getDescription());
+            existing.setMarks(replacement.getMarks());
+            existing.attachTo(this);
+            existing.setPosition(index);
+        }
+        while (markingComponents.size() > replacements.size()) {
+            MarkingComponent removed = markingComponents.remove(markingComponents.size() - 1);
+            removed.detach();
+        }
+        for (int index = shared; index < replacements.size(); index++) {
+            MarkingComponent replacement = replacements.get(index);
+            replacement.attachTo(this);
+            replacement.setPosition(index);
+            markingComponents.add(replacement);
+        }
+    }
+
+    /** Replaces keywords; canonicalisation and duplicate validation run at persistence time. */
+    public void replaceKeywords(List<String> replacements) {
+        keywords.clear();
+        keywords.addAll(replacements);
+    }
+
     public void archive() {
         archiveState = ArchiveState.ARCHIVED;
     }

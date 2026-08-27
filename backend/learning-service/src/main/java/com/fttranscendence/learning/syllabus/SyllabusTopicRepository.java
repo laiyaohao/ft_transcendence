@@ -7,6 +7,8 @@ import java.util.Optional;
 
 public interface SyllabusTopicRepository extends Repository<SyllabusTopic, Long> {
 
+    Optional<SyllabusTopic> findById(Long id);
+
     Optional<SyllabusTopic> findByCode(String code);
 
     List<SyllabusTopic> findAllByParentIdAndActiveTrueOrderBySortOrderAscCodeAsc(Long parentId);

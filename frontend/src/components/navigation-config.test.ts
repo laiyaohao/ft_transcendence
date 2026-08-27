@@ -14,6 +14,7 @@ describe('role-aware navigation configuration', () => {
       { title: 'Dashboard', href: '/tutor/dashboard' },
       { title: 'Classes', href: '/classes' },
       { title: 'Students', href: '/students' },
+      { title: 'Question Bank', href: '/questions' },
       { title: 'Upload', href: '/upload' },
       { title: 'Profile', href: '/profile' },
     ]);

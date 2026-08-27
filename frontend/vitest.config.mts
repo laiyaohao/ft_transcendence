@@ -11,6 +11,9 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     globals: true,
+    // MUI interaction tests run concurrently and can exceed Vitest's five-second
+    // default on developer and container hosts without indicating a deadlock.
+    testTimeout: 15_000,
     setupFiles: ["./src/test/setup.ts"],
     server: {
       deps: {

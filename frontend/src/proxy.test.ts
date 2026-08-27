@@ -23,6 +23,13 @@ describe("route proxy", () => {
     expect(response.headers.get("location")).toBe("http://localhost:3000/");
   });
 
+  it("protects the Question Bank and prevents Students from reaching its nested editor", () => {
+    expect(proxy(request("/questions/7/edit", "TUTOR")).status).toBe(200);
+    const response = proxy(request("/questions/7/edit", "STUDENT"));
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toBe("http://localhost:3000/");
+  });
+
   it("sends a signed-in Tutor away from login to the Tutor dashboard", () => {
     const response = proxy(request("/login", "TUTOR"));
 

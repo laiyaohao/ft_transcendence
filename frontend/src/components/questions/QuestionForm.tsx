@@ -1,0 +1,160 @@
+"use client";
+
+import * as React from "react";
+import AddIcon from "@mui/icons-material/Add";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Card from "@mui/material/Card";
+import MenuItem from "@mui/material/MenuItem";
+import TextField from "@mui/material/TextField";
+import Typography from "@mui/material/Typography";
+import Link from "next/link";
+
+import {
+  QuestionApiError,
+  type QuestionArchiveState,
+  type QuestionMutationRequest,
+  type QuestionType,
+  type TutorQuestion,
+} from "@/services/questions";
+
+const questionTypes: readonly { value: QuestionType; label: string }[] = [
+  { value: "MULTIPLE_CHOICE", label: "Multiple choice" },
+  { value: "TRUE_FALSE", label: "True / false" },
+  { value: "FILL_IN_THE_BLANK", label: "Fill in the blank" },
+  { value: "SHORT_ANSWER", label: "Short answer" },
+  { value: "OPEN_ENDED", label: "Open ended" },
+  { value: "CALCULATION", label: "Calculation" },
+  { value: "DIAGRAM", label: "Diagram" },
+];
+
+type MarkingCriterion = { description: string; marks: string };
+type FormValues = {
+  code: string; syllabusTopicId: string; questionType: QuestionType; prompt: string; totalMarks: string;
+  modelAnswer: string; archiveState: QuestionArchiveState; markingComponents: MarkingCriterion[]; keywords: string;
+};
+type FieldErrors = Record<string, string>;
+
+export interface QuestionFormProps {
+  mode: "create" | "edit";
+  initialQuestion?: TutorQuestion;
+  submitQuestion: (request: QuestionMutationRequest) => Promise<TutorQuestion>;
+  onComplete: (question: TutorQuestion) => void;
+  cancelHref?: string;
+}
+
+const fieldSx = {
+  ".MuiOutlinedInput-root": { bgcolor: "#FBF9F5", borderRadius: "9px", fontSize: 13.5, "& fieldset": { borderColor: "#E4DCD0" }, "&.Mui-focused fieldset": { borderColor: "#E08A72" } },
+  ".MuiInputLabel-root": { color: "#6F675E", fontSize: 13 },
+  ".MuiFormHelperText-root": { color: "#B4573F", fontSize: 11.5, lineHeight: 1.4, mx: 0, mt: .7 },
+} as const;
+
+function blankValues(): FormValues {
+  return { code: "", syllabusTopicId: "", questionType: "OPEN_ENDED", prompt: "", totalMarks: "", modelAnswer: "", archiveState: "ACTIVE", markingComponents: [{ description: "", marks: "" }], keywords: "" };
+}
+
+function initialValues(question?: TutorQuestion): FormValues {
+  if (!question) return blankValues();
+  return {
+    code: question.code, syllabusTopicId: String(question.syllabusTopic.id), questionType: question.questionType, prompt: question.prompt,
+    totalMarks: String(question.totalMarks), modelAnswer: question.modelAnswer, archiveState: question.archiveState,
+    markingComponents: question.markingComponents.map((component) => ({ description: component.description, marks: String(component.marks) })),
+    keywords: question.keywords.join(", "),
+  };
+}
+
+function preciseNumber(value: string): number | null {
+  const trimmed = value.trim();
+  if (!/^\d+(?:\.\d{1,2})?$/.test(trimmed)) return null;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function validateQuestionForm(values: FormValues): FieldErrors {
+  const errors: FieldErrors = {};
+  if (!values.code.trim()) errors.code = "Question code is required.";
+  else if (values.code.trim().length > 120) errors.code = "Question code must be 120 characters or fewer.";
+  const topicId = Number(values.syllabusTopicId);
+  if (!Number.isSafeInteger(topicId) || topicId <= 0) errors.syllabusTopicId = "Enter an existing syllabus topic or subtopic ID.";
+  if (!values.prompt.trim()) errors.prompt = "Question prompt is required.";
+  else if (values.prompt.trim().length > 4000) errors.prompt = "Question prompt must be 4,000 characters or fewer.";
+  if (!values.modelAnswer.trim()) errors.modelAnswer = "Model answer is required.";
+  else if (values.modelAnswer.trim().length > 4000) errors.modelAnswer = "Model answer must be 4,000 characters or fewer.";
+  const totalMarks = preciseNumber(values.totalMarks);
+  if (totalMarks === null || totalMarks <= 0 || totalMarks > 9999.99) errors.totalMarks = "Enter marks greater than zero with up to two decimal places.";
+  if (values.markingComponents.length === 0) errors.markingComponents = "Add at least one marking criterion.";
+  let markedTotal = 0;
+  values.markingComponents.forEach((component, index) => {
+    if (!component.description.trim()) errors[`markingComponents.${index}.description`] = "Criterion description is required.";
+    else if (component.description.trim().length > 1000) errors[`markingComponents.${index}.description`] = "Criterion description must be 1,000 characters or fewer.";
+    const marks = preciseNumber(component.marks);
+    if (marks === null || marks <= 0 || marks > 9999.99) errors[`markingComponents.${index}.marks`] = "Use a positive number with up to two decimal places.";
+    else markedTotal += marks;
+  });
+  if (totalMarks !== null && Math.round(markedTotal * 100) !== Math.round(totalMarks * 100)) errors.markingComponents = "Criteria marks must exactly equal the total marks.";
+  const keywords = values.keywords.split(",").map((item) => item.trim()).filter(Boolean);
+  if (keywords.length > 100) errors.keywords = "Use at most 100 keywords.";
+  else if (keywords.some((keyword) => keyword.length > 80)) errors.keywords = "Each keyword must be 80 characters or fewer.";
+  else if (new Set(keywords.map((keyword) => keyword.toLowerCase())).size !== keywords.length) errors.keywords = "Keywords must be unique.";
+  return errors;
+}
+
+function requestFor(values: FormValues): QuestionMutationRequest {
+  return {
+    code: values.code.trim(), syllabusTopicId: Number(values.syllabusTopicId), questionType: values.questionType,
+    prompt: values.prompt.trim(), totalMarks: Number(values.totalMarks), modelAnswer: values.modelAnswer.trim(), archiveState: values.archiveState,
+    markingComponents: values.markingComponents.map((component) => ({ description: component.description.trim(), marks: Number(component.marks) })),
+    keywords: values.keywords.split(",").map((keyword) => keyword.trim()).filter(Boolean),
+  };
+}
+
+export default function QuestionForm({ mode, initialQuestion, submitQuestion, onComplete, cancelHref = "/questions" }: QuestionFormProps) {
+  const [values, setValues] = React.useState<FormValues>(() => initialValues(initialQuestion));
+  const [errors, setErrors] = React.useState<FieldErrors>({});
+  const [submitError, setSubmitError] = React.useState<string | null>(null);
+  const [submitting, setSubmitting] = React.useState(false);
+  const submissionInFlight = React.useRef(false);
+  const update = <Field extends keyof Omit<FormValues, "markingComponents">>(field: Field, value: FormValues[Field]) => {
+    setValues((current) => ({ ...current, [field]: value }));
+    setErrors((current) => ({ ...current, [field]: "" }));
+  };
+  const updateCriterion = (index: number, field: keyof MarkingCriterion, value: string) => {
+    setValues((current) => ({ ...current, markingComponents: current.markingComponents.map((criterion, criterionIndex) => criterionIndex === index ? { ...criterion, [field]: value } : criterion) }));
+    setErrors((current) => ({ ...current, [`markingComponents.${index}.${field}`]: "", markingComponents: "" }));
+  };
+  const addCriterion = () => setValues((current) => current.markingComponents.length >= 100 ? current : { ...current, markingComponents: [...current.markingComponents, { description: "", marks: "" }] });
+  const removeCriterion = (index: number) => { setValues((current) => ({ ...current, markingComponents: current.markingComponents.filter((_, criterionIndex) => criterionIndex !== index) })); setErrors({}); };
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (submissionInFlight.current) return;
+    const nextErrors = validateQuestionForm(values);
+    if (Object.keys(nextErrors).length) { setErrors(nextErrors); setSubmitError(null); return; }
+    submissionInFlight.current = true; setSubmitting(true); setErrors({}); setSubmitError(null);
+    try { onComplete(await submitQuestion(requestFor(values))); }
+    catch (reason) {
+      if (reason instanceof QuestionApiError) { setErrors(reason.fields); setSubmitError(reason.message); }
+      else setSubmitError(reason instanceof Error ? reason.message : "This question could not be saved. Please try again.");
+    } finally { submissionInFlight.current = false; setSubmitting(false); }
+  };
+  const submitLabel = mode === "create" ? "Create question" : "Save changes";
+  return <Card component="form" noValidate onSubmit={submit} variant="outlined" sx={{ maxWidth: 940, p: { xs: 2.25, sm: 3 }, borderRadius: "14px", bgcolor: "#FFFDFA", borderColor: "#EBE4D9", boxShadow: "none" }}>
+    <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "minmax(0, 1fr) minmax(0, 1fr)" }, gap: 2 }}>
+      <TextField required fullWidth label="Question code" value={values.code} onChange={(event) => update("code", event.target.value)} error={Boolean(errors.code)} helperText={errors.code || "A stable reference; it will be stored in uppercase."} slotProps={{ htmlInput: { maxLength: 120, "aria-label": "Question code" } }} sx={fieldSx} />
+      <TextField required fullWidth label="Syllabus topic ID" value={values.syllabusTopicId} onChange={(event) => update("syllabusTopicId", event.target.value)} error={Boolean(errors.syllabusTopicId)} helperText={errors.syllabusTopicId || "Use an existing active topic or subtopic."} slotProps={{ htmlInput: { inputMode: "numeric", "aria-label": "Syllabus topic ID" } }} sx={fieldSx} />
+      <TextField select fullWidth required label="Question type" value={values.questionType} onChange={(event) => update("questionType", event.target.value as QuestionType)} sx={fieldSx}>{questionTypes.map((type) => <MenuItem key={type.value} value={type.value}>{type.label}</MenuItem>)}</TextField>
+      <TextField select fullWidth required label="Availability" value={values.archiveState} onChange={(event) => update("archiveState", event.target.value as QuestionArchiveState)} sx={fieldSx}><MenuItem value="ACTIVE">Active — can be used in worksheets</MenuItem><MenuItem value="ARCHIVED">Archived — kept for records only</MenuItem></TextField>
+      <TextField required fullWidth multiline minRows={4} label="Question prompt" value={values.prompt} onChange={(event) => update("prompt", event.target.value)} error={Boolean(errors.prompt)} helperText={errors.prompt} slotProps={{ htmlInput: { maxLength: 4000, "aria-label": "Question prompt" } }} sx={{ ...fieldSx, gridColumn: { sm: "1 / -1" } }} />
+      <TextField required fullWidth label="Total marks" value={values.totalMarks} onChange={(event) => update("totalMarks", event.target.value)} error={Boolean(errors.totalMarks)} helperText={errors.totalMarks || "Use up to two decimal places."} slotProps={{ htmlInput: { inputMode: "decimal", "aria-label": "Total marks" } }} sx={fieldSx} />
+      <TextField fullWidth label="Keywords" value={values.keywords} onChange={(event) => update("keywords", event.target.value)} error={Boolean(errors.keywords)} helperText={errors.keywords || "Optional; separate terms with commas."} slotProps={{ htmlInput: { "aria-label": "Keywords" } }} sx={fieldSx} />
+      <TextField required fullWidth multiline minRows={4} label="Model answer" value={values.modelAnswer} onChange={(event) => update("modelAnswer", event.target.value)} error={Boolean(errors.modelAnswer)} helperText={errors.modelAnswer || "This is Tutor-only marking guidance."} slotProps={{ htmlInput: { maxLength: 4000, "aria-label": "Model answer" } }} sx={{ ...fieldSx, gridColumn: { sm: "1 / -1" } }} />
+    </Box>
+    <Box component="section" aria-labelledby="marking-criteria-title" sx={{ mt: 3, pt: 2.5, borderTop: "1px solid #F0EAE0" }}>
+      <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "flex-start", justifyContent: "space-between", gap: 1.5, mb: 1.5 }}><Box><Typography id="marking-criteria-title" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 21, fontWeight: 500 }}>Marking criteria</Typography><Typography sx={{ color: "#8B837A", fontSize: 12.5, lineHeight: 1.55, mt: .5 }}>Allocate every mark so the criteria total matches the question.</Typography></Box><Button type="button" onClick={addCriterion} disabled={values.markingComponents.length >= 100} startIcon={<AddIcon />} sx={{ minHeight: 40, border: "1px solid #E4DCD0", borderRadius: "10px", color: "#2A2622", textTransform: "none", fontWeight: 500 }}>Add criterion</Button></Box>
+      {errors.markingComponents && <Typography role="alert" sx={{ color: "#B4573F", fontSize: 11.5, mb: 1 }}>{errors.markingComponents}</Typography>}
+      <Box sx={{ display: "grid", gap: 1.25 }}>{values.markingComponents.map((criterion, index) => <Box key={index} sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "minmax(0, 1fr) 150px auto" }, gap: 1.25, alignItems: "start", p: 1.5, border: "1px solid #F0EAE0", borderRadius: "12px", bgcolor: "#FBF9F5" }}><TextField required fullWidth label={`Criterion ${index + 1}`} value={criterion.description} onChange={(event) => updateCriterion(index, "description", event.target.value)} error={Boolean(errors[`markingComponents.${index}.description`])} helperText={errors[`markingComponents.${index}.description`]} slotProps={{ htmlInput: { maxLength: 1000, "aria-label": `Criterion ${index + 1}` } }} sx={fieldSx} /><TextField required fullWidth label={`Criterion ${index + 1} marks`} value={criterion.marks} onChange={(event) => updateCriterion(index, "marks", event.target.value)} error={Boolean(errors[`markingComponents.${index}.marks`])} helperText={errors[`markingComponents.${index}.marks`]} slotProps={{ htmlInput: { inputMode: "decimal", "aria-label": `Criterion ${index + 1} marks` } }} sx={fieldSx} /><Button type="button" onClick={() => removeCriterion(index)} disabled={values.markingComponents.length === 1} aria-label={`Remove criterion ${index + 1}`} sx={{ minWidth: 40, minHeight: 40, mt: { xs: 0, sm: .5 }, border: "1px solid #EBE4D9", borderRadius: "9px", color: "#B4573F" }}><DeleteOutlineIcon aria-hidden="true" sx={{ fontSize: 18 }} /></Button></Box>)}</Box>
+    </Box>
+    {submitError && <Box role="alert" sx={{ mt: 2.5, p: 1.75, borderLeft: "3px solid #B4573F", borderRadius: "0 10px 10px 0", bgcolor: "#F6EFE6" }}><Typography sx={{ color: "#5A544C", fontSize: 13, lineHeight: 1.55 }}>{submitError}</Typography></Box>}
+    <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.25, mt: 3 }}><Button type="submit" disabled={submitting} sx={{ minHeight: 42, borderRadius: "10px", bgcolor: "#9E3A24", color: "#FBF9F5", textTransform: "none", fontWeight: 500, px: 2.25, "&:hover": { bgcolor: "#8A3120" }, "&.Mui-disabled": { bgcolor: "#EDE6DB", color: "#B5AA9C" } }}>{submitting ? (mode === "create" ? "Creating question…" : "Saving changes…") : submitLabel}</Button><Button component={Link} href={cancelHref} sx={{ minHeight: 42, border: "1px solid #E4DCD0", borderRadius: "10px", color: "#2A2622", textTransform: "none", fontWeight: 500, px: 2 }}>Cancel</Button></Box>
+  </Card>;
+}
