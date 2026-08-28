@@ -1,12 +1,11 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Playfair_Display, DM_Sans, Caveat } from "next/font/google";
+import { Geist, Geist_Mono } from "next/font/google";
 import { AppRouterCacheProvider } from '@mui/material-nextjs/v16-appRouter';
 import InitColorSchemeScript from '@mui/material/InitColorSchemeScript';
 import CssBaseline from '@mui/material/CssBaseline';
 import ThemeProvider from './theme-provider'
 import SidebarProvider from '../providers/sidebar-provider'
 import ViewportProvider from "@/providers/viewport-provider";
-import ToastProvider from "@/providers/toast-provider";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -17,21 +16,6 @@ const geistSans = Geist({
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
-});
-
-const playfairDisplay = Playfair_Display({
-  subsets: ["latin"],
-  weight: ["500", "600", "700"],
-});
-
-const dmSans = DM_Sans({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-});
-
-const caveat = Caveat({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
 });
 
 export const metadata: Metadata = {
@@ -45,19 +29,17 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} ${playfairDisplay.className} ${caveat.className}`} suppressHydrationWarning>
-      <body className={dmSans.className}>
+    <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
+      <body>
         <AppRouterCacheProvider>
           <ThemeProvider>
             <InitColorSchemeScript attribute="class" />
             <CssBaseline enableColorScheme />
             <ViewportProvider>
               <SidebarProvider>
-                <ToastProvider>
-                  <main style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-                    {children}
-                  </main>
-                </ToastProvider>
+                <main style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+                  {children}
+                </main>
               </SidebarProvider>
             </ViewportProvider>
           </ThemeProvider>
