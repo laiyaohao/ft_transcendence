@@ -59,6 +59,50 @@ export interface UpdateWorksheetRequest {
   questionIds: number[];
 }
 
+export type StudentWorksheetStatus = "ASSIGNED" | "SUBMITTED" | "MARKED";
+
+export interface StudentWorksheetTopic {
+  id: number;
+  name: string;
+}
+
+export interface StudentWorksheetSubject {
+  id: number;
+  name: string;
+}
+
+export interface StudentWorksheetScore {
+  earned: number;
+  available: number;
+  percent: number;
+}
+
+/**
+ * A worksheet assignment visible to the authenticated Student only.
+ * The server derives the Student from the bearer token; no student id is accepted here.
+ */
+export interface StudentWorksheet {
+  id: number;
+  code: string;
+  title: string;
+  subjects: StudentWorksheetSubject[];
+  topics: StudentWorksheetTopic[];
+  assignedAt: string;
+  dueAt: string | null;
+  status: StudentWorksheetStatus;
+  submittedAt: string | null;
+  reviewedAt: string | null;
+  score: StudentWorksheetScore | null;
+}
+
+export interface StudentWorksheetLibraryFilters {
+  subjectId?: number;
+  topicId?: number;
+  status?: StudentWorksheetStatus;
+  assignedFrom?: string;
+  assignedTo?: string;
+}
+
 export class WorksheetApiError extends Error {
   constructor(message: string, readonly status: number) {
     super(message);
@@ -85,12 +129,38 @@ function stringOrNull(value: unknown): value is string | null {
   return value === null || typeof value === "string";
 }
 
+function localDateTime(value: unknown): string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$/.test(value)) {
+    throw new Error("The learning service returned an invalid student worksheet date. Please try again.");
+  }
+  const parsed = new Date(`${value}Z`);
+  const [day, sourceTime] = value.split("T");
+  const time = sourceTime.split(".")[0];
+  const normalized = `${day}T${time.length === 5 ? `${time}:00` : time}`;
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 19) !== normalized) {
+    throw new Error("The learning service returned an invalid student worksheet date. Please try again.");
+  }
+  return value;
+}
+
+function localDateTimeOrNull(value: unknown): string | null {
+  return value === null ? null : localDateTime(value);
+}
+
+function nonNegativeNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
 function isQuestionType(value: unknown): value is QuestionType {
   return typeof value === "string" && questionTypes.includes(value as QuestionType);
 }
 
 function isWorksheetStatus(value: unknown): value is WorksheetStatus {
   return value === "DRAFT" || value === "APPROVED" || value === "ARCHIVED";
+}
+
+function isStudentWorksheetStatus(value: unknown): value is StudentWorksheetStatus {
+  return value === "ASSIGNED" || value === "SUBMITTED" || value === "MARKED";
 }
 
 function headers(): HeadersInit {
@@ -122,6 +192,52 @@ function parseAssignment(payload: unknown): WorksheetAssignment {
     throw new Error("The learning service returned an invalid worksheet assignment.");
   }
   return { id: payload.id, assignmentType: payload.assignmentType, classId: payload.classId, studentProfileId: payload.studentProfileId, assignedAt: payload.assignedAt, dueAt: payload.dueAt };
+}
+
+function parseStudentWorksheetTopic(payload: unknown): StudentWorksheetTopic {
+  if (!isRecord(payload) || !positiveId(payload.id) || !nonEmpty(payload.name)) {
+    throw new Error("The learning service returned an invalid student worksheet topic. Please try again.");
+  }
+  return { id: payload.id, name: payload.name };
+}
+
+function parseStudentWorksheetSubject(payload: unknown): StudentWorksheetSubject {
+  if (!isRecord(payload) || !positiveId(payload.id) || !nonEmpty(payload.name)) {
+    throw new Error("The learning service returned an invalid student worksheet subject. Please try again.");
+  }
+  return { id: payload.id, name: payload.name };
+}
+
+function parseStudentWorksheetScore(payload: unknown): StudentWorksheetScore {
+  if (!isRecord(payload) || !nonNegativeNumber(payload.earned) || !nonNegativeNumber(payload.available)
+    || payload.available <= 0 || payload.earned > payload.available || !nonNegativeNumber(payload.percent)
+    || payload.percent > 100 || Math.abs(payload.percent - ((payload.earned / payload.available) * 100)) > 0.01) {
+    throw new Error("The learning service returned an invalid student worksheet score. Please try again.");
+  }
+  return { earned: payload.earned, available: payload.available, percent: payload.percent };
+}
+
+/** Strictly validates the self-scoped Student worksheet-library response. */
+export function parseStudentWorksheet(payload: unknown): StudentWorksheet {
+  if (!isRecord(payload) || !positiveId(payload.id) || !nonEmpty(payload.code) || !nonEmpty(payload.title)
+    || !Array.isArray(payload.subjects) || payload.subjects.length === 0 || !Array.isArray(payload.topics) || payload.topics.length === 0 || !isStudentWorksheetStatus(payload.status)
+    || !stringOrNull(payload.dueAt) || !stringOrNull(payload.submittedAt) || !stringOrNull(payload.reviewedAt)
+    || !(payload.score === null || isRecord(payload.score))) {
+    throw new Error("The learning service returned an invalid student worksheet. Please try again.");
+  }
+  return {
+    id: payload.id,
+    code: payload.code,
+    title: payload.title,
+    subjects: payload.subjects.map(parseStudentWorksheetSubject),
+    topics: payload.topics.map(parseStudentWorksheetTopic),
+    assignedAt: localDateTime(payload.assignedAt),
+    dueAt: localDateTimeOrNull(payload.dueAt),
+    status: payload.status,
+    submittedAt: localDateTimeOrNull(payload.submittedAt),
+    reviewedAt: localDateTimeOrNull(payload.reviewedAt),
+    score: payload.score === null ? null : parseStudentWorksheetScore(payload.score),
+  };
 }
 
 /** Validates and normalises the owner-scoped worksheet detail response. */
@@ -197,6 +313,40 @@ export async function fetchTutorWorksheets(classId?: number): Promise<TutorWorks
   const payload = await json(await fetch(`${base}/api/learning/tutor/worksheets${suffix}`, { headers: headers() }));
   if (!Array.isArray(payload)) throw new Error("The learning service returned an invalid worksheet list. Please try again.");
   return payload.map(parseTutorWorksheet);
+}
+
+function studentWorksheetQuery(filters: StudentWorksheetLibraryFilters): string {
+  const query = new URLSearchParams();
+  if (filters.subjectId !== undefined) {
+    if (!positiveId(filters.subjectId)) throw new WorksheetApiError("Worksheet subject filter is invalid.", 400);
+    query.set("subjectId", String(filters.subjectId));
+  }
+  if (filters.topicId !== undefined) {
+    if (!positiveId(filters.topicId)) throw new WorksheetApiError("Worksheet topic filter is invalid.", 400);
+    query.set("topicId", String(filters.topicId));
+  }
+  if (filters.status !== undefined) {
+    if (!isStudentWorksheetStatus(filters.status)) throw new WorksheetApiError("Worksheet status filter is invalid.", 400);
+    query.set("status", filters.status);
+  }
+  for (const [key, value] of [["assignedFrom", filters.assignedFrom], ["assignedTo", filters.assignedTo]] as const) {
+    if (value !== undefined) {
+      const parsed = new Date(`${value}T00:00:00Z`);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) {
+        throw new WorksheetApiError("Worksheet date filter is invalid.", 400);
+      }
+      query.set(key, value);
+    }
+  }
+  return query.toString();
+}
+
+/** Lists worksheet assignments belonging to the current Student only. */
+export async function fetchStudentWorksheets(filters: StudentWorksheetLibraryFilters = {}): Promise<StudentWorksheet[]> {
+  const query = studentWorksheetQuery(filters);
+  const payload = await json(await fetch(`${base}/api/learning/student/worksheets${query ? `?${query}` : ""}`, { headers: headers() }));
+  if (!Array.isArray(payload)) throw new Error("The learning service returned an invalid student worksheet list. Please try again.");
+  return payload.map(parseStudentWorksheet);
 }
 
 export async function updateWorksheet(worksheetId: number, request: UpdateWorksheetRequest): Promise<TutorWorksheet> {

@@ -64,4 +64,25 @@ public final class WorksheetRequests {
         List<Long> topicIds, List<Long> studentIds, int questionCount, Question.QuestionType questionType,
         LocalDateTime dueAt, WorksheetGenerationRequest.Status status, String failureCode, String failureMessage,
         WorksheetResponse worksheet) { }
+
+    /** Learner-safe worksheet summary: it excludes answer text, AI output and tutor-only assignment details. */
+    public record StudentWorksheetLibraryItem(
+        Long id,
+        String code,
+        String title,
+        List<TopicSummary> subjects,
+        List<TopicSummary> topics,
+        LocalDateTime assignedAt,
+        LocalDateTime dueAt,
+        StudentWorksheetStatus status,
+        LocalDateTime submittedAt,
+        LocalDateTime reviewedAt,
+        ScoreSummary score
+    ) { }
+
+    public record TopicSummary(Long id, String name) { }
+    /** Marks and percent are kept together so the client never mistakes a percentage for raw marks. */
+    public record ScoreSummary(BigDecimal earned, BigDecimal available, BigDecimal percent) { }
+
+    public enum StudentWorksheetStatus { ASSIGNED, SUBMITTED, MARKED }
 }

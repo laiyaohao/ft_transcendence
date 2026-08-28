@@ -8,4 +8,5 @@ public interface MarkingReviewStatusProjectionRepository extends JpaRepository<M
     List<MarkingReviewStatusProjection> findByTutorIdAndStateAndRequestedAtLessThanEqualOrderByRequestedAtAsc(Long tutorId, MarkingReviewStatusProjection.State state, LocalDateTime requestedAt);
     long countByTutorIdAndState(Long tutorId, MarkingReviewStatusProjection.State state);
     List<MarkingReviewStatusProjection> findByTutorIdAndStateOrderByRequestedAtDescSourceSubmissionIdAsc(Long tutorId, MarkingReviewStatusProjection.State state);
+    List<MarkingReviewStatusProjection> findByStudentProfileIdAndWorksheetIdOrderByRequestedAtAscSourceSubmissionIdAsc(Long studentProfileId, Long worksheetId);
 }

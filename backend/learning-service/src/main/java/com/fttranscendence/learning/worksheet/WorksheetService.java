@@ -1,6 +1,10 @@
 package com.fttranscendence.learning.worksheet;
 
 import com.fttranscendence.learning.classroom.TutorClassRepository;
+import com.fttranscendence.learning.alert.MarkingReviewStatusProjection;
+import com.fttranscendence.learning.alert.MarkingReviewStatusProjectionRepository;
+import com.fttranscendence.learning.mastery.MasteryApprovedResult;
+import com.fttranscendence.learning.mastery.MasteryApprovedResultRepository;
 import com.fttranscendence.learning.question.Question;
 import com.fttranscendence.learning.question.QuestionRepository;
 import com.fttranscendence.learning.student.StudentProfile;
@@ -15,10 +19,15 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
+import java.time.LocalDate;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
 import java.util.Set;
 
 @Service
@@ -29,13 +38,17 @@ public class WorksheetService {
     private final StudentProfileRepository students;
     private final SyllabusTopicRepository topics;
     private final QuestionRepository questions;
+    private final MasteryApprovedResultRepository approvedResults;
+    private final MarkingReviewStatusProjectionRepository reviewStates;
     private final EntityManager entityManager;
 
     public WorksheetService(WorksheetRepository worksheets, WorksheetGenerationRequestRepository requests,
             TutorClassRepository classes, StudentProfileRepository students, SyllabusTopicRepository topics,
-            QuestionRepository questions, EntityManager entityManager) {
+            QuestionRepository questions, MasteryApprovedResultRepository approvedResults,
+            MarkingReviewStatusProjectionRepository reviewStates, EntityManager entityManager) {
         this.worksheets = worksheets; this.requests = requests; this.classes = classes; this.students = students;
-        this.topics = topics; this.questions = questions; this.entityManager = entityManager;
+        this.topics = topics; this.questions = questions; this.approvedResults = approvedResults;
+        this.reviewStates = reviewStates; this.entityManager = entityManager;
     }
 
     @Transactional
@@ -104,6 +117,27 @@ public class WorksheetService {
         return owned.stream().map(WorksheetRequests.WorksheetResponse::from).toList();
     }
 
+    /**
+     * Lists only the authenticated Student's approved assignments.  Completion
+     * and scores are based exclusively on protected Tutor-approved projections;
+     * the service never reads AI suggestions or raw answers from grading.
+     */
+    @Transactional(readOnly = true)
+    public List<WorksheetRequests.StudentWorksheetLibraryItem> listStudentWorksheets(
+            long loginUserId, StudentWorksheetFilter filter) {
+        StudentProfile student = students.findByLoginUserId(loginUserId).orElseThrow(StudentWorksheetNotFoundException::new);
+        StudentWorksheetFilter normalized = normalizeStudentFilter(filter);
+        Map<Long, com.fttranscendence.learning.syllabus.SyllabusTopic> allTopics = topics
+            .findAllByActiveTrueOrderByDepthAscSortOrderAscCodeAsc().stream()
+            .collect(java.util.stream.Collectors.toMap(com.fttranscendence.learning.syllabus.SyllabusTopic::getId, value -> value));
+        validateLibraryTaxonomy(normalized, allTopics);
+
+        return worksheets.findApprovedAssignedToStudentWithQuestions(student.getId()).stream()
+            .map(worksheet -> studentLibraryItem(student, worksheet, normalized, allTopics))
+            .filter(java.util.Objects::nonNull)
+            .toList();
+    }
+
     @Transactional
     public WorksheetRequests.WorksheetResponse updateWorksheet(long tutorId, long worksheetId, WorksheetRequests.UpdateWorksheetRequest input) {
         Worksheet worksheet = ownedWorksheet(tutorId, worksheetId);
@@ -145,6 +179,99 @@ public class WorksheetService {
         return new WorksheetRequests.GenerationRequestResponse(request.getId(), request.getClassId(), request.getTargetMode(),
             request.getTopicIds(), request.getStudentIds().stream().sorted().toList(), request.getQuestionCount(), request.getQuestionType(),
             request.getDueAt(), request.getStatus(), request.getFailureCode(), request.getFailureMessage(), worksheet);
+    }
+
+    private WorksheetRequests.StudentWorksheetLibraryItem studentLibraryItem(StudentProfile student, Worksheet worksheet,
+            StudentWorksheetFilter filter, Map<Long, com.fttranscendence.learning.syllabus.SyllabusTopic> allTopics) {
+        WorksheetAssignment assignment = effectiveAssignment(student, worksheet);
+        if (assignment == null || !matchesAssignedDate(assignment, filter)) return null;
+        List<com.fttranscendence.learning.syllabus.SyllabusTopic> worksheetTopics = worksheet.getQuestions().stream()
+            .map(question -> question.getQuestion().getSyllabusTopic()).distinct()
+            .sorted(Comparator.comparing(com.fttranscendence.learning.syllabus.SyllabusTopic::getName)
+                .thenComparing(com.fttranscendence.learning.syllabus.SyllabusTopic::getId))
+            .toList();
+        List<com.fttranscendence.learning.syllabus.SyllabusTopic> subjects = worksheetTopics.stream()
+            .map(topic -> subjectOf(topic, allTopics)).filter(java.util.Objects::nonNull).distinct()
+            .sorted(Comparator.comparing(com.fttranscendence.learning.syllabus.SyllabusTopic::getName)
+                .thenComparing(com.fttranscendence.learning.syllabus.SyllabusTopic::getId))
+            .toList();
+        if (filter.subjectId() != null && subjects.stream().noneMatch(subject -> subject.getId().equals(filter.subjectId()))) return null;
+        if (filter.topicId() != null && worksheetTopics.stream().noneMatch(topic -> topic.getId().equals(filter.topicId()))) return null;
+
+        List<MasteryApprovedResult> results = approvedResults
+            .findByStudentProfileIdAndWorksheetIdAndActiveTrueOrderByReviewedAtAscSourceSubmissionIdAsc(student.getId(), worksheet.getId());
+        List<MarkingReviewStatusProjection> reviews = reviewStates
+            .findByStudentProfileIdAndWorksheetIdOrderByRequestedAtAscSourceSubmissionIdAsc(student.getId(), worksheet.getId());
+        LibraryOutcome outcome = outcome(worksheet, results, reviews);
+        if (filter.status() != null && outcome.status() != filter.status()) return null;
+        return new WorksheetRequests.StudentWorksheetLibraryItem(worksheet.getId(), worksheet.getCode(), worksheet.getTitle(),
+            summaries(subjects), summaries(worksheetTopics), assignment.getAssignedAt(), assignment.getDueAt(),
+            outcome.status(), outcome.submittedAt(), outcome.reviewedAt(), outcome.score());
+    }
+
+    private WorksheetAssignment effectiveAssignment(StudentProfile student, Worksheet worksheet) {
+        Set<Long> classIds = student.getMemberships().stream().map(com.fttranscendence.learning.student.ClassMembership::getClassId).collect(java.util.stream.Collectors.toSet());
+        return worksheet.getAssignments().stream()
+            .filter(assignment -> (assignment.getAssignmentType() == Worksheet.AudienceType.STUDENT && student.getId().equals(assignment.getStudentProfileId()))
+                || (assignment.getAssignmentType() == Worksheet.AudienceType.CLASS && classIds.contains(assignment.getClassId())))
+            .max(Comparator.comparing(WorksheetAssignment::getAssignedAt).thenComparing(WorksheetAssignment::getId))
+            .orElse(null);
+    }
+
+    private LibraryOutcome outcome(Worksheet worksheet, List<MasteryApprovedResult> results,
+            List<MarkingReviewStatusProjection> reviews) {
+        Set<Long> questionIds = worksheet.getQuestions().stream().map(WorksheetQuestion::getId).collect(java.util.stream.Collectors.toSet());
+        Map<Long, MasteryApprovedResult> latestByQuestion = new HashMap<>();
+        for (MasteryApprovedResult result : results) {
+            if (result.getWorksheetQuestionId() != null && questionIds.contains(result.getWorksheetQuestionId())) {
+                latestByQuestion.put(result.getWorksheetQuestionId(), result);
+            }
+        }
+        LocalDateTime submittedAt = reviews.stream().map(MarkingReviewStatusProjection::getRequestedAt).min(LocalDateTime::compareTo).orElse(null);
+        LocalDateTime reviewedAt = results.stream().map(MasteryApprovedResult::getReviewedAt).max(LocalDateTime::compareTo).orElse(null);
+        if (!questionIds.isEmpty() && latestByQuestion.keySet().containsAll(questionIds)) {
+            BigDecimal awarded = latestByQuestion.values().stream().map(MasteryApprovedResult::getApprovedMarks).reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal available = latestByQuestion.values().stream().map(MasteryApprovedResult::getAvailableMarks).reduce(BigDecimal.ZERO, BigDecimal::add);
+            if (available.signum() > 0) return new LibraryOutcome(WorksheetRequests.StudentWorksheetStatus.MARKED,
+                submittedAt, reviewedAt, new WorksheetRequests.ScoreSummary(awarded, available,
+                    awarded.multiply(BigDecimal.valueOf(100)).divide(available, 2, RoundingMode.HALF_UP)));
+        }
+        if (!reviews.isEmpty() || !results.isEmpty()) return new LibraryOutcome(WorksheetRequests.StudentWorksheetStatus.SUBMITTED, submittedAt, reviewedAt, null);
+        return new LibraryOutcome(WorksheetRequests.StudentWorksheetStatus.ASSIGNED, null, null, null);
+    }
+
+    private List<WorksheetRequests.TopicSummary> summaries(List<com.fttranscendence.learning.syllabus.SyllabusTopic> values) {
+        return values.stream().map(topic -> new WorksheetRequests.TopicSummary(topic.getId(), topic.getName())).toList();
+    }
+
+    private com.fttranscendence.learning.syllabus.SyllabusTopic subjectOf(com.fttranscendence.learning.syllabus.SyllabusTopic start,
+            Map<Long, com.fttranscendence.learning.syllabus.SyllabusTopic> allTopics) {
+        com.fttranscendence.learning.syllabus.SyllabusTopic current = start;
+        Set<Long> seen = new java.util.HashSet<>();
+        while (current != null && seen.add(current.getId())) {
+            if (current.getNodeType() == com.fttranscendence.learning.syllabus.SyllabusTopic.NodeType.SUBJECT) return current;
+            current = current.getParentId() == null ? null : allTopics.get(current.getParentId());
+        }
+        return null;
+    }
+
+    private StudentWorksheetFilter normalizeStudentFilter(StudentWorksheetFilter filter) {
+        StudentWorksheetFilter value = filter == null ? new StudentWorksheetFilter(null, null, null, null, null) : filter;
+        if (value.subjectId() != null && value.subjectId() <= 0) throw new InvalidStudentWorksheetFilterException("subjectId must be positive.");
+        if (value.topicId() != null && value.topicId() <= 0) throw new InvalidStudentWorksheetFilterException("topicId must be positive.");
+        if (value.assignedFrom() != null && value.assignedTo() != null && value.assignedFrom().isAfter(value.assignedTo())) throw new InvalidStudentWorksheetFilterException("assignedFrom must not be after assignedTo.");
+        return value;
+    }
+
+    private void validateLibraryTaxonomy(StudentWorksheetFilter filter, Map<Long, com.fttranscendence.learning.syllabus.SyllabusTopic> allTopics) {
+        if (filter.subjectId() != null && (allTopics.get(filter.subjectId()) == null || allTopics.get(filter.subjectId()).getNodeType() != com.fttranscendence.learning.syllabus.SyllabusTopic.NodeType.SUBJECT)) throw new InvalidStudentWorksheetFilterException("subjectId must identify an active subject.");
+        if (filter.topicId() != null && (allTopics.get(filter.topicId()) == null || (allTopics.get(filter.topicId()).getNodeType() != com.fttranscendence.learning.syllabus.SyllabusTopic.NodeType.TOPIC && allTopics.get(filter.topicId()).getNodeType() != com.fttranscendence.learning.syllabus.SyllabusTopic.NodeType.SUBTOPIC))) throw new InvalidStudentWorksheetFilterException("topicId must identify an active topic or subtopic.");
+    }
+
+    private boolean matchesAssignedDate(WorksheetAssignment assignment, StudentWorksheetFilter filter) {
+        LocalDate date = assignment.getAssignedAt().toLocalDate();
+        return (filter.assignedFrom() == null || !date.isBefore(filter.assignedFrom()))
+            && (filter.assignedTo() == null || !date.isAfter(filter.assignedTo()));
     }
 
     private Worksheet ownedWorksheet(long tutorId, long worksheetId) {
@@ -198,6 +325,10 @@ public class WorksheetService {
     }
     private record NormalizedGeneration(WorksheetGenerationRequest.TargetMode targetMode, List<Long> topicIds, int questionCount,
         Question.QuestionType questionType, LocalDateTime dueAt, String title, String instructions, Set<Long> studentIds) { }
+    public record StudentWorksheetFilter(Long subjectId, Long topicId, WorksheetRequests.StudentWorksheetStatus status,
+                                         LocalDate assignedFrom, LocalDate assignedTo) { }
+    private record LibraryOutcome(WorksheetRequests.StudentWorksheetStatus status, LocalDateTime submittedAt,
+                                  LocalDateTime reviewedAt, WorksheetRequests.ScoreSummary score) { }
 
     public static class ClassNotFoundException extends RuntimeException { }
     public static class WorksheetNotFoundException extends RuntimeException { }
@@ -205,5 +336,7 @@ public class WorksheetService {
     public static class IdempotencyConflictException extends RuntimeException { }
     public static class WorksheetNotDraftException extends RuntimeException { }
     public static class WorksheetNotGeneratedException extends RuntimeException { }
+    public static class StudentWorksheetNotFoundException extends RuntimeException { }
+    public static class InvalidStudentWorksheetFilterException extends RuntimeException { public InvalidStudentWorksheetFilterException(String message) { super(message); } }
     public static class InvalidWorksheetRequestException extends RuntimeException { public InvalidWorksheetRequestException(String message) { super(message); } }
 }

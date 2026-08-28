@@ -332,7 +332,7 @@ public class MarkingReviewService {
         long revision = submission.getMasterySyncRevision();
         String eventKey = "review:submission:" + submission.getId() + ":" + revision;
         ReviewStateSyncPayload payload = new ReviewStateSyncPayload(
-            eventKey, revision, submission.getId(), tutorUserId, submission.getStudentId(), reviewState,
+            eventKey, revision, submission.getId(), tutorUserId, submission.getStudentId(), submission.getWorksheetId(), reviewState,
             ("PENDING_REVIEW".equals(reviewState) ? submission.getCreatedAt() : submission.getReviewedAt()).toString()
         );
         try {
@@ -363,7 +363,7 @@ public class MarkingReviewService {
     ) { }
     private record ReviewStateSyncPayload(
         String eventKey, long revision, long submissionId, long tutorUserId, long studentId,
-        String reviewState, String occurredAt
+        long worksheetId, String reviewState, String occurredAt
     ) { }
     public record FlagRequest(String reason) { }
 

@@ -60,11 +60,14 @@ public class ApprovedMarkingSyncController {
         List<DiagnosticSyncEvidence> diagnosticEvidence
     ) {
         MasteryService.ApprovedMarking toMasteryInput() {
+            if (worksheetId <= 0 || worksheetQuestionId <= 0) {
+                throw new MasteryService.InvalidResultException("Worksheet provenance is required.");
+            }
             MasteryService.State nextState;
             try { nextState = MasteryService.State.valueOf(state); }
             catch (RuntimeException exception) { throw new MasteryService.InvalidResultException("Marking sync state is invalid."); }
             List<DiagnosticSyncEvidence> evidence = diagnosticEvidence == null ? List.of() : diagnosticEvidence;
-            return new MasteryService.ApprovedMarking(submissionId, tutorUserId, studentId, syllabusTopicId,
+            return new MasteryService.ApprovedMarking(submissionId, tutorUserId, worksheetId, worksheetQuestionId, studentId, syllabusTopicId,
                 approvedMarks, maxMarks, Math.toIntExact(revision), nextState, approvedAt,
                 evidence.stream().map(item -> item.toMasteryInput(syllabusTopicId)).toList());
         }

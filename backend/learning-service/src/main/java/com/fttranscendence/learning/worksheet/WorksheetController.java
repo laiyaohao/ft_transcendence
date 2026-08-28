@@ -24,13 +24,16 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.dao.DataAccessException;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.nio.charset.StandardCharsets;
 
 @RestController
-@RequestMapping(value = "/api/learning/tutor", produces = MediaType.APPLICATION_JSON_VALUE)
+@RequestMapping(value = "/api/learning", produces = MediaType.APPLICATION_JSON_VALUE)
 public class WorksheetController {
     private final WorksheetService worksheets;
     private final DiagnosticWorksheetService diagnostics;
@@ -40,7 +43,7 @@ public class WorksheetController {
         this.worksheets = worksheets; this.diagnostics = diagnostics; this.worksheetPdfs = worksheetPdfs;
     }
 
-    @PostMapping(value = "/classes/{classId}/worksheet-generation-requests", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @PostMapping(value = "/tutor/classes/{classId}/worksheet-generation-requests", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<WorksheetRequests.GenerationRequestResponse> generate(
             @AuthenticationPrincipal AuthenticatedUser user, @PathVariable @Positive long classId,
             @RequestHeader("Idempotency-Key") String idempotencyKey,
@@ -49,23 +52,23 @@ public class WorksheetController {
         return ResponseEntity.status(response.status() == WorksheetGenerationRequest.Status.SUCCEEDED ? HttpStatus.CREATED : HttpStatus.ACCEPTED).body(response);
     }
 
-    @GetMapping("/classes/{classId}/worksheet-generation-requests/{requestId}")
+    @GetMapping("/tutor/classes/{classId}/worksheet-generation-requests/{requestId}")
     public WorksheetRequests.GenerationRequestResponse generationRequest(@AuthenticationPrincipal AuthenticatedUser user,
             @PathVariable @Positive long classId, @PathVariable @Positive long requestId) {
         return worksheets.getGenerationRequest(user.userId(), classId, requestId);
     }
 
-    @GetMapping("/worksheets/{worksheetId}")
+    @GetMapping("/tutor/worksheets/{worksheetId}")
     public WorksheetRequests.WorksheetResponse worksheet(@AuthenticationPrincipal AuthenticatedUser user,
             @PathVariable @Positive long worksheetId) { return worksheets.getWorksheet(user.userId(), worksheetId); }
 
-    @GetMapping("/worksheets")
+    @GetMapping("/tutor/worksheets")
     public java.util.List<WorksheetRequests.WorksheetResponse> worksheets(@AuthenticationPrincipal AuthenticatedUser user,
             @RequestParam(required = false) @Positive Long classId) {
         return worksheets.listWorksheets(user.userId(), classId);
     }
 
-    @GetMapping(value = "/worksheets/{worksheetId}/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
+    @GetMapping(value = "/tutor/worksheets/{worksheetId}/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
     public ResponseEntity<byte[]> worksheetPdf(@AuthenticationPrincipal AuthenticatedUser user,
             @PathVariable @Positive long worksheetId) {
         WorksheetPdfService.PdfExport export = worksheetPdfs.export(user.userId(), worksheetId);
@@ -76,24 +79,41 @@ public class WorksheetController {
             .body(export.bytes());
     }
 
-    @PatchMapping(value = "/worksheets/{worksheetId}", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @PatchMapping(value = "/tutor/worksheets/{worksheetId}", consumes = MediaType.APPLICATION_JSON_VALUE)
     public WorksheetRequests.WorksheetResponse updateWorksheet(@AuthenticationPrincipal AuthenticatedUser user,
             @PathVariable @Positive long worksheetId, @Valid @RequestBody WorksheetRequests.UpdateWorksheetRequest request) {
         return worksheets.updateWorksheet(user.userId(), worksheetId, request);
     }
 
-    @PostMapping(value = "/worksheets/{worksheetId}/approve", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @PostMapping(value = "/tutor/worksheets/{worksheetId}/approve", consumes = MediaType.APPLICATION_JSON_VALUE)
     public WorksheetRequests.WorksheetResponse approve(@AuthenticationPrincipal AuthenticatedUser user,
             @PathVariable @Positive long worksheetId, @Valid @RequestBody WorksheetRequests.ApproveWorksheetRequest request) {
         return worksheets.approveAndAssign(user.userId(), worksheetId, request);
     }
 
-    @GetMapping("/classes/{classId}/worksheet-recommendations")
+    @GetMapping("/tutor/classes/{classId}/worksheet-recommendations")
     public DiagnosticWorksheetService.Recommendations recommendations(@AuthenticationPrincipal AuthenticatedUser user,
             @PathVariable @Positive long classId) { return diagnostics.recommendations(user.userId(), classId); }
 
+    /** No student selector: the server derives the linked learner from the authenticated JWT. */
+    @GetMapping("/student/worksheets")
+    public java.util.List<WorksheetRequests.StudentWorksheetLibraryItem> studentWorksheets(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @RequestParam(required = false) Long subjectId,
+            @RequestParam(required = false) Long topicId,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) java.time.LocalDate assignedFrom,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) java.time.LocalDate assignedTo) {
+        WorksheetRequests.StudentWorksheetStatus normalizedStatus = null;
+        if (status != null && !status.isBlank()) {
+            try { normalizedStatus = WorksheetRequests.StudentWorksheetStatus.valueOf(status.trim().toUpperCase(java.util.Locale.ROOT)); }
+            catch (IllegalArgumentException exception) { throw new WorksheetService.InvalidStudentWorksheetFilterException("status must be ASSIGNED, SUBMITTED or MARKED."); }
+        }
+        return worksheets.listStudentWorksheets(user.userId(), new WorksheetService.StudentWorksheetFilter(subjectId, topicId, normalizedStatus, assignedFrom, assignedTo));
+    }
+
     @ExceptionHandler({WorksheetService.ClassNotFoundException.class, WorksheetService.WorksheetNotFoundException.class,
-        WorksheetService.GenerationRequestNotFoundException.class})
+        WorksheetService.GenerationRequestNotFoundException.class, WorksheetService.StudentWorksheetNotFoundException.class})
     ResponseEntity<ClassController.ApiError> notFound(RuntimeException exception) { return error(HttpStatus.NOT_FOUND, "WORKSHEET_RESOURCE_NOT_FOUND", "Worksheet resource was not found."); }
     @ExceptionHandler(WorksheetService.IdempotencyConflictException.class)
     ResponseEntity<ClassController.ApiError> conflict(WorksheetService.IdempotencyConflictException exception) { return error(HttpStatus.CONFLICT, "IDEMPOTENCY_KEY_REUSED", "This idempotency key was already used for a different request."); }
@@ -105,6 +125,14 @@ public class WorksheetController {
     ResponseEntity<ClassController.ApiError> pdfFailure(PdfDocumentService.PdfGenerationException exception) { return error(HttpStatus.SERVICE_UNAVAILABLE, "WORKSHEET_PDF_UNAVAILABLE", "Worksheet PDF generation is temporarily unavailable."); }
     @ExceptionHandler(WorksheetService.InvalidWorksheetRequestException.class)
     ResponseEntity<ClassController.ApiError> invalid(WorksheetService.InvalidWorksheetRequestException exception) { return error(HttpStatus.BAD_REQUEST, "INVALID_WORKSHEET_REQUEST", exception.getMessage()); }
+    @ExceptionHandler(WorksheetService.InvalidStudentWorksheetFilterException.class)
+    ResponseEntity<ClassController.ApiError> invalidLibraryFilter(WorksheetService.InvalidStudentWorksheetFilterException exception) { return error(HttpStatus.BAD_REQUEST, "INVALID_STUDENT_WORKSHEET_FILTER", exception.getMessage()); }
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    ResponseEntity<ClassController.ApiError> malformedLibraryFilter(MethodArgumentTypeMismatchException exception) {
+        return error(HttpStatus.BAD_REQUEST, "INVALID_STUDENT_WORKSHEET_FILTER", "Worksheet library filters are invalid.");
+    }
+    @ExceptionHandler(DataAccessException.class)
+    ResponseEntity<ClassController.ApiError> databaseUnavailable(DataAccessException exception) { return error(HttpStatus.SERVICE_UNAVAILABLE, "WORKSHEET_DATA_UNAVAILABLE", "Worksheet data is temporarily unavailable."); }
     @ExceptionHandler(MethodArgumentNotValidException.class)
     ResponseEntity<ClassController.ApiError> validation(MethodArgumentNotValidException exception) {
         Map<String, String> fields = new LinkedHashMap<>();

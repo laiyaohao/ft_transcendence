@@ -74,4 +74,32 @@ public interface WorksheetRepository extends Repository<Worksheet, Long> {
         @Param("tutorId") Long tutorId,
         @Param("studentProfileId") Long studentProfileId
     );
+
+    /**
+     * Student visibility is derived from their own direct assignment or active
+     * class membership.  No caller-controlled profile identifier is involved.
+     */
+    @Query("""
+        SELECT DISTINCT worksheet
+        FROM Worksheet worksheet
+        JOIN FETCH worksheet.questions worksheetQuestion
+        JOIN FETCH worksheetQuestion.question question
+        JOIN FETCH question.syllabusTopic topic
+        JOIN worksheet.assignments assignment
+        WHERE worksheet.status = com.fttranscendence.learning.worksheet.Worksheet.Status.APPROVED
+          AND (
+            (assignment.assignmentType = com.fttranscendence.learning.worksheet.Worksheet.AudienceType.STUDENT
+             AND assignment.studentProfileId = :studentProfileId)
+            OR
+            (assignment.assignmentType = com.fttranscendence.learning.worksheet.Worksheet.AudienceType.CLASS
+             AND EXISTS (
+                SELECT membership.id FROM ClassMembership membership
+                WHERE membership.studentProfile.id = :studentProfileId
+                  AND membership.tutorId = worksheet.tutorId
+                  AND membership.classId = assignment.classId
+             ))
+          )
+        ORDER BY worksheet.approvedAt DESC, worksheet.id DESC
+        """)
+    List<Worksheet> findApprovedAssignedToStudentWithQuestions(@Param("studentProfileId") Long studentProfileId);
 }

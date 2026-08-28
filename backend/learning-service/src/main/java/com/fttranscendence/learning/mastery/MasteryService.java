@@ -34,7 +34,7 @@ public class MasteryService {
     public MasteryRecord applyApprovedResult(ApprovedResult result) {
         if (result == null || !result.approved()) throw new UnapprovedResultException();
         return applyApprovedMarking(new ApprovedMarking(
-            result.submissionId(), result.tutorId(), result.studentId(), result.syllabusTopicId(), result.approvedMarks(),
+            result.submissionId(), result.tutorId(), null, null, result.studentId(), result.syllabusTopicId(), result.approvedMarks(),
             result.availableMarks(), 1, State.APPROVED, LocalDateTime.now(), List.of()
         ));
     }
@@ -63,9 +63,9 @@ public class MasteryService {
 
         boolean active = input.state() == State.APPROVED;
         if (projection == null) {
-            projection = new MasteryApprovedResult(input.submissionId(), input.tutorId(), student, topic,
+            projection = new MasteryApprovedResult(input.submissionId(), input.tutorId(), input.worksheetId(), input.worksheetQuestionId(), student, topic,
                 input.approvedMarks(), input.availableMarks(), 0, input.revision(), active, input.reviewedAt());
-        } else if (!projection.replace(input.approvedMarks(), input.availableMarks(), 0, input.revision(), active, input.reviewedAt())) {
+        } else if (!projection.replace(input.worksheetId(), input.worksheetQuestionId(), input.approvedMarks(), input.availableMarks(), 0, input.revision(), active, input.reviewedAt())) {
             return record;
         }
         approvedResults.saveAndFlush(projection);
@@ -78,7 +78,7 @@ public class MasteryService {
                     diagnostic.category(), diagnostic.tutorRationale(), diagnostic.missingKeywords()));
             }
             long repeated = diagnostics.stream().mapToLong(diagnostic -> evidence.countByMasteryRecordIdAndCategory(record.getId(), diagnostic.category())).max().orElse(0L);
-            projection.replace(input.approvedMarks(), input.availableMarks(), Math.toIntExact(repeated), input.revision(), true, input.reviewedAt());
+            projection.replace(input.worksheetId(), input.worksheetQuestionId(), input.approvedMarks(), input.availableMarks(), Math.toIntExact(repeated), input.revision(), true, input.reviewedAt());
             approvedResults.save(projection);
         }
         rebuild(record, student.getId(), topic.getId());
@@ -121,7 +121,7 @@ public class MasteryService {
                                  BigDecimal approvedMarks, BigDecimal availableMarks, int repeatedMistakeCount,
                                  boolean approved) { }
     public enum State { APPROVED, RETRACTED }
-    public record ApprovedMarking(Long submissionId, Long tutorId, Long studentId, Long syllabusTopicId,
+    public record ApprovedMarking(Long submissionId, Long tutorId, Long worksheetId, Long worksheetQuestionId, Long studentId, Long syllabusTopicId,
                                   BigDecimal approvedMarks, BigDecimal availableMarks, int revision, State state,
                                   LocalDateTime reviewedAt, List<DiagnosticEvidence> diagnostics) { }
     public record DiagnosticEvidence(MasteryDiagnosticEvidence.Category category, String tutorRationale,
