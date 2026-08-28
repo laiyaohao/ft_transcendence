@@ -268,7 +268,7 @@ export default function Sidebar({
   );
 
   return (
-    <div style={{ height: '100vh' }}>
+    <div style={{ height: '100%' }}>
       <Drawer
         container={container}
         variant="temporary"

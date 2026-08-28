@@ -32,7 +32,7 @@ function DetailRow({ label, value, last, mono }: { label: string; value: string;
 
 export default function Page() {
   return (
-    <Box sx={{ backgroundColor: "rgb(253,251,247)", minHeight: "100vh", py: 5, px: { xs: 2, sm: 4, md: 6 } }}>
+    <Box sx={{ backgroundColor: "rgb(253,251,247)", minHeight: "100%", py: 5, px: { xs: 2, sm: 4, md: 6 } }}>
       <Box sx={{ maxWidth: 760, mx: "auto" }}>
         <Typography sx={{ fontFamily: "'EB Garamond', serif", fontWeight: 400, fontSize: 40, lineHeight: 1.1, letterSpacing: "-0.8px", color: INK, mb: 3.5 }}>
           My Profile

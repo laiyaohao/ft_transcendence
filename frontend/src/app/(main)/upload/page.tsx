@@ -60,7 +60,7 @@ function UploadWizard() {
   };
 
   return (
-    <Box sx={{ backgroundColor: "rgb(253,251,247)", minHeight: "100vh", py: 5, px: { xs: 2, sm: 4, md: 6 } }}>
+    <Box sx={{ backgroundColor: "rgb(253,251,247)", minHeight: "100%", py: 5, px: { xs: 2, sm: 4, md: 6 } }}>
       <Box sx={{ maxWidth: 900, mx: "auto" }}>
         <Stack direction="row" sx={{ alignItems: "center", mb: 5, flexWrap: "wrap", rowGap: 1.5 }}>
           {STEP_LABELS.map((s, i) => (

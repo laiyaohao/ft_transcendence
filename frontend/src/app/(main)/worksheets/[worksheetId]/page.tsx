@@ -56,7 +56,7 @@ export default function Page({ params }: { params: Promise<{ worksheetId: string
   });
 
   return (
-    <Box sx={{ backgroundColor: "rgb(253,251,247)", minHeight: "100vh", py: 5, px: { xs: 2, sm: 4, md: 6 } }}>
+    <Box sx={{ backgroundColor: "rgb(253,251,247)", minHeight: "100%", py: 5, px: { xs: 2, sm: 4, md: 6 } }}>
       <Box sx={{ maxWidth: 1000, mx: "auto" }}>
         <Button
           component={Link}

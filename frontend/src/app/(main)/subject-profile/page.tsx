@@ -37,7 +37,7 @@ export default function Page() {
   const maxMistakeCount = Math.max(...mistakeTypeBreakdown.map((m) => m.count));
 
   return (
-    <Box sx={{ backgroundColor: "rgb(253,251,247)", minHeight: "100vh", py: 5, px: { xs: 2, sm: 4, md: 6 } }}>
+    <Box sx={{ backgroundColor: "rgb(253,251,247)", minHeight: "100%", py: 5, px: { xs: 2, sm: 4, md: 6 } }}>
       <Box sx={{ maxWidth: 1120, mx: "auto" }}>
         <Stack direction="row" spacing={1.25} sx={{ alignItems: "center", mb: 0.75 }}>
           <Typography sx={{ fontFamily: "'EB Garamond', serif", fontWeight: 400, fontSize: 40, lineHeight: 1.1, letterSpacing: "-0.8px" }}>

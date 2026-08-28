@@ -89,7 +89,7 @@ export default function Page() {
     <Box
       sx={{
         backgroundColor: "rgb(253,251,247)",
-        minHeight: "100vh",
+        minHeight: "100%",
         py: 5,
         px: { xs: 2, sm: 4, md: 6 },
       }}
@@ -168,7 +168,7 @@ export default function Page() {
                 </Stack>
               </Box>
               <Divider sx={{ borderColor: BORDER }} />
-              <Stack direction="row" spacing={1.5} sx={{ p: 2 }}>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ p: 2 }}>
                 <Button
                   component={Link}
                   href="/upload"
@@ -183,7 +183,7 @@ export default function Page() {
                   component={Link}
                   href="/worksheets"
                   variant="outlined"
-                  sx={{ color: "rgb(45,41,38)", borderColor: "rgb(45,41,38)", textTransform: "none", fontWeight: 600, borderRadius: 2, whiteSpace: "nowrap", "&:hover": { backgroundColor: INK, color: "#fff", borderColor: INK } }}
+                  sx={{ color: "rgb(45,41,38)", borderColor: "rgb(45,41,38)", textTransform: "none", fontWeight: 600, borderRadius: 2, whiteSpace: "nowrap", flexShrink: 0, width: { xs: "100%", sm: "auto" }, "&:hover": { backgroundColor: INK, color: "#fff", borderColor: INK } }}
                 >
                   All worksheets
                 </Button>

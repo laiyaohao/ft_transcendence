@@ -21,8 +21,11 @@ const Wrapper = ({
         position: 'relative',
         display: 'flex',
         overflow: 'hidden',
-        height: '100%',
+        height: '100dvh',
         width: '100%',
+        // Content pages are light-only; keep the shell on the same canvas so
+        // dark-mode overscroll doesn't reveal a seam behind them.
+        backgroundColor: 'rgb(253,251,247)',
       }}
     >
       <Sidebar
@@ -43,7 +46,9 @@ const Wrapper = ({
             display: 'flex',
             flexDirection: 'column',
             flex: 1,
+            minHeight: 0,
             overflow: 'auto',
+            backgroundColor: 'rgb(253,251,247)',
           }}
         >
           {/* <Outlet /> */}

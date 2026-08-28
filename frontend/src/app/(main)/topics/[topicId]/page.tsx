@@ -30,7 +30,7 @@ export default function Page({ params }: { params: Promise<{ topicId: string }> 
   const trendBars = topic.trend.map((v, i) => ({ v, h: Math.round((v / trendMax) * 100), label: `WS${i + 1}` }));
 
   return (
-    <Box sx={{ backgroundColor: "rgb(253,251,247)", minHeight: "100vh", py: 5, px: { xs: 2, sm: 4, md: 6 } }}>
+    <Box sx={{ backgroundColor: "rgb(253,251,247)", minHeight: "100%", py: 5, px: { xs: 2, sm: 4, md: 6 } }}>
       <Box sx={{ maxWidth: 1000, mx: "auto" }}>
         <Button
           component={Link}
