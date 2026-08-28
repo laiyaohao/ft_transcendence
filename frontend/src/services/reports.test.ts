@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  downloadProgressReportPdf,
   fetchProgressReport,
   parseProgressReport,
   ReportApiError,
@@ -46,6 +47,42 @@ describe("progress report service", () => {
       "http://localhost:8083/api/learning/student/reports/12",
       expect.anything(),
     );
+  });
+
+  it("downloads the role-scoped PDF with the bearer token", async () => {
+    localStorage.setItem("jwt_token", "student-token");
+    vi.mocked(fetch).mockResolvedValue(new Response("report", { status: 200, headers: { "Content-Type": "application/pdf" } }));
+
+    const result = await downloadProgressReportPdf(12, "STUDENT");
+    expect(result.type).toBe("application/pdf");
+    expect(result.size).toBe(6);
+
+    expect(fetch).toHaveBeenCalledWith(
+      "http://localhost:8083/api/learning/student/reports/12/pdf",
+      expect.objectContaining({ headers: expect.objectContaining({ Accept: "application/pdf", Authorization: "Bearer student-token" }) }),
+    );
+  });
+
+  it("keeps PDF errors recoverable and validates the reference before fetching", async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ message: "The saved report is unavailable." }), { status: 503 }));
+
+    await expect(downloadProgressReportPdf(12, "TUTOR")).rejects.toMatchObject({
+      name: "ReportApiError",
+      status: 503,
+      message: "The saved report is unavailable.",
+    } satisfies Partial<ReportApiError>);
+    await expect(downloadProgressReportPdf(0, "TUTOR")).rejects.toMatchObject({ status: 400 });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a successful response that is not a PDF", async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ message: "Proxy error page" }), { status: 200, headers: { "Content-Type": "application/json; charset=utf-8" } }));
+
+    await expect(downloadProgressReportPdf(12, "TUTOR")).rejects.toMatchObject({
+      name: "ReportApiError",
+      status: 200,
+      message: "The progress report PDF response is invalid. Please try again.",
+    } satisfies Partial<ReportApiError>);
   });
 
   it("keeps a structured non-enumerating server failure available to the page", async () => {

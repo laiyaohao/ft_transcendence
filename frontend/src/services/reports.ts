@@ -72,19 +72,19 @@ export function parseProgressReport(value: unknown): ProgressReport {
   return report as unknown as ProgressReport;
 }
 
-function headers(): HeadersInit {
+function headers(accept = "application/json"): HeadersInit {
   const token = typeof window === "undefined" ? null : window.localStorage.getItem("jwt_token");
-  return { Accept: "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+  return { Accept: accept, ...(token ? { Authorization: `Bearer ${token}` } : {}) };
 }
 
-async function responseError(response: Response): Promise<ReportApiError> {
+async function responseError(response: Response, fallback: string): Promise<ReportApiError> {
   try {
     const payload = await response.json() as { message?: unknown };
     if (nonEmptyString(payload.message)) return new ReportApiError(payload.message, response.status);
   } catch {
     // Errors still receive a clear, safe fallback when a proxy strips JSON.
   }
-  return new ReportApiError("This progress report could not be loaded. Please try again.", response.status);
+  return new ReportApiError(fallback, response.status);
 }
 
 async function fetchReport(reportId: number, role: AuthRole): Promise<ProgressReport> {
@@ -93,7 +93,7 @@ async function fetchReport(reportId: number, role: AuthRole): Promise<ProgressRe
   }
   const audience = role === "TUTOR" ? "tutor" : "student";
   const response = await fetch(`${LEARNING_API_URL}/api/learning/${audience}/reports/${reportId}`, { headers: headers() });
-  if (!response.ok) throw await responseError(response);
+  if (!response.ok) throw await responseError(response, "This progress report could not be loaded. Please try again.");
   return parseProgressReport(await response.json());
 }
 
@@ -111,4 +111,25 @@ export function fetchTutorProgressReport(reportId: number): Promise<ProgressRepo
 
 export function fetchStudentProgressReport(reportId: number): Promise<ProgressReport> {
   return fetchReport(reportId, "STUDENT");
+}
+
+/**
+ * Downloads the same immutable snapshot exposed in the report view. The selected route is
+ * only an audience hint: the learning service still verifies Tutor ownership or a linked
+ * Student recipient before it returns a document.
+ */
+export async function downloadProgressReportPdf(reportId: number, role: AuthRole): Promise<Blob> {
+  if (!positiveInteger(reportId)) {
+    throw new ReportApiError("The progress report reference is invalid.", 400);
+  }
+  const audience = role === "TUTOR" ? "tutor" : "student";
+  const response = await fetch(`${LEARNING_API_URL}/api/learning/${audience}/reports/${reportId}/pdf`, {
+    headers: headers("application/pdf"),
+  });
+  if (!response.ok) throw await responseError(response, "This progress report PDF could not be downloaded. Please try again.");
+  const contentType = response.headers.get("content-type");
+  if (!contentType || !/^application\/pdf(?:\s*;|$)/i.test(contentType)) {
+    throw new ReportApiError("The progress report PDF response is invalid. Please try again.", response.status);
+  }
+  return response.blob();
 }

@@ -3,7 +3,10 @@ package com.fttranscendence.learning.report;
 import com.fttranscendence.learning.security.AuthenticatedUser;
 import jakarta.validation.constraints.Positive;
 import org.springframework.dao.DataAccessException;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -14,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 
 import java.util.Map;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Report reads are split by principal type to make the final-snapshot boundary
@@ -24,9 +28,11 @@ import java.util.Map;
 @RequestMapping("/api/learning")
 public class ReportController {
     private final ReportService reports;
+    private final ReportPdfService reportPdfs;
 
-    public ReportController(ReportService reports) {
+    public ReportController(ReportService reports, ReportPdfService reportPdfs) {
         this.reports = reports;
+        this.reportPdfs = reportPdfs;
     }
 
     @GetMapping("/tutor/reports/{reportId}")
@@ -45,6 +51,22 @@ public class ReportController {
         return reports.studentReport(user.userId(), reportId);
     }
 
+    @GetMapping(value = "/tutor/reports/{reportId}/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
+    public ResponseEntity<byte[]> tutorReportPdf(
+        @AuthenticationPrincipal AuthenticatedUser user,
+        @PathVariable @Positive long reportId
+    ) {
+        return pdf(reportPdfs.tutorExport(user.userId(), reportId));
+    }
+
+    @GetMapping(value = "/student/reports/{reportId}/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
+    public ResponseEntity<byte[]> studentReportPdf(
+        @AuthenticationPrincipal AuthenticatedUser user,
+        @PathVariable @Positive long reportId
+    ) {
+        return pdf(reportPdfs.studentExport(user.userId(), reportId));
+    }
+
     @ExceptionHandler(ReportService.ReportNotFoundException.class)
     ResponseEntity<ApiError> notFound() {
         // Intentionally identical for missing, foreign, and draft recipient reads.
@@ -55,6 +77,12 @@ public class ReportController {
     ResponseEntity<ApiError> invalidSnapshot() {
         return error(HttpStatus.SERVICE_UNAVAILABLE, "REPORT_SNAPSHOT_UNAVAILABLE",
             "Report evidence is temporarily unavailable.");
+    }
+
+    @ExceptionHandler(ReportPdfService.ReportPdfUnavailableException.class)
+    ResponseEntity<ApiError> pdfUnavailable() {
+        return error(HttpStatus.SERVICE_UNAVAILABLE, "REPORT_PDF_UNAVAILABLE",
+            "Report PDF generation is temporarily unavailable.");
     }
 
     @ExceptionHandler(DataAccessException.class)
@@ -70,6 +98,14 @@ public class ReportController {
 
     private ResponseEntity<ApiError> error(HttpStatus status, String code, String message) {
         return ResponseEntity.status(status).body(new ApiError(code, message, Map.of()));
+    }
+
+    private ResponseEntity<byte[]> pdf(ReportPdfService.PdfExport export) {
+        return ResponseEntity.ok()
+            .contentType(MediaType.APPLICATION_PDF)
+            .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
+                .filename(export.filename(), StandardCharsets.UTF_8).build().toString())
+            .body(export.bytes());
     }
 
     public record ApiError(String code, String message, Map<String, String> fields) { }

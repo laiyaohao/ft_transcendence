@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import FileDownloadOutlinedIcon from "@mui/icons-material/FileDownloadOutlined";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -13,6 +14,7 @@ import Link from "next/link";
 
 import type { AuthRole } from "@/lib/auth";
 import {
+  downloadProgressReportPdf,
   fetchProgressReport,
   type ProgressReport as ProgressReportData,
   type ProgressReportSnapshot,
@@ -22,6 +24,7 @@ export interface ProgressReportProps {
   reportId: number;
   viewerRole: AuthRole;
   loadReport?: (reportId: number, role: AuthRole) => Promise<ProgressReportData>;
+  downloadPdf?: (reportId: number, role: AuthRole) => Promise<Blob>;
 }
 
 const serif = "'Playfair Display', Georgia, serif";
@@ -47,24 +50,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function SnapshotValue({ value, depth = 0 }: { value: unknown; depth?: number }) {
+function SnapshotValue({ value }: { value: unknown }) {
   if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
     return <Typography sx={{ color: "#4A443D", fontSize: 13.5, lineHeight: 1.65, overflowWrap: "anywhere" }}>{textValue(value)}</Typography>;
   }
   if (Array.isArray(value)) {
     if (!value.length) return <Typography sx={{ color: "#8B837A", fontSize: 13 }}>No evidence was recorded for this section.</Typography>;
     return <Box component="ul" sx={{ m: 0, pl: 2.25, display: "grid", gap: .65 }}>
-      {value.map((item, index) => <Box component="li" key={index} sx={{ color: "#4A443D", pl: .25 }}><SnapshotValue value={item} depth={depth + 1} /></Box>)}
+      {value.map((item, index) => <Box component="li" key={index} sx={{ color: "#4A443D", pl: .25 }}><SnapshotValue value={item} /></Box>)}
     </Box>;
   }
   if (isRecord(value)) {
     const entries = Object.entries(value);
     if (!entries.length) return <Typography sx={{ color: "#8B837A", fontSize: 13 }}>No evidence was recorded for this section.</Typography>;
-    if (depth >= 3) return <Typography sx={{ color: "#6F675E", fontSize: 13 }}>Structured evidence is available in this report.</Typography>;
     return <Box component="dl" sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "minmax(112px, .42fr) 1fr" }, gap: 1.1, m: 0 }}>
       {entries.map(([key, item]) => <React.Fragment key={key}>
         <Typography component="dt" sx={{ color: "#6F675E", fontSize: 11.5, fontWeight: 700, letterSpacing: ".02em", overflowWrap: "anywhere" }}>{humaniseKey(key)}</Typography>
-        <Box component="dd" sx={{ m: 0, minWidth: 0 }}><SnapshotValue value={item} depth={depth + 1} /></Box>
+        <Box component="dd" sx={{ m: 0, minWidth: 0 }}><SnapshotValue value={item} /></Box>
       </React.Fragment>)}
     </Box>;
   }
@@ -117,9 +119,17 @@ function displayDate(value: string | null): string {
   return value ? value.replace("T", " · ").replace(/:\d{2}(?:\.\d+)?$/, "") : "Not finalised";
 }
 
-export default function ProgressReport({ reportId, viewerRole, loadReport = fetchProgressReport }: ProgressReportProps) {
+export default function ProgressReport({
+  reportId,
+  viewerRole,
+  loadReport = fetchProgressReport,
+  downloadPdf = downloadProgressReportPdf,
+}: ProgressReportProps) {
   const [report, setReport] = React.useState<ProgressReportData | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [exportError, setExportError] = React.useState<string | null>(null);
+  const [exporting, setExporting] = React.useState(false);
+  const exportingRef = React.useRef(false);
   const [attempt, setAttempt] = React.useState(0);
   const validReportId = Number.isSafeInteger(reportId) && reportId > 0;
 
@@ -141,6 +151,32 @@ export default function ProgressReport({ reportId, viewerRole, loadReport = fetc
   const final = report.status === "FINAL";
   const statusStyle = final ? { bgcolor: "#E4EDE4", color: "#4A6B50", label: "FINAL · IMMUTABLE" } : { bgcolor: "#F0EAE0", color: "#6F675E", label: "DRAFT · READ ONLY" };
   const recipient = viewerRole === "TUTOR" ? "Tutor view" : "Student recipient view";
+
+  const exportPdf = async () => {
+    if (exportingRef.current) return;
+    exportingRef.current = true;
+    setExporting(true);
+    setExportError(null);
+    let objectUrl: string | null = null;
+    let temporaryAnchor: HTMLAnchorElement | null = null;
+    try {
+      const blob = await downloadPdf(report.id, viewerRole);
+      objectUrl = URL.createObjectURL(blob);
+      temporaryAnchor = document.createElement("a");
+      temporaryAnchor.href = objectUrl;
+      temporaryAnchor.download = `${report.reportCode}.pdf`;
+      temporaryAnchor.style.display = "none";
+      document.body.appendChild(temporaryAnchor);
+      temporaryAnchor.click();
+    } catch (reason: unknown) {
+      setExportError(reason instanceof Error ? reason.message : "This progress report PDF could not be downloaded. Please try again.");
+    } finally {
+      temporaryAnchor?.remove();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      exportingRef.current = false;
+      setExporting(false);
+    }
+  };
 
   return <Box sx={{ display: "grid", gap: 2.5, color: "#2A2622" }}>
     <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "flex-start", justifyContent: "space-between", gap: 2 }}>
@@ -170,7 +206,21 @@ export default function ProgressReport({ reportId, viewerRole, loadReport = fetc
     <SnapshotSections snapshot={report.snapshot} />
 
     <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1, alignItems: "center" }}>
+      <Button
+        onClick={() => void exportPdf()}
+        disabled={exporting}
+        aria-busy={exporting || undefined}
+        startIcon={<FileDownloadOutlinedIcon />}
+        variant="outlined"
+        sx={{ minHeight: 40, textTransform: "none", borderColor: "#E4DCD0", color: "#2A2622", "&:hover": { borderColor: "#DCCFBE", bgcolor: "#F4EFE6" }, ...focusOutline }}
+      >
+        {exporting ? "Preparing PDF…" : "Export PDF"}
+      </Button>
       {viewerRole === "TUTOR" ? <Button component={Link} href={`/students/${report.studentId}`} startIcon={<OpenInNewIcon />} variant="outlined" sx={{ minHeight: 40, textTransform: "none", borderColor: "#E4DCD0", color: "#2A2622", ...focusOutline }}>Open student profile</Button> : <Button component={Link} href="/progress" startIcon={<ArrowBackIcon />} variant="outlined" sx={{ minHeight: 40, textTransform: "none", borderColor: "#E4DCD0", color: "#2A2622", ...focusOutline }}>Back to my progress</Button>}
     </Box>
+    {exportError && <Card component="section" role="alert" aria-live="assertive" variant="outlined" sx={{ ...card, p: 2, borderLeft: "3px solid #B4573F" }}>
+      <Typography sx={{ color: "#5A544C", fontSize: 13.5, lineHeight: 1.6 }}>{exportError}</Typography>
+      <Button onClick={() => void exportPdf()} disabled={exporting} variant="outlined" sx={{ minHeight: 38, mt: 1.25, textTransform: "none", borderColor: "#E4DCD0", color: "#2A2622", ...focusOutline }}>Try export again</Button>
+    </Card>}
   </Box>;
 }

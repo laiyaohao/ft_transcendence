@@ -10,6 +10,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,10 +22,15 @@ import java.util.Date;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
@@ -177,6 +184,51 @@ class ReportIntegrationTest {
         }
     }
 
+    @Test
+    void exportsTheSameOwnerScopedSnapshotAsAPdfForTutorAndFinalRecipientOnly() throws Exception {
+        long student = student(OWNER, LINKED_STUDENT_LOGIN, "PDF Learner");
+        student(OWNER, UNRELATED_STUDENT_LOGIN, "Unrelated PDF Learner");
+        long finalReport = report(OWNER, student, "PDF-FINAL", "FINAL",
+            "{\"mastery\":[{\"topic\":\"Fractions\",\"score\":82}],\"mistakes\":[\"Place value error\"]}");
+        long draftReport = report(OWNER, student, "PDF-DRAFT", "DRAFT", "{\"summary\":\"Tutor draft\"}");
+
+        byte[] pdf = mvc.perform(get("/api/learning/tutor/reports/{reportId}/pdf", finalReport)
+                .header(HttpHeaders.AUTHORIZATION, bearer("TUTOR", OWNER)))
+            .andExpect(status().isOk())
+            .andExpect(content().contentType(MediaType.APPLICATION_PDF))
+            .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, containsString("attachment;")))
+            .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, containsString("progress-report-PDF-FINAL.pdf")))
+            .andReturn().getResponse().getContentAsByteArray();
+        assertTrue(pdf.length > 0);
+        assertArrayEquals("%PDF-".getBytes(StandardCharsets.US_ASCII), java.util.Arrays.copyOf(pdf, 5));
+
+        mvc.perform(get("/api/learning/tutor/reports/{reportId}/pdf", finalReport))
+            .andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/learning/tutor/reports/{reportId}/pdf", finalReport)
+                .header(HttpHeaders.AUTHORIZATION, bearer("STUDENT", LINKED_STUDENT_LOGIN)))
+            .andExpect(status().isForbidden());
+        mvc.perform(get("/api/learning/tutor/reports/{reportId}/pdf", 999_999L)
+                .header(HttpHeaders.AUTHORIZATION, bearer("TUTOR", OWNER)))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.code").value("REPORT_NOT_FOUND"));
+        mvc.perform(get("/api/learning/student/reports/{reportId}/pdf", finalReport)
+                .header(HttpHeaders.AUTHORIZATION, bearer("STUDENT", LINKED_STUDENT_LOGIN)))
+            .andExpect(status().isOk())
+            .andExpect(content().contentType(MediaType.APPLICATION_PDF));
+        mvc.perform(get("/api/learning/student/reports/{reportId}/pdf", finalReport)
+                .header(HttpHeaders.AUTHORIZATION, bearer("STUDENT", UNRELATED_STUDENT_LOGIN)))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.code").value("REPORT_NOT_FOUND"));
+        mvc.perform(get("/api/learning/student/reports/{reportId}/pdf", draftReport)
+                .header(HttpHeaders.AUTHORIZATION, bearer("STUDENT", LINKED_STUDENT_LOGIN)))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.code").value("REPORT_NOT_FOUND"));
+        mvc.perform(get("/api/learning/tutor/reports/{reportId}/pdf", finalReport)
+                .header(HttpHeaders.AUTHORIZATION, bearer("TUTOR", FOREIGN_TUTOR)))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.code").value("REPORT_NOT_FOUND"));
+    }
+
     private long student(long tutorId, long loginUserId, String name) {
         jdbc.update("INSERT INTO student_profiles (tutor_id, login_user_id, full_name) VALUES (?, ?, ?)",
             tutorId, loginUserId, name);
@@ -217,6 +269,32 @@ class ReportDatabaseFailureIntegrationTest {
                 .header("Authorization", bearer("TUTOR", 101L)))
             .andExpect(status().isServiceUnavailable())
             .andExpect(jsonPath("$.code").value("REPORT_DATABASE_UNAVAILABLE"));
+    }
+
+    private String bearer(String role, long userId) {
+        Instant now = Instant.now();
+        return "Bearer " + Jwts.builder().setSubject("report@example.com").claim("role", role).claim("userId", userId)
+            .setIssuedAt(Date.from(now)).setExpiration(Date.from(now.plusSeconds(600)))
+            .signWith(Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8)), SignatureAlgorithm.HS256).compact();
+    }
+}
+
+@SpringBootTest
+@AutoConfigureMockMvc
+class ReportPdfFailureIntegrationTest {
+    private static final String SECRET = "test-secret-key-that-is-at-least-thirty-two-bytes-long";
+    @Autowired MockMvc mvc;
+    @MockitoBean ReportPdfService reportPdfs;
+
+    @Test
+    void returnsStructuredPdfFailureWithoutLeakingRendererDetails() throws Exception {
+        when(reportPdfs.tutorExport(101L, 1L)).thenThrow(
+            new ReportPdfService.ReportPdfUnavailableException(new IllegalStateException("renderer offline")));
+
+        mvc.perform(get("/api/learning/tutor/reports/{reportId}/pdf", 1L)
+                .header(HttpHeaders.AUTHORIZATION, bearer("TUTOR", 101L)))
+            .andExpect(status().isServiceUnavailable())
+            .andExpect(jsonPath("$.code").value("REPORT_PDF_UNAVAILABLE"));
     }
 
     private String bearer(String role, long userId) {

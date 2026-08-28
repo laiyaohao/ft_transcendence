@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import ProgressReport from "./ProgressReport";
 import type { ProgressReport as ProgressReportData } from "@/services/reports";
@@ -23,6 +23,13 @@ const finalReport: ProgressReportData = {
 };
 
 describe("ProgressReport", () => {
+  beforeEach(() => {
+    vi.stubGlobal("URL", { createObjectURL: vi.fn(() => "blob:progress-report"), revokeObjectURL: vi.fn() });
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+  });
+
+  afterEach(() => vi.restoreAllMocks());
+
   it("renders a final evidence snapshot as safe, readable text and exposes its immutable status", async () => {
     render(<ProgressReport reportId={12} viewerRole="TUTOR" loadReport={async () => finalReport} />);
 
@@ -72,5 +79,48 @@ describe("ProgressReport", () => {
     render(<ProgressReport reportId={12} viewerRole="TUTOR" loadReport={async () => ({ ...finalReport, snapshot: { evidence: "<img src=x onerror=alert(1)>" } })} />);
     expect(await screen.findByText("<img src=x onerror=alert(1)>")).toBeVisible();
     expect(document.querySelector("img")).toBeNull();
+  });
+
+  it("renders deeply nested saved evidence rather than replacing it with a summary", async () => {
+    render(<ProgressReport reportId={12} viewerRole="TUTOR" loadReport={async () => ({
+      ...finalReport,
+      snapshot: { evidence: { mastery: { heat: { latestAttempt: { feedback: "Explains conduction accurately." } } } } },
+    })} />);
+
+    expect(await screen.findByText("Explains conduction accurately.")).toBeVisible();
+    expect(screen.queryByText("Structured evidence is available in this report.")).toBeNull();
+  });
+
+  it("exports the saved PDF snapshot for either viewer and revokes its temporary URL", async () => {
+    const downloadPdf = vi.fn().mockResolvedValue(new Blob(["pdf"], { type: "application/pdf" }));
+    render(<ProgressReport reportId={12} viewerRole="STUDENT" loadReport={async () => finalReport} downloadPdf={downloadPdf} />);
+
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Export PDF" }));
+
+    await waitFor(() => expect(downloadPdf).toHaveBeenCalledWith(12, "STUDENT"));
+    expect(HTMLAnchorElement.prototype.click).toHaveBeenCalledTimes(1);
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:progress-report");
+    expect(document.querySelector('a[download="P5-SCI-T2.pdf"]')).toBeNull();
+  });
+
+  it("prevents duplicate exports while busy and lets the viewer retry a recoverable export failure", async () => {
+    let resolve!: (value: Blob) => void;
+    const pending = new Promise<Blob>((completion) => { resolve = completion; });
+    const downloadPdf = vi.fn().mockReturnValueOnce(pending).mockRejectedValueOnce(new Error("The PDF service is unavailable.")).mockResolvedValueOnce(new Blob(["pdf"]));
+    render(<ProgressReport reportId={12} viewerRole="TUTOR" loadReport={async () => finalReport} downloadPdf={downloadPdf} />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "Export PDF" }));
+    expect(screen.getByRole("button", { name: "Preparing PDF…" })).toBeDisabled();
+    expect(downloadPdf).toHaveBeenCalledTimes(1);
+    resolve(new Blob(["pdf"]));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Export PDF" })).toBeEnabled());
+
+    await user.click(screen.getByRole("button", { name: "Export PDF" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("The PDF service is unavailable.");
+    await user.click(screen.getByRole("button", { name: "Try export again" }));
+    await waitFor(() => expect(downloadPdf).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
   });
 });

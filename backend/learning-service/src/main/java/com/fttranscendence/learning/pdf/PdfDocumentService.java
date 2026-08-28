@@ -1,20 +1,22 @@
 package com.fttranscendence.learning.pdf;
 
 import com.fttranscendence.learning.question.Question;
+import com.fttranscendence.learning.report.ReportResponse;
 import com.fttranscendence.learning.worksheet.Worksheet;
 import com.fttranscendence.learning.worksheet.WorksheetQuestion;
+import tools.jackson.databind.JsonNode;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDDocumentInformation;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.font.PDFont;
-import org.apache.pdfbox.pdmodel.font.PDType1Font;
-import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
+import org.apache.pdfbox.pdmodel.font.PDType0Font;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.math.BigDecimal;
 import java.text.Normalizer;
 import java.util.ArrayList;
@@ -30,13 +32,10 @@ public class PdfDocumentService {
     private static final float HEADING_SIZE = 18;
     private static final float SUBHEADING_SIZE = 12;
 
-    private final PDFont regular = new PDType1Font(Standard14Fonts.FontName.HELVETICA);
-    private final PDFont bold = new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD);
-
     public byte[] createWorksheetPdf(Worksheet worksheet) {
         try (PDDocument document = new PDDocument(); ByteArrayOutputStream bytes = new ByteArrayOutputStream()) {
             applyMetadata(document, worksheet);
-            PageWriter writer = new PageWriter(document);
+            PageWriter writer = new PageWriter(document, loadFonts(document), "Worksheet");
             writer.heading(worksheet.getTitle());
             writer.body("Worksheet code: " + worksheet.getCode());
             if (worksheet.getInstructions() != null && !worksheet.getInstructions().isBlank()) {
@@ -59,6 +58,31 @@ public class PdfDocumentService {
         }
     }
 
+    /**
+     * Renders a persisted progress-report snapshot.  This deliberately accepts
+     * the read DTO rather than querying current learning data: finalized reports
+     * are historical records and their PDF must agree with the web snapshot.
+     */
+    public byte[] createReportPdf(ReportResponse report) {
+        try (PDDocument document = new PDDocument(); ByteArrayOutputStream bytes = new ByteArrayOutputStream()) {
+            applyMetadata(document, report);
+            PageWriter writer = new PageWriter(document, loadFonts(document), "Progress report");
+            writer.heading("Progress report");
+            writer.body("Student: " + report.studentName());
+            writer.body("Report code: " + report.reportCode());
+            writer.body("Period: " + report.periodStart() + " to " + report.periodEnd());
+            writer.body("Status: " + report.status());
+            writer.spacer(10);
+            writer.boldBody("Evidence snapshot");
+            writeSnapshot(writer, report.snapshot(), 0);
+            writer.finish();
+            document.save(bytes);
+            return bytes.toByteArray();
+        } catch (IOException exception) {
+            throw new PdfGenerationException("Unable to generate the progress report PDF.", exception);
+        }
+    }
+
     private void applyMetadata(PDDocument document, Worksheet worksheet) {
         PDDocumentInformation metadata = document.getDocumentInformation();
         metadata.setTitle(worksheet.getTitle());
@@ -68,13 +92,91 @@ public class PdfDocumentService {
         metadata.setKeywords("worksheet," + worksheet.getCode());
     }
 
+    private void applyMetadata(PDDocument document, ReportResponse report) {
+        PDDocumentInformation metadata = document.getDocumentInformation();
+        metadata.setTitle("Progress report - " + report.studentName());
+        metadata.setSubject("Report " + report.reportCode() + " for " + report.periodStart() + " to " + report.periodEnd());
+        metadata.setAuthor("ft_transcendence");
+        metadata.setCreator("ft_transcendence learning service");
+        metadata.setKeywords("progress report," + report.reportCode());
+    }
+
+    private void writeSnapshot(PageWriter writer, JsonNode value, int depth) throws IOException {
+        if (value == null || value.isNull() || value.isMissingNode()) {
+            writer.body("No evidence was captured for this report period.");
+            return;
+        }
+        if (value.isObject()) {
+            if (value.isEmpty()) {
+                writer.body("No evidence was captured for this report period.");
+                return;
+            }
+            for (java.util.Map.Entry<String, JsonNode> field : value.properties()) {
+                String label = readableLabel(field.getKey());
+                JsonNode fieldValue = field.getValue();
+                if (fieldValue.isValueNode() || fieldValue.isNull()) {
+                    writer.boldBody(label + ": " + printableSnapshotValue(fieldValue));
+                } else {
+                    writer.boldBody(label);
+                    writeSnapshot(writer, fieldValue, depth + 1);
+                }
+            }
+            return;
+        }
+        if (value.isArray()) {
+            if (value.isEmpty()) {
+                writer.body("None recorded.");
+                return;
+            }
+            for (JsonNode item : value) {
+                if (item.isValueNode() || item.isNull()) {
+                    writer.body("- " + printableSnapshotValue(item));
+                } else {
+                    writeSnapshot(writer, item, depth + 1);
+                }
+            }
+            return;
+        }
+        writer.body(printableSnapshotValue(value));
+    }
+
+    private String printableSnapshotValue(JsonNode value) {
+        if (value == null || value.isNull()) return "Not recorded";
+        if (value.isTextual()) return value.textValue();
+        return value.asText();
+    }
+
+    private String readableLabel(String value) {
+        if (value == null || value.isBlank()) return "Evidence";
+        String spaced = value.replaceAll("([a-z])([A-Z])", "$1 $2").replace('_', ' ').replace('-', ' ');
+        return Character.toUpperCase(spaced.charAt(0)) + spaced.substring(1);
+    }
+
+    private PdfFonts loadFonts(PDDocument document) throws IOException {
+        return new PdfFonts(
+            loadFont(document, "fonts/NotoSans-Regular.ttf"),
+            loadFont(document, "fonts/NotoSans-Bold.ttf")
+        );
+    }
+
+    private PDFont loadFont(PDDocument document, String resourcePath) throws IOException {
+        try (InputStream resource = getClass().getClassLoader().getResourceAsStream(resourcePath)) {
+            if (resource == null) throw new IOException("Embedded PDF font resource is missing: " + resourcePath);
+            return PDType0Font.load(document, resource, true);
+        }
+    }
+
     private final class PageWriter {
         private final PDDocument document;
+        private final PdfFonts fonts;
+        private final String documentLabel;
         private PDPageContentStream content;
         private float y;
 
-        private PageWriter(PDDocument document) throws IOException {
+        private PageWriter(PDDocument document, PdfFonts fonts, String documentLabel) throws IOException {
             this.document = document;
+            this.fonts = fonts;
+            this.documentLabel = documentLabel;
             startPage();
         }
 
@@ -84,28 +186,28 @@ public class PdfDocumentService {
             content = new PDPageContentStream(document, document.getPage(document.getNumberOfPages() - 1));
             y = PAGE_SIZE.getHeight() - MARGIN;
             content.beginText();
-            content.setFont(regular, 8);
+            content.setFont(fonts.regular(), 8);
             content.newLineAtOffset(MARGIN, 28);
-            content.showText("Worksheet");
+            content.showText(documentLabel);
             content.endText();
         }
 
         private void heading(String value) throws IOException {
-            writeLines(wrap(value, bold, HEADING_SIZE), bold, HEADING_SIZE, HEADING_SIZE + 7);
+            writeLines(wrap(value, fonts.bold(), HEADING_SIZE), fonts.bold(), HEADING_SIZE, HEADING_SIZE + 7);
         }
 
         private void boldBody(String value) throws IOException {
-            writeLines(wrap(value, bold, SUBHEADING_SIZE), bold, SUBHEADING_SIZE, BODY_LEADING);
+            writeLines(wrap(value, fonts.bold(), SUBHEADING_SIZE), fonts.bold(), SUBHEADING_SIZE, BODY_LEADING);
         }
 
         private void body(String value) throws IOException {
-            writeLines(wrap(value, regular, BODY_SIZE), regular, BODY_SIZE, BODY_LEADING);
+            writeLines(wrap(value, fonts.regular(), BODY_SIZE), fonts.regular(), BODY_SIZE, BODY_LEADING);
         }
 
         private void question(int number, String prompt, Question.QuestionType type, BigDecimal marks) throws IOException {
-            writeLines(wrap(number + ". " + prompt, bold, BODY_SIZE), bold, BODY_SIZE, BODY_LEADING);
+            writeLines(wrap(number + ". " + prompt, fonts.bold(), BODY_SIZE), fonts.bold(), BODY_SIZE, BODY_LEADING);
             String details = "Type: " + readableType(type) + (marks == null ? "" : "  *  Marks: " + marks.stripTrailingZeros().toPlainString());
-            writeLines(wrap(details, regular, 9), regular, 9, 12);
+            writeLines(wrap(details, fonts.regular(), 9), fonts.regular(), 9, 12);
             int answerLines = switch (type) {
                 case TRUE_FALSE, MULTIPLE_CHOICE -> 2;
                 case FILL_IN_THE_BLANK -> 3;
@@ -178,18 +280,12 @@ public class PdfDocumentService {
     }
 
     private String printableText(String value) {
-        String normalized = Normalizer.normalize(value, Normalizer.Form.NFKD)
-            .replace('\u2018', '\'').replace('\u2019', '\'').replace('\u201C', '"').replace('\u201D', '"')
-            .replace('\u2013', '-').replace('\u2014', '-').replace('\u2022', '*');
-        StringBuilder printable = new StringBuilder(normalized.length());
-        for (int index = 0; index < normalized.length(); index++) {
-            char character = normalized.charAt(index);
-            if (character == '\n' || character == '\r' || character == '\t' || (character >= 32 && character <= 126)) {
-                printable.append(character);
-            }
-        }
-        return printable.toString();
+        // NFC preserves accents, typographic punctuation, and supported non-Latin
+        // scripts while keeping composed glyphs suitable for the embedded font.
+        return Normalizer.normalize(value == null ? "" : value, Normalizer.Form.NFC);
     }
+
+    private record PdfFonts(PDFont regular, PDFont bold) { }
 
     private String readableType(Question.QuestionType type) {
         return type.name().toLowerCase(java.util.Locale.ROOT).replace('_', ' ');
