@@ -18,6 +18,10 @@ public interface TutorAlertRepository extends Repository<TutorAlert, Long> {
         TutorAlert.AlertStatus alertStatus
     );
 
+    List<TutorAlert> findAllByTutorIdAndAlertStatusInOrderByCreatedAtDescIdDesc(
+        Long tutorId, List<TutorAlert.AlertStatus> statuses
+    );
+
     @org.springframework.data.jpa.repository.Query("""
         select alert from TutorAlert alert
         where alert.tutorId = :tutorId

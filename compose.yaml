@@ -70,6 +70,10 @@ services:
       AI_ENGINE_MODEL: ${AI_ENGINE_MODEL:?AI_ENGINE_MODEL is required}
       AI_ENGINE_API_KEY: ${AI_ENGINE_API_KEY:?AI_ENGINE_API_KEY is required}
       AI_VISION_MODEL: ${AI_VISION_MODEL:?AI_VISION_MODEL is required}
+      # Backend-only credential for the durable marking-outbox handoff.
+      # Never expose this value to the frontend.
+      LEARNING_MARKING_SYNC_KEY: ${LEARNING_MARKING_SYNC_KEY:?LEARNING_MARKING_SYNC_KEY is required}
+      LEARNING_SERVICE_URL: http://learning-service:8083
       DOCUMENT_STORAGE_ROOT: /app/data/submissions
       DOCUMENT_STORAGE_MAX_FILE_SIZE_BYTES: ${DOCUMENT_STORAGE_MAX_FILE_SIZE_BYTES:-10485760}
       DOCUMENT_UPLOAD_MAX_FILE_SIZE: ${DOCUMENT_UPLOAD_MAX_FILE_SIZE:-10MB}
@@ -99,6 +103,8 @@ services:
       LEARNING_DB_PASSWORD: ${POSTGRES_PW:?POSTGRES_PW is required}
       LEARNING_DB_SCHEMA: ${LEARNING_DB_SCHEMA:-learning}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      # Must be the same backend-only value supplied to grading-service.
+      LEARNING_MARKING_SYNC_KEY: ${LEARNING_MARKING_SYNC_KEY:?LEARNING_MARKING_SYNC_KEY is required}
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8083/actuator/health"]
       interval: 10s

@@ -113,7 +113,7 @@ class ManualResultIntegrationTest {
         if (assigned) {
             server.expect(manyTimes(), requestTo("http://localhost/learning/api/learning/tutor/questions/501"))
                 .andRespond(withSuccess("""
-                    {"id":501,"prompt":"Why does metal feel hot?","totalMarks":2,"modelAnswer":"Metal conducts heat.","keywords":["conductor"],"markingComponents":[{"position":0,"description":"Explains heat conduction","marks":2}]}
+                    {"id":501,"prompt":"Why does metal feel hot?","totalMarks":2,"modelAnswer":"Metal conducts heat.","keywords":["conductor"],"syllabusTopic":{"id":601,"code":"SCI-601"},"markingComponents":[{"position":0,"description":"Explains heat conduction","marks":2}]}
                     """, MediaType.APPLICATION_JSON));
         }
     }

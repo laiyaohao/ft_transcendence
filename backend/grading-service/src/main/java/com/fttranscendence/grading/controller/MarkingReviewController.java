@@ -118,8 +118,13 @@ public class MarkingReviewController {
         return error(HttpStatus.BAD_REQUEST, "INVALID_REVIEW_REQUEST", "Review request contains invalid JSON or values.");
     }
 
-    @ExceptionHandler({MarkingReviewService.InvalidReviewRequest.class, IllegalArgumentException.class, IllegalStateException.class})
-    ResponseEntity<Map<String, String>> invalid(RuntimeException exception) {
+    @ExceptionHandler({MarkingReviewService.InvalidReviewRequest.class, IllegalArgumentException.class})
+    ResponseEntity<Map<String, String>> invalidRequest(RuntimeException exception) {
+        return error(HttpStatus.BAD_REQUEST, "INVALID_REVIEW_REQUEST", exception.getMessage());
+    }
+
+    @ExceptionHandler(IllegalStateException.class)
+    ResponseEntity<Map<String, String>> invalidState(IllegalStateException exception) {
         return error(HttpStatus.CONFLICT, "INVALID_REVIEW_STATE", exception.getMessage());
     }
 

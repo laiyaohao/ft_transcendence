@@ -19,7 +19,7 @@ interface TokenClaims {
   exp?: unknown;
 }
 
-const TUTOR_PATHS = ['/tutor/dashboard', '/tutor/worksheets', '/classes', '/students', '/questions', '/upload', '/profile'];
+const TUTOR_PATHS = ['/tutor/dashboard', '/tutor/worksheets', '/tutor/alerts', '/classes', '/students', '/questions', '/upload', '/profile'];
 const STUDENT_PATHS = [
   '/',
   '/worksheets',

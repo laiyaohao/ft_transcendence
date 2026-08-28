@@ -29,6 +29,7 @@ class MigrationIntegrationTest {
 
     @BeforeEach
     void clearSubmissions() {
+        jdbcTemplate.update("DELETE FROM mastery_sync_outbox");
         jdbcTemplate.update("DELETE FROM mistake_records");
         jdbcTemplate.update("DELETE FROM answer_reviews");
         jdbcTemplate.update("DELETE FROM submission_pages");
@@ -45,8 +46,9 @@ class MigrationIntegrationTest {
         assertEquals(1, tableCount("submission_pages"));
         assertEquals(1, tableCount("answer_reviews"));
         assertEquals(1, tableCount("mistake_records"));
-        assertEquals(5, versionedMigrationCount());
-        assertEquals("5", flyway.info().current().getVersion().getVersion());
+        assertEquals(1, tableCount("mastery_sync_outbox"));
+        assertEquals(7, versionedMigrationCount());
+        assertEquals("7", flyway.info().current().getVersion().getVersion());
     }
 
     @Test
@@ -92,7 +94,7 @@ class MigrationIntegrationTest {
             .defaultSchema("PUBLIC")
             .locations("classpath:db/migration")
             .load();
-        assertEquals(3, latest.migrate().migrationsExecuted);
+        assertEquals(5, latest.migrate().migrationsExecuted);
 
         try (Connection connection = DriverManager.getConnection(databaseUrl, "sa", "");
              ResultSet result = connection.createStatement().executeQuery(
@@ -164,6 +166,7 @@ class MigrationIntegrationTest {
         assertRequiredPlaceholder(properties, "ai.engine.model", "${AI_ENGINE_MODEL}");
         assertRequiredPlaceholder(properties, "ai.engine.api-key", "${AI_ENGINE_API_KEY}");
         assertRequiredPlaceholder(properties, "ai.vision.model", "${AI_VISION_MODEL}");
+        assertRequiredPlaceholder(properties, "learning.service.sync-key", "${LEARNING_MARKING_SYNC_KEY}");
         assertEquals(
             "${DOCUMENT_STORAGE_ROOT:./data/submissions}",
             properties.getProperty("document.storage.root")

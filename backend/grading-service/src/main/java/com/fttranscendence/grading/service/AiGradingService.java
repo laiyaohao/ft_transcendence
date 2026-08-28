@@ -45,15 +45,30 @@ public class AiGradingService {
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setBearerAuth(apiKey);
 
+        ApiResponse rawResponse;
         try {
-            ApiResponse rawResponse = restTemplate.postForObject(apiUrl, new HttpEntity<>(requestPayload, headers), ApiResponse.class);
-            if (rawResponse != null && rawResponse.choices() != null && !rawResponse.choices().isEmpty()) {
-                return objectMapper.readValue(rawResponse.choices().get(0).message().content(), AiDiagnosticResult.class);
-            }
-        } catch (Exception e) {
-            System.err.println("Cloud API Engine Failure: " + e.getMessage());
+            rawResponse = restTemplate.postForObject(apiUrl, new HttpEntity<>(requestPayload, headers), ApiResponse.class);
+        } catch (Exception exception) {
+            return diagnosticFallback("AI_UNAVAILABLE");
         }
-        return new AiDiagnosticResult("Analysis Complete", "Unclassified", List.of(), "System error.");
+        if (rawResponse != null && rawResponse.choices() != null && !rawResponse.choices().isEmpty()
+            && rawResponse.choices().get(0).message() != null) {
+            try {
+                AiDiagnosticResult result = objectMapper.readValue(rawResponse.choices().get(0).message().content(), AiDiagnosticResult.class);
+                if (isValid(result)) {
+                    return new AiDiagnosticResult(result.correctness().trim(), result.errorCategory().trim(),
+                        result.missingKeywords().stream().map(String::trim).toList(), result.feedback().trim());
+                }
+            } catch (Exception exception) {
+                return diagnosticFallback("AI_RESPONSE_INVALID");
+            }
+        }
+        return diagnosticFallback("AI_RESPONSE_INVALID");
+    }
+
+    private AiDiagnosticResult diagnosticFallback(String category) {
+        return new AiDiagnosticResult("Manual review required", category, List.of(),
+            "AI advice is unavailable. Review the rubric evidence before approving.");
     }
 
     /**
@@ -119,6 +134,13 @@ public class AiGradingService {
         return result != null && result.suggestedMarks() != null && result.suggestedMarks().signum() >= 0
             && result.suggestedMarks().compareTo(maximumMarks) <= 0 && result.correctness() != null
             && !result.correctness().isBlank() && result.feedback() != null && !result.feedback().isBlank();
+    }
+
+    private boolean isValid(AiDiagnosticResult result) {
+        return result != null && result.correctness() != null && !result.correctness().isBlank()
+            && result.errorCategory() != null && !result.errorCategory().isBlank()
+            && result.feedback() != null && !result.feedback().isBlank()
+            && result.missingKeywords() != null && result.missingKeywords().stream().allMatch(keyword -> keyword != null && !keyword.isBlank());
     }
 
     private String blankToNull(String value) {

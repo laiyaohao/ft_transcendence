@@ -1,13 +1,18 @@
 package com.fttranscendence.grading.service;
 
 import com.fttranscendence.grading.model.AnswerReview;
+import com.fttranscendence.grading.model.DiagnosticCategory;
+import com.fttranscendence.grading.model.MasterySyncOutbox;
 import com.fttranscendence.grading.model.Submission;
 import com.fttranscendence.grading.model.SubmissionDocument;
 import com.fttranscendence.grading.ocr.OcrExtraction;
 import com.fttranscendence.grading.repository.OcrExtractionRepository;
 import com.fttranscendence.grading.repository.SubmissionDocumentRepository;
 import com.fttranscendence.grading.repository.SubmissionRepository;
+import com.fttranscendence.grading.repository.MasterySyncOutboxRepository;
 import com.fttranscendence.grading.security.AuthenticatedUser;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.transaction.Transactional;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -23,19 +28,25 @@ public class MarkingReviewService {
     private final OcrExtractionRepository extractions;
     private final LearningAuthorizationClient learning;
     private final AiGradingService ai;
+    private final MasterySyncOutboxRepository masteryOutbox;
+    private final ObjectMapper objectMapper;
 
     public MarkingReviewService(
         SubmissionRepository submissions,
         SubmissionDocumentRepository documents,
         OcrExtractionRepository extractions,
         LearningAuthorizationClient learning,
-        AiGradingService ai
+        AiGradingService ai,
+        MasterySyncOutboxRepository masteryOutbox,
+        ObjectMapper objectMapper
     ) {
         this.submissions = submissions;
         this.documents = documents;
         this.extractions = extractions;
         this.learning = learning;
         this.ai = ai;
+        this.masteryOutbox = masteryOutbox;
+        this.objectMapper = objectMapper;
     }
 
     @Transactional
@@ -65,12 +76,15 @@ public class MarkingReviewService {
             .filter(text -> !text.isBlank()).collect(java.util.stream.Collectors.joining("\n\n"));
 
         Submission submission = Submission.createAnswer(document, request.worksheetQuestionId(), request.questionBankId(),
-            answer, question.modelAnswer(), question.totalMarks());
+            answer, question.modelAnswer(), question.totalMarks(), question.syllabusTopicId(), question.syllabusTopicCode());
         AiGradingService.AiMarkingResult suggestion = ai.evaluateMarking(question.prompt(), question.modelAnswer(),
             question.markingCriteria(), question.keywords(), answer, question.totalMarks());
         submission.recordAiSuggestion(suggestion.suggestedMarks(), suggestion.correctness(), suggestion.errorCategory(),
             suggestion.missingKeywords(), suggestion.feedback());
-        return MarkingReview.from(submissions.saveAndFlush(submission), suggestion.providerResponseValid());
+        submission.nextMasterySyncRevision();
+        Submission saved = submissions.saveAndFlush(submission);
+        enqueueReviewState(saved, user.userId(), "PENDING_REVIEW");
+        return MarkingReview.from(saved, suggestion.providerResponseValid());
     }
 
     /**
@@ -101,9 +115,13 @@ public class MarkingReviewService {
             // Store that same authoritative ID in worksheetQuestionId until its
             // cross-service question-instance identifier is exposed.
             Submission submission = Submission.createAnswer(document, request.questionBankId(), request.questionBankId(),
-                answer, question.modelAnswer(), question.totalMarks());
+                answer, question.modelAnswer(), question.totalMarks(), question.syllabusTopicId(), question.syllabusTopicCode());
             submission.approve(user.userId(), request.marks(), feedback);
-            return MarkingReview.from(submissions.saveAndFlush(submission), null);
+            submission.nextMasterySyncRevision();
+            Submission saved = submissions.saveAndFlush(submission);
+            enqueueMasterySync(saved, user.userId(), "APPROVED");
+            enqueueReviewState(saved, user.userId(), "RESOLVED");
+            return MarkingReview.from(saved, null);
         } catch (DataIntegrityViolationException exception) {
             throw new ManualResultAlreadyExists();
         }
@@ -120,27 +138,54 @@ public class MarkingReviewService {
         Submission submission = ownedSubmission(user, bearer, submissionId);
         BigDecimal marks = request.marks();
         String feedback = request.feedback();
+        boolean wasApproved = submission.getReviewStatus() == Submission.ReviewStatus.APPROVED;
+        List<Submission.DiagnosticEvidenceInput> requestedEvidence = diagnosticInputs(submission, request.diagnosticEvidence());
+        boolean evidenceSpecified = request.diagnosticEvidence() != null;
         if (submission.getReviewStatus() == Submission.ReviewStatus.APPROVED
             && marks != null && marks.compareTo(submission.getApprovedMarks()) == 0
-            && feedback != null && feedback.trim().equals(submission.getApprovedFeedback())) {
+            && feedback != null && feedback.trim().equals(submission.getApprovedFeedback())
+            && (!evidenceSpecified || sameDiagnosticEvidence(submission, requestedEvidence))) {
             return MarkingReview.from(submission, null);
         }
         submission.approve(user.userId(), marks, feedback);
-        return MarkingReview.from(submissions.saveAndFlush(submission), null);
+        if (evidenceSpecified || !wasApproved) {
+            submission.replaceApprovedDiagnosticEvidence(requestedEvidence);
+        } else if (submission.getApprovedDiagnosticEvidence().isEmpty()) {
+            submission.replaceApprovedDiagnosticEvidence(List.of());
+        }
+        submission.nextMasterySyncRevision();
+        Submission saved = submissions.saveAndFlush(submission);
+        enqueueMasterySync(saved, user.userId(), "APPROVED");
+        enqueueReviewState(saved, user.userId(), "RESOLVED");
+        return MarkingReview.from(saved, null);
     }
 
     @Transactional
     public MarkingReview flag(AuthenticatedUser user, String bearer, long submissionId, FlagRequest request) {
         Submission submission = ownedSubmission(user, bearer, submissionId);
+        boolean wasApproved = submission.getReviewStatus() == Submission.ReviewStatus.APPROVED;
         submission.flagForLater(user.userId(), request.reason());
-        return MarkingReview.from(submissions.saveAndFlush(submission), null);
+        if (wasApproved) submission.nextMasterySyncRevision();
+        Submission saved = submissions.saveAndFlush(submission);
+        if (wasApproved) {
+            enqueueMasterySync(saved, user.userId(), "RETRACTED");
+            enqueueReviewState(saved, user.userId(), "PENDING_REVIEW");
+        }
+        return MarkingReview.from(saved, null);
     }
 
     @Transactional
     public MarkingReview reset(AuthenticatedUser user, String bearer, long submissionId) {
         Submission submission = ownedSubmission(user, bearer, submissionId);
+        boolean wasApproved = submission.getReviewStatus() == Submission.ReviewStatus.APPROVED;
         submission.resetToAiSuggestion(user.userId());
-        return MarkingReview.from(submissions.saveAndFlush(submission), null);
+        if (wasApproved) submission.nextMasterySyncRevision();
+        Submission saved = submissions.saveAndFlush(submission);
+        if (wasApproved) {
+            enqueueMasterySync(saved, user.userId(), "RETRACTED");
+            enqueueReviewState(saved, user.userId(), "PENDING_REVIEW");
+        }
+        return MarkingReview.from(saved, null);
     }
 
     private Submission ownedSubmission(AuthenticatedUser user, String bearer, long submissionId) {
@@ -218,6 +263,87 @@ public class MarkingReviewService {
         }
     }
 
+    private List<Submission.DiagnosticEvidenceInput> diagnosticInputs(
+        Submission submission, List<DiagnosticEvidenceRequest> evidence
+    ) {
+        if (evidence == null) {
+            return submission.getApprovedDiagnosticEvidence().stream().map(item -> new Submission.DiagnosticEvidenceInput(
+                item.getSyllabusTopicId(), item.getCategory(), item.getDescription(), item.getMissingKeywords()
+            )).toList();
+        }
+        return evidence.stream().map(item -> {
+            if (item == null || item.category() == null || item.description() == null || item.description().isBlank()) {
+                throw new InvalidReviewRequest("Each diagnostic evidence item requires a category and description.");
+            }
+            if (item.missingKeywords() != null && item.missingKeywords().stream().anyMatch(
+                keyword -> keyword == null || keyword.isBlank()
+            )) {
+                throw new InvalidReviewRequest("Diagnostic keywords cannot be blank.");
+            }
+            return new Submission.DiagnosticEvidenceInput(
+                submission.getSyllabusTopicId(), item.category(), item.description(), item.missingKeywords()
+            );
+        }).toList();
+    }
+
+    private static boolean sameDiagnosticEvidence(Submission submission, List<Submission.DiagnosticEvidenceInput> requested) {
+        List<com.fttranscendence.grading.model.ApprovedDiagnosticEvidence> existing = submission.getApprovedDiagnosticEvidence();
+        if (existing.size() != requested.size()) return false;
+        for (int index = 0; index < existing.size(); index++) {
+            var stored = existing.get(index);
+            var incoming = requested.get(index);
+            if (!stored.getSyllabusTopicId().equals(incoming.syllabusTopicId())
+                || stored.getCategory() != incoming.category()
+                || !stored.getDescription().equals(incoming.description().trim())
+                || !stored.getMissingKeywords().equals(normalizeKeywords(incoming.missingKeywords()))) return false;
+        }
+        return true;
+    }
+
+    private static List<String> normalizeKeywords(List<String> values) {
+        if (values == null) return List.of();
+        return values.stream().filter(java.util.Objects::nonNull).map(String::trim)
+            .filter(value -> !value.isBlank()).distinct().toList();
+    }
+
+    private void enqueueMasterySync(Submission submission, long tutorUserId, String state) {
+        if (submission.getSyllabusTopicId() == null || submission.getSyllabusTopicCode() == null) {
+            throw new InvalidReviewRequest("The question is missing its syllabus topic context.");
+        }
+        long revision = submission.getMasterySyncRevision();
+        String eventKey = "mastery:submission:" + submission.getId() + ":" + revision;
+        ApprovedMarkingSyncPayload payload = new ApprovedMarkingSyncPayload(
+            eventKey, state, revision, submission.getId(), submission.getStudentId(), tutorUserId,
+            submission.getWorksheetId(), submission.getWorksheetQuestionId(), submission.getQuestionBankId(),
+            submission.getSyllabusTopicId(), submission.getSyllabusTopicCode(), submission.getApprovedMarks(),
+            submission.getMaxMarks(), submission.getReviewedAt() == null ? null : submission.getReviewedAt().toString(),
+            submission.getApprovedDiagnosticEvidence().stream().map(ApprovedMarkingSyncPayload.DiagnosticEvidence::from).toList()
+        );
+        try {
+            masteryOutbox.saveAndFlush(new MasterySyncOutbox(
+                eventKey, MasterySyncOutbox.EventType.APPROVED_MARKING, objectMapper.writeValueAsString(payload)
+            ));
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("Could not serialize mastery synchronization event", exception);
+        }
+    }
+
+    private void enqueueReviewState(Submission submission, long tutorUserId, String reviewState) {
+        long revision = submission.getMasterySyncRevision();
+        String eventKey = "review:submission:" + submission.getId() + ":" + revision;
+        ReviewStateSyncPayload payload = new ReviewStateSyncPayload(
+            eventKey, revision, submission.getId(), tutorUserId, submission.getStudentId(), reviewState,
+            ("PENDING_REVIEW".equals(reviewState) ? submission.getCreatedAt() : submission.getReviewedAt()).toString()
+        );
+        try {
+            masteryOutbox.saveAndFlush(new MasterySyncOutbox(
+                eventKey, MasterySyncOutbox.EventType.MARKING_REVIEW_STATE, objectMapper.writeValueAsString(payload)
+            ));
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("Could not serialize review synchronization event", exception);
+        }
+    }
+
     public record CreateRequest(Long submissionDocumentId, Long worksheetQuestionId, Long questionBankId) { }
     public record ManualResultRequest(
         Long worksheetId,
@@ -227,7 +353,18 @@ public class MarkingReviewService {
         BigDecimal marks,
         String feedback
     ) { }
-    public record ApprovalRequest(BigDecimal marks, String feedback) { }
+    public record ApprovalRequest(BigDecimal marks, String feedback, List<DiagnosticEvidenceRequest> diagnosticEvidence) {
+        public ApprovalRequest(BigDecimal marks, String feedback) { this(marks, feedback, null); }
+    }
+    public record DiagnosticEvidenceRequest(
+        DiagnosticCategory category,
+        String description,
+        List<String> missingKeywords
+    ) { }
+    private record ReviewStateSyncPayload(
+        String eventKey, long revision, long submissionId, long tutorUserId, long studentId,
+        String reviewState, String occurredAt
+    ) { }
     public record FlagRequest(String reason) { }
 
     public record MarkingReview(
@@ -250,6 +387,7 @@ public class MarkingReviewService {
         Long reviewedByUserId,
         java.time.LocalDateTime reviewedAt,
         Boolean providerResponseValid,
+        List<ApprovedMarkingSyncPayload.DiagnosticEvidence> diagnosticEvidence,
         List<ReviewHistory> history
     ) {
         static MarkingReview from(Submission submission, Boolean providerResponseValid) {
@@ -259,6 +397,7 @@ public class MarkingReviewService {
                 submission.getAiSuggestedOutcome(), submission.getAiErrorCategory(), submission.getMissingKeywords(),
                 submission.getAiSuggestedFeedback(), submission.getReviewStatus(), submission.getApprovedMarks(),
                 submission.getApprovedFeedback(), submission.getReviewedByUserId(), submission.getReviewedAt(), providerResponseValid,
+                submission.getApprovedDiagnosticEvidence().stream().map(ApprovedMarkingSyncPayload.DiagnosticEvidence::from).toList(),
                 submission.getReviews().stream().map(ReviewHistory::from).toList());
         }
     }

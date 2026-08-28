@@ -135,6 +135,21 @@ public class MasteryRecord {
         calculatedAt = LocalDateTime.now();
     }
 
+    /** Rebuilds this derived record from the immutable approved-result projection. */
+    public void replaceApprovedAttempts(List<ApprovedAttempt> attempts) {
+        history.clear();
+        score = BigDecimal.ZERO.setScale(2);
+        masteryStatus = MasteryStatus.NOT_STARTED;
+        attemptCount = 0;
+        lastSourceSubmissionId = null;
+        calculatedAt = null;
+        for (ApprovedAttempt attempt : attempts) {
+            updateScore(attempt.score(), attempt.sourceSubmissionId(), attempt.reason());
+        }
+    }
+
+    public record ApprovedAttempt(BigDecimal score, Long sourceSubmissionId, String reason) { }
+
     @PrePersist
     void prepareForInsert() {
         validateAggregate();

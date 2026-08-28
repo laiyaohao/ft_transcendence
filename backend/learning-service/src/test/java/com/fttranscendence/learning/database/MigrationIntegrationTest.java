@@ -27,6 +27,10 @@ class MigrationIntegrationTest {
 
     @BeforeEach
     void clearClasses() {
+        jdbcTemplate.update("DELETE FROM mastery_diagnostic_evidence_keywords");
+        jdbcTemplate.update("DELETE FROM mastery_diagnostic_evidence");
+        jdbcTemplate.update("DELETE FROM mastery_approved_results");
+        jdbcTemplate.update("DELETE FROM marking_review_status_projection");
         jdbcTemplate.update("DELETE FROM class_insight_feedback");
         jdbcTemplate.update("DELETE FROM class_insight_items");
         jdbcTemplate.update("DELETE FROM class_insight_snapshots");
@@ -66,6 +70,10 @@ class MigrationIntegrationTest {
         assertEquals(1, tableCount("worksheet_assignments"));
         assertEquals(1, tableCount("mastery_records"));
         assertEquals(1, tableCount("mastery_history"));
+        assertEquals(1, tableCount("mastery_approved_results"));
+        assertEquals(1, tableCount("mastery_diagnostic_evidence"));
+        assertEquals(1, tableCount("mastery_diagnostic_evidence_keywords"));
+        assertEquals(1, tableCount("marking_review_status_projection"));
         assertEquals(1, tableCount("tutor_alerts"));
         assertEquals(1, tableCount("progress_reports"));
         assertEquals(1, tableCount("class_topic_coverage"));
@@ -76,8 +84,8 @@ class MigrationIntegrationTest {
         assertEquals(1, tableCount("class_insight_ranking_overrides"));
         assertEquals(1, tableCount("class_insight_refresh_queue"));
         assertEquals(1, tableCount("tutor_notes"));
-        assertEquals("13", flyway.info().current().getVersion().getVersion());
-        assertEquals(13, versionedMigrationCount());
+        assertEquals("15", flyway.info().current().getVersion().getVersion());
+        assertEquals(15, versionedMigrationCount());
 
         long appliedBefore = versionedMigrationCount();
         flyway.migrate();
@@ -156,6 +164,7 @@ class MigrationIntegrationTest {
             properties.getProperty("spring.flyway.default-schema")
         );
         assertRequiredPlaceholder(properties, "jwt.secret", "${JWT_SECRET}");
+        assertRequiredPlaceholder(properties, "learning.marking-sync-key", "${LEARNING_MARKING_SYNC_KEY}");
     }
 
     private long insertClass(

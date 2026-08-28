@@ -1,6 +1,7 @@
 package com.fttranscendence.grading.service;
 
 import com.fttranscendence.grading.security.AuthenticatedUser;
+import com.fttranscendence.grading.model.MasterySyncOutbox;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -20,6 +21,9 @@ public class LearningAuthorizationClient {
 
     @Value("${learning.service.url:http://localhost:8083}")
     private String base;
+
+    @Value("${learning.service.sync-key}")
+    private String syncKey;
 
     public LearningAuthorizationClient(RestTemplate rest) {
         this.rest = rest;
@@ -73,10 +77,11 @@ public class LearningAuthorizationClient {
             BigDecimal totalMarks = decimal(body.get("totalMarks"));
             List<String> keywords = strings(body.get("keywords"));
             List<String> criteria = criteria(body.get("markingComponents"));
-            if (prompt == null || modelAnswer == null || totalMarks == null || totalMarks.signum() <= 0 || criteria.isEmpty()) {
+            TopicContext topic = topic(body.get("syllabusTopic"));
+            if (prompt == null || modelAnswer == null || totalMarks == null || totalMarks.signum() <= 0 || criteria.isEmpty() || topic == null) {
                 throw new QuestionUnavailable();
             }
-            return new QuestionContext(prompt, modelAnswer, totalMarks, criteria, keywords);
+            return new QuestionContext(prompt, modelAnswer, totalMarks, criteria, keywords, topic.id(), topic.code());
         } catch (Forbidden | QuestionUnavailable exception) {
             throw exception;
         } catch (Exception exception) {
@@ -123,6 +128,34 @@ public class LearningAuthorizationClient {
         HttpHeaders headers = new HttpHeaders();
         headers.set(HttpHeaders.AUTHORIZATION, bearer);
         return rest.exchange(base + path, HttpMethod.GET, new HttpEntity<>(headers), Map.class);
+    }
+
+    /** Uses a backend-only integration key; public user JWTs are not trusted for this write. */
+    public void sync(MasterySyncOutbox.EventType eventType, String payload) {
+        if (syncKey == null || syncKey.isBlank()) {
+            throw new LearningSyncUnavailable("Learning synchronization is not configured");
+        }
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-Learning-Integration-Key", syncKey);
+        headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+        try {
+            ResponseEntity<Void> response = rest.exchange(
+                base + switch (eventType) {
+                    case APPROVED_MARKING -> "/api/learning/internal/approved-marking-evidence";
+                    case MARKING_REVIEW_STATE -> "/api/learning/internal/marking-review-state";
+                },
+                HttpMethod.POST,
+                new HttpEntity<>(payload, headers),
+                Void.class
+            );
+            if (!response.getStatusCode().is2xxSuccessful()) {
+                throw new LearningSyncUnavailable("Learning synchronization was rejected");
+            }
+        } catch (LearningSyncUnavailable exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new LearningSyncUnavailable("Learning synchronization is temporarily unavailable");
+        }
     }
 
     private static boolean sameId(Map<?, ?> body, long expected) {
@@ -196,15 +229,30 @@ public class LearningAuthorizationClient {
             .map(component -> text(component.get("description"))).filter(Objects::nonNull).toList();
     }
 
+    private static TopicContext topic(Object value) {
+        if (!(value instanceof Map<?, ?> topic)) return null;
+        Object id = topic.get("id");
+        String code = text(topic.get("code"));
+        if (!(id instanceof Number number) || number.longValue() <= 0 || code == null) return null;
+        return new TopicContext(number.longValue(), code);
+    }
+
     public record QuestionContext(
         String prompt,
         String modelAnswer,
         BigDecimal totalMarks,
         List<String> markingCriteria,
-        List<String> keywords
+        List<String> keywords,
+        Long syllabusTopicId,
+        String syllabusTopicCode
     ) { }
+
+    private record TopicContext(long id, String code) { }
 
     public static class Forbidden extends RuntimeException { }
     public static class QuestionUnavailable extends RuntimeException { }
     public static class ManualResultContextNotFound extends RuntimeException { }
+    public static class LearningSyncUnavailable extends RuntimeException {
+        public LearningSyncUnavailable(String message) { super(message); }
+    }
 }

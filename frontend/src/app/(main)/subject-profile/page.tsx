@@ -2,206 +2,41 @@
 
 import * as React from "react";
 import Box from "@mui/material/Box";
-import Typography from "@mui/material/Typography";
-import Card from "@mui/material/Card";
-import Grid from "@mui/material/Grid";
-import Stack from "@mui/material/Stack";
-import Chip from "@mui/material/Chip";
 import Button from "@mui/material/Button";
-import TrendingUpIcon from "@mui/icons-material/TrendingUp";
-import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
-import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
-import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
-import Link from "next/link";
-import { accent, worksheets, skillProfile, mistakeTypeBreakdown } from "@/lib/student-mock-data";
+import Card from "@mui/material/Card";
+import Skeleton from "@mui/material/Skeleton";
+import Typography from "@mui/material/Typography";
 
-const INK = "rgb(24,21,18)";
-const MUTED = "rgb(126,117,111)";
-const BORDER = "rgb(232,226,217)";
-const CARD_BG = "rgb(250,247,242)";
+import { fetchLearningProfile, type LearningProfile } from "@/services/insights";
 
-const LEARNING_PRIORITIES = [
-  "Practise writing full explanations using science keywords",
-  "Nail the difference between melting and evaporation",
-  "Always check units before writing an answer",
-];
+export default function SubjectProfilePage() {
+  const [profile, setProfile] = React.useState<LearningProfile | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  const load = React.useCallback(async () => {
+    setError(null);
+    try { setProfile(await fetchLearningProfile()); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "Subject profile could not be loaded."); }
+  }, []);
+  React.useEffect(() => {
+    let current = true;
+    const request = async () => {
+      try { const loaded = await fetchLearningProfile(); if (current) setProfile(loaded); }
+      catch (reason) { if (current) setError(reason instanceof Error ? reason.message : "Subject profile could not be loaded."); }
+    };
+    void request();
+    return () => { current = false; };
+  }, []);
 
-function bandFor(value: number) {
-  if (value >= 75) return { fg: "rgb(138,154,138)", band: "Strong" };
-  if (value >= 60) return { fg: "rgb(194,155,98)", band: "Developing" };
-  return { fg: "rgb(155,68,48)", band: "Needs work" };
-}
-
-export default function Page() {
-  const completedCount = worksheets.filter((w) => w.status === "completed").length;
-  const maxMistakeCount = Math.max(...mistakeTypeBreakdown.map((m) => m.count));
-
-  return (
-    <Box sx={{ backgroundColor: "rgb(253,251,247)", minHeight: "100vh", py: 5, px: { xs: 2, sm: 4, md: 6 } }}>
-      <Box sx={{ maxWidth: 1120, mx: "auto" }}>
-        <Stack direction="row" spacing={1.25} sx={{ alignItems: "center", mb: 0.75 }}>
-          <Typography sx={{ fontFamily: "'EB Garamond', serif", fontWeight: 400, fontSize: 40, lineHeight: 1.1, letterSpacing: "-0.8px" }}>
-            Science Profile
-          </Typography>
-          <Chip label="Primary 5" size="small" sx={{ fontSize: 12, fontWeight: 600, backgroundColor: "rgb(232,226,217)", color: "rgb(77,69,64)" }} />
-        </Stack>
-        <Typography sx={{ fontSize: 15, color: "rgb(77,69,64)", mb: 3.5 }}>
-          A snapshot of how you&apos;re doing across the whole subject, built from all your marked worksheets.
-        </Typography>
-
-        <Grid container spacing={2} sx={{ mb: 3 }}>
-          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <Card variant="outlined" sx={{ borderColor: BORDER, backgroundColor: CARD_BG, borderRadius: 3.5, boxShadow: "none", p: 2.5, height: "100%" }}>
-              <Typography sx={{ fontSize: 13, color: MUTED, mb: 1.25 }}>Overall mastery</Typography>
-              <Typography sx={{ fontFamily: "'EB Garamond', serif", fontSize: 36, lineHeight: 1, color: INK }}>72%</Typography>
-              <Box sx={{ mt: 1.5, height: 7, borderRadius: 9999, backgroundColor: "rgb(236,231,224)", overflow: "hidden" }}>
-                <Box sx={{ height: "100%", width: "72%", backgroundColor: accent, borderRadius: 9999 }} />
-              </Box>
-            </Card>
-          </Grid>
-          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <Card variant="outlined" sx={{ borderColor: BORDER, backgroundColor: CARD_BG, borderRadius: 3.5, boxShadow: "none", p: 2.5, height: "100%" }}>
-              <Typography sx={{ fontSize: 13, color: MUTED, mb: 1.25 }}>Average accuracy</Typography>
-              <Typography sx={{ fontFamily: "'EB Garamond', serif", fontSize: 36, lineHeight: 1, color: INK }}>76%</Typography>
-              <Stack direction="row" spacing={0.625} sx={{ alignItems: "center", mt: 1.5, fontSize: 13, fontWeight: 600, color: "rgb(70,92,70)" }}>
-                <TrendingUpIcon sx={{ fontSize: 14 }} />
-                <span>+9 this month</span>
-              </Stack>
-            </Card>
-          </Grid>
-          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <Card variant="outlined" sx={{ borderColor: BORDER, backgroundColor: CARD_BG, borderRadius: 3.5, boxShadow: "none", p: 2.5, height: "100%" }}>
-              <Typography sx={{ fontSize: 13, color: MUTED, mb: 1.25 }}>Worksheets completed</Typography>
-              <Typography sx={{ fontFamily: "'EB Garamond', serif", fontSize: 36, lineHeight: 1, color: INK }}>{completedCount}</Typography>
-              <Typography sx={{ fontSize: 13, color: MUTED, mt: 1.5 }}>this term</Typography>
-            </Card>
-          </Grid>
-          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <Card variant="outlined" sx={{ borderColor: BORDER, backgroundColor: CARD_BG, borderRadius: 3.5, boxShadow: "none", p: 2.5, height: "100%" }}>
-              <Typography sx={{ fontSize: 13, color: MUTED, mb: 1.25 }}>Performance trend</Typography>
-              <Typography sx={{ fontFamily: "'EB Garamond', serif", fontSize: 24, lineHeight: 1.1, color: "rgb(70,92,70)" }}>Improving</Typography>
-              <Typography sx={{ fontSize: 13, color: MUTED, mt: 1.5 }}>steady climb since May</Typography>
-            </Card>
-          </Grid>
-        </Grid>
-
-        <Stack direction="row" spacing={1.5} sx={{ alignItems: "center", border: `1px solid ${BORDER}`, borderRadius: 3, backgroundColor: "rgb(247,243,241)", px: 2.25, py: 1.75, mb: 3.5 }}>
-          <InfoOutlinedIcon sx={{ fontSize: 18, color: MUTED, flexShrink: 0 }} />
-          <Typography sx={{ fontSize: 14, color: "rgb(77,69,64)" }}>
-            Your profile gets more accurate every time you complete a worksheet. Keep going to sharpen the picture!
-          </Typography>
-        </Stack>
-
-        <Grid container spacing={3} sx={{ mb: 3 }}>
-          <Grid size={{ xs: 12, md: 7 }}>
-            <Card variant="outlined" sx={{ borderColor: BORDER, backgroundColor: CARD_BG, borderRadius: 3.5, boxShadow: "none", p: 3, height: "100%" }}>
-              <Typography sx={{ fontFamily: "'EB Garamond', serif", fontSize: 22, color: INK, mb: 0.5 }}>Your skills profile</Typography>
-              <Typography sx={{ fontSize: 13, color: MUTED, mb: 2.5 }}>Eight skills that make up strong Science work.</Typography>
-              <Stack spacing={1.75}>
-                {skillProfile.map((sk) => {
-                  const { fg, band } = bandFor(sk.value);
-                  return (
-                    <Box key={sk.label}>
-                      <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", mb: 0.75 }}>
-                        <Typography sx={{ fontSize: 14, color: "rgb(45,41,38)" }}>{sk.label}</Typography>
-                        <Typography sx={{ fontSize: 12, fontWeight: 600, color: fg }}>{band}</Typography>
-                      </Stack>
-                      <Box sx={{ height: 8, borderRadius: 9999, backgroundColor: "rgb(236,231,224)", overflow: "hidden" }}>
-                        <Box sx={{ height: "100%", width: `${sk.value}%`, backgroundColor: fg, borderRadius: 9999 }} />
-                      </Box>
-                    </Box>
-                  );
-                })}
-              </Stack>
-            </Card>
-          </Grid>
-          <Grid size={{ xs: 12, md: 5 }}>
-            <Stack spacing={2.5}>
-              <Card variant="outlined" sx={{ borderColor: BORDER, backgroundColor: CARD_BG, borderRadius: 3.5, boxShadow: "none", p: 2.75 }}>
-                <Typography sx={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.4px", textTransform: "uppercase", color: "rgb(70,92,70)", mb: 1.5 }}>
-                  Strongest topics
-                </Typography>
-                <Stack spacing={1.25}>
-                  <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", fontSize: 14 }}>
-                    <span style={{ color: "rgb(45,41,38)" }}>Properties of Materials</span>
-                    <strong style={{ color: "rgb(70,92,70)" }}>91%</strong>
-                  </Stack>
-                  <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", fontSize: 14 }}>
-                    <span style={{ color: "rgb(45,41,38)" }}>The Water Cycle</span>
-                    <strong style={{ color: "rgb(70,92,70)" }}>82%</strong>
-                  </Stack>
-                </Stack>
-              </Card>
-              <Card variant="outlined" sx={{ borderColor: BORDER, backgroundColor: CARD_BG, borderRadius: 3.5, boxShadow: "none", p: 2.75 }}>
-                <Typography sx={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.4px", textTransform: "uppercase", color: "rgb(140,105,45)", mb: 1.5 }}>
-                  Topics to focus on
-                </Typography>
-                <Stack spacing={1.25}>
-                  <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", fontSize: 14 }}>
-                    <span style={{ color: "rgb(45,41,38)" }}>Plant Systems</span>
-                    <strong style={{ color: "rgb(155,68,48)" }}>61%</strong>
-                  </Stack>
-                  <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", fontSize: 14 }}>
-                    <span style={{ color: "rgb(45,41,38)" }}>Forces &amp; Energy</span>
-                    <strong style={{ color: "rgb(194,155,98)" }}>64%</strong>
-                  </Stack>
-                </Stack>
-              </Card>
-            </Stack>
-          </Grid>
-        </Grid>
-
-        <Grid container spacing={3}>
-          <Grid size={{ xs: 12, md: 6 }}>
-            <Card variant="outlined" sx={{ borderColor: BORDER, backgroundColor: CARD_BG, borderRadius: 3.5, boxShadow: "none", p: 3, height: "100%" }}>
-              <Typography sx={{ fontFamily: "'EB Garamond', serif", fontSize: 22, color: INK, mb: 2.25 }}>Common mistake types</Typography>
-              <Stack spacing={1.75}>
-                {mistakeTypeBreakdown.map((m) => (
-                  <Box key={m.label}>
-                    <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", mb: 0.75, fontSize: 14 }}>
-                      <span style={{ color: "rgb(45,41,38)" }}>{m.label}</span>
-                      <span style={{ color: MUTED }}>{m.count}×</span>
-                    </Stack>
-                    <Box sx={{ height: 8, borderRadius: 9999, backgroundColor: "rgb(236,231,224)", overflow: "hidden" }}>
-                      <Box sx={{ height: "100%", width: `${Math.round((m.count / maxMistakeCount) * 100)}%`, backgroundColor: "rgb(194,155,98)", borderRadius: 9999 }} />
-                    </Box>
-                  </Box>
-                ))}
-              </Stack>
-            </Card>
-          </Grid>
-          <Grid size={{ xs: 12, md: 6 }}>
-            <Card variant="outlined" sx={{ borderColor: BORDER, backgroundColor: "rgb(26,28,30)", color: "rgb(253,251,247)", borderRadius: 3.5, boxShadow: "none", p: 3, height: "100%" }}>
-              <Stack direction="row" spacing={1.25} sx={{ alignItems: "center", mb: 2 }}>
-                <Box sx={{ width: 30, height: 30, borderRadius: "8px", backgroundColor: accent, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <AutoAwesomeIcon sx={{ fontSize: 17 }} />
-                </Box>
-                <Typography sx={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.5px", textTransform: "uppercase", color: "rgb(255,180,163)" }}>
-                  Your learning priorities
-                </Typography>
-              </Stack>
-              <Stack spacing={1.5}>
-                {LEARNING_PRIORITIES.map((p) => (
-                  <Stack key={p} direction="row" spacing={1.25} sx={{ alignItems: "flex-start", fontSize: 14, color: "rgb(236,231,230)", lineHeight: 1.45 }}>
-                    <Box sx={{ width: 20, height: 20, borderRadius: "6px", flexShrink: 0, backgroundColor: "rgba(255,255,255,0.1)", color: "rgb(255,180,163)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <ArrowForwardIcon sx={{ fontSize: 12 }} />
-                    </Box>
-                    <span>{p}</span>
-                  </Stack>
-                ))}
-              </Stack>
-              <Button
-                component={Link}
-                href="/mistakes"
-                fullWidth
-                sx={{ mt: 2.5, backgroundColor: accent, color: "#fff", textTransform: "none", fontWeight: 600, borderRadius: 2, py: 1.375, "&:hover": { backgroundColor: accent, filter: "brightness(0.96)" } }}
-              >
-                Start with my mistakes
-              </Button>
-            </Card>
-          </Grid>
-        </Grid>
-      </Box>
-    </Box>
-  );
+  return <Box sx={{ minHeight: "100vh", bgcolor: "#F7F4EF", px: { xs: 2.5, sm: 3.75 }, py: 3.75, color: "#2A2622" }}><Box sx={{ maxWidth: 1120, mx: "auto" }}>
+    <Typography sx={{ color: "#A09488", fontSize: 10.5, fontWeight: 600, letterSpacing: ".13em", mb: .75 }}>SUBJECT PROFILE</Typography>
+    <Typography component="h1" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: { xs: 32, sm: 40 }, fontWeight: 500, mb: .65 }}>My learning profile</Typography>
+    <Typography sx={{ color: "#6F675E", fontSize: 14, mb: 2.5 }}>A factual summary of tutor-approved learning evidence.</Typography>
+    {!profile && !error ? <Card aria-label="Loading subject profile" variant="outlined" sx={{ borderColor: "#EBE4D9", bgcolor: "#FFFDFA", p: 2.5 }}><Skeleton height={34} width="38%" /><Skeleton height={130} sx={{ mt: 1 }} /></Card> : null}
+    {error ? <Card component="section" role="alert" variant="outlined" sx={{ borderColor: "#F0DCD4", bgcolor: "#FDF6F3", p: 2.5 }}><Typography component="h2" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 22, mb: .7 }}>Subject profile could not be loaded</Typography><Typography sx={{ color: "#6F675E", fontSize: 13, mb: 1.2 }}>{error}</Typography><Button onClick={() => void load()} variant="outlined" sx={{ borderColor: "#E4DCD0", color: "#2A2622", textTransform: "none" }}>Try again</Button></Card> : null}
+    {profile ? <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2.5, alignItems: "flex-start" }}>
+      <Card component="section" variant="outlined" sx={{ flex: "1 1 440px", borderColor: "#EBE4D9", bgcolor: "#FFFDFA", borderRadius: "14px", p: 2.5, boxShadow: "none" }}><Typography component="h2" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 22, mb: 1.25 }}>Strengths</Typography>{profile.strengths.length ? <Box sx={{ display: "grid", gap: 1 }}>{profile.strengths.map((topic) => <Box key={topic.topicId} sx={{ borderLeft: "2px solid #DCE4DC", pl: 1.25 }}><Typography sx={{ fontSize: 13, fontWeight: 600 }}>{topic.topicName}</Typography><Typography sx={{ color: "#6F675E", fontSize: 12 }}>{Math.round(topic.score)}% mastery · {topic.attemptCount} approved attempts</Typography></Box>)}</Box> : <Typography role="status" sx={{ color: "#6F675E", fontSize: 13 }}>Strengths will appear after more approved evidence.</Typography>}</Card>
+      <Card component="section" variant="outlined" sx={{ flex: "1 1 320px", borderColor: "#EBE4D9", bgcolor: "#FFFDFA", borderRadius: "14px", p: 2.5, boxShadow: "none" }}><Typography component="h2" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 22, mb: 1.25 }}>Topics to focus on</Typography>{profile.growthAreas.length ? <Box sx={{ display: "grid", gap: 1 }}>{profile.growthAreas.map((topic) => <Box key={topic.topicId} sx={{ borderLeft: "2px solid #EDD9D2", pl: 1.25 }}><Typography sx={{ fontSize: 13, fontWeight: 600 }}>{topic.topicName}</Typography><Typography sx={{ color: "#9E3A24", fontSize: 12 }}>{Math.round(topic.score)}% mastery</Typography></Box>)}</Box> : <Typography role="status" sx={{ color: "#6F675E", fontSize: 13 }}>No focus topics are identified yet.</Typography>}</Card>
+      <Card component="section" aria-labelledby="subject-priorities-heading" variant="outlined" sx={{ flex: "1 1 100%", borderColor: "#EBE4D9", bgcolor: "#FFFDFA", borderRadius: "14px", p: 2.5, boxShadow: "none" }}><Typography sx={{ color: "#A09488", fontSize: 10, fontWeight: 700, letterSpacing: ".11em", mb: .65 }}>EVIDENCE-LED PRIORITIES</Typography><Typography id="subject-priorities-heading" component="h2" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 22, mb: 1.25 }}>What to practise next</Typography>{profile.findings.length ? <Box sx={{ display: "grid", gap: 1.1 }}>{profile.findings.map((finding) => <Box key={`${finding.type}-${finding.evidence[0].topicId}`} sx={{ p: 1.35, border: "1px solid #EFE8DE", borderRadius: "10px", bgcolor: "#FBF9F5" }}><Typography sx={{ fontSize: 13, fontWeight: 700 }}>{finding.title}</Typography><Typography sx={{ color: "#5A544C", fontSize: 12.5, mt: .3 }}>{finding.summary}</Typography><Typography sx={{ color: "#9E3A24", fontSize: 12, fontWeight: 600, mt: .6 }}>{finding.suggestedAction}</Typography><Typography sx={{ color: "#8B837A", fontSize: 10.5, mt: .75 }}>Evidence: {finding.evidence.map((item) => `${item.topicName} · ${Math.round(item.score)}%`).join("; ")}</Typography></Box>)}</Box> : <Typography role="status" sx={{ color: "#6F675E", fontSize: 13 }}>No approved evidence is available for learning priorities yet.</Typography>}</Card>
+    </Box> : null}
+  </Box></Box>;
 }

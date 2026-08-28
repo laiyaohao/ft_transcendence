@@ -4,7 +4,10 @@ import * as React from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
+import Checkbox from "@mui/material/Checkbox";
 import Chip from "@mui/material/Chip";
+import FormControlLabel from "@mui/material/FormControlLabel";
+import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
@@ -12,6 +15,7 @@ import {
   approveMarkingReview,
   flagMarkingReview,
   resetMarkingReview,
+  type DiagnosticCategory,
   type MarkingReview as MarkingReviewData,
 } from "@/services/submissions";
 
@@ -35,14 +39,12 @@ export default function MarkingReview({
   const [marks, setMarks] = React.useState(String(initialReview.approvedMarks ?? initialReview.aiSuggestedMarks ?? ""));
   const [feedback, setFeedback] = React.useState(initialReview.approvedFeedback ?? initialReview.aiSuggestedFeedback ?? "");
   const [flagReason, setFlagReason] = React.useState("");
+  const [includeDiagnostic, setIncludeDiagnostic] = React.useState(initialReview.diagnosticEvidence.length > 0);
+  const [diagnosticCategory, setDiagnosticCategory] = React.useState<DiagnosticCategory>(initialReview.diagnosticEvidence[0]?.category ?? "CONCEPT");
+  const [diagnosticDescription, setDiagnosticDescription] = React.useState(initialReview.diagnosticEvidence[0]?.description ?? "");
+  const [diagnosticKeywords, setDiagnosticKeywords] = React.useState(initialReview.diagnosticEvidence[0]?.missingKeywords.join(", ") ?? "");
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-
-  React.useEffect(() => {
-    setReview(initialReview);
-    setMarks(String(initialReview.approvedMarks ?? initialReview.aiSuggestedMarks ?? ""));
-    setFeedback(initialReview.approvedFeedback ?? initialReview.aiSuggestedFeedback ?? "");
-  }, [initialReview]);
 
   const act = async (operation: () => Promise<MarkingReviewData>) => {
     setBusy(true);
@@ -62,6 +64,7 @@ export default function MarkingReview({
   const isManualResult = review.aiSuggestedMarks === null
     && review.aiSuggestedOutcome === null
     && review.aiSuggestedFeedback === null;
+  const diagnosticEvidence = includeDiagnostic ? [{ category: diagnosticCategory, description: diagnosticDescription.trim(), missingKeywords: diagnosticKeywords.split(",").map((keyword) => keyword.trim()).filter(Boolean) }] : [];
 
   return (
     <Box sx={{ maxWidth: 1120, mx: "auto", py: { xs: 2, sm: 4 }, px: { xs: 1.5, sm: 2.5 } }}>
@@ -105,12 +108,20 @@ export default function MarkingReview({
           </Card>
           <Card component="form" noValidate variant="outlined" sx={card} onSubmit={(event) => {
             event.preventDefault();
-            if (validMarks && feedback.trim()) void act(() => approve(review.id, parsedMarks, feedback));
-            else setError(`Enter marks between 0 and ${review.maxMarks.toFixed(2)} and tutor feedback.`);
+            if (validMarks && feedback.trim() && (!includeDiagnostic || diagnosticDescription.trim())) void act(() => approve(review.id, parsedMarks, feedback, diagnosticEvidence));
+            else setError(`Enter marks between 0 and ${review.maxMarks.toFixed(2)}, tutor feedback, and a diagnostic rationale when one is included.`);
           }}>
             <Typography component="h2" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 23, mb: 1.5 }}>Tutor decision</Typography>
             <TextField label="Final marks" value={marks} onChange={(event) => setMarks(event.target.value)} type="number" fullWidth slotProps={{ htmlInput: { min: 0, max: review.maxMarks, step: .01 } }} helperText={`Maximum ${review.maxMarks.toFixed(2)} marks`} sx={{ mb: 1.5 }} disabled={busy} />
             <TextField label="Tutor feedback" value={feedback} onChange={(event) => setFeedback(event.target.value)} fullWidth multiline minRows={3} disabled={busy} />
+            <FormControlLabel control={<Checkbox checked={includeDiagnostic} onChange={() => setIncludeDiagnostic((current) => !current)} disabled={busy} />} label="Include Tutor-confirmed diagnostic evidence" sx={{ mt: 1 }} />
+            {includeDiagnostic && <Stack sx={{ gap: 1, mt: .5 }}>
+              <TextField select label="Diagnostic category" value={diagnosticCategory} onChange={(event) => setDiagnosticCategory(event.target.value as DiagnosticCategory)} disabled={busy}>
+                <MenuItem value="CONCEPT">Concept weakness</MenuItem><MenuItem value="KEYWORD">Keyword omission</MenuItem><MenuItem value="EXPRESSION">Expression weakness</MenuItem><MenuItem value="APPLICATION">Application weakness</MenuItem>
+              </TextField>
+              <TextField label="Tutor diagnostic rationale" value={diagnosticDescription} onChange={(event) => setDiagnosticDescription(event.target.value)} fullWidth multiline minRows={2} required disabled={busy} helperText="This evidence is shared with the learning profile only after approval." />
+              <TextField label="Supporting missing words or phrases" value={diagnosticKeywords} onChange={(event) => setDiagnosticKeywords(event.target.value)} fullWidth disabled={busy} helperText="Optional; separate entries with commas." />
+            </Stack>}
             <Stack direction="row" sx={{ mt: 1.5, gap: 1, flexWrap: "wrap" }}>
               <Button type="submit" disabled={busy} sx={{ bgcolor: "#9E3A24", color: "#FFFDFA", textTransform: "none", "&:hover": { bgcolor: "#7F2D1C" } }}>Approve final result</Button>
               <Button type="button" onClick={() => { setMarks(String(review.aiSuggestedMarks ?? "")); setFeedback(review.aiSuggestedFeedback ?? ""); }} disabled={busy} sx={{ textTransform: "none", color: "#574E45" }}>Use AI suggestion</Button>

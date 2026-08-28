@@ -28,6 +28,8 @@ public class SecurityConfig {
             .authorizeHttpRequests(authorize -> authorize
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
+                // Internal writes are authenticated by a backend-only integration key in their controllers.
+                .requestMatchers("/api/learning/internal/**").permitAll()
                 .requestMatchers("/api/learning/tutor/**").hasRole("TUTOR")
                 .requestMatchers("/api/learning/student/**").hasRole("STUDENT")
                 .requestMatchers("/api/learning/shared/**").hasAnyRole("TUTOR", "STUDENT")

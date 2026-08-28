@@ -9,6 +9,7 @@ import Typography from "@mui/material/Typography";
 import { useParams } from "next/navigation";
 
 import MasteryMap from "@/components/mastery/MasteryMap";
+import LearningInsightsPanel from "@/components/students/LearningInsightsPanel";
 import StudentProfile from "@/components/students/StudentProfile";
 import { fetchMasteryMap, type MasteryMapData } from "@/services/mastery";
 
@@ -44,5 +45,5 @@ function StudentMasteryMap({ studentId }: { studentId: number }) {
 export default function StudentProfilePage() {
   const params = useParams<{ studentId: string }>();
   const studentId = Number(params.studentId);
-  return <Box sx={{ minHeight: "100vh", bgcolor: "#F7F4EF", px: { xs: 2.5, sm: 3.75 }, py: 3.75, color: "#2A2622" }}><Box sx={{ maxWidth: 1420, mx: "auto", animation: "fadeUp .35s ease both" }}><Typography sx={{ color: "#A09488", fontSize: 10.5, fontWeight: 600, letterSpacing: ".13em", mb: .75 }}>STUDENT MANAGEMENT</Typography><StudentProfile studentId={studentId} /><StudentMasteryMap studentId={studentId} /></Box></Box>;
+  return <Box sx={{ minHeight: "100vh", bgcolor: "#F7F4EF", px: { xs: 2.5, sm: 3.75 }, py: 3.75, color: "#2A2622" }}><Box sx={{ maxWidth: 1420, mx: "auto", animation: "fadeUp .35s ease both" }}><Typography sx={{ color: "#A09488", fontSize: 10.5, fontWeight: 600, letterSpacing: ".13em", mb: .75 }}>STUDENT MANAGEMENT</Typography><StudentProfile studentId={studentId} /><Box sx={{ mt: 2.5 }}><LearningInsightsPanel studentId={studentId} /></Box><StudentMasteryMap studentId={studentId} /></Box></Box>;
 }

@@ -36,6 +36,8 @@ export async function createOcrDocument(input:{studentId:number;worksheetId:numb
 export async function correctOcrExtraction(extractionId:number,correctedText:string):Promise<OcrPage>{const response=await fetch(`${gradingUrl}/api/grading/ocr-extractions/${extractionId}`,{method:"PATCH",headers:{...headers(),"Content-Type":"application/json"},body:JSON.stringify({correctedText})});if(!response.ok)throw new SubmissionApiError("OCR correction could not be saved.",response.status);const b=await response.json() as {id:number;text:string;confidence:number;status:OcrPage["status"]};return {pageId:0,extractionId:b.id,text:b.text,confidence:b.confidence,status:b.status};}
 
 export type MarkingReviewStatus = "PENDING_REVIEW" | "FLAGGED" | "APPROVED";
+export type DiagnosticCategory = "CONCEPT" | "KEYWORD" | "EXPRESSION" | "APPLICATION";
+export type DiagnosticEvidence = { category: DiagnosticCategory; description: string; missingKeywords: string[] };
 export type ManualResultRequest = {
   worksheetId: number;
   studentId: number;
@@ -51,10 +53,12 @@ export type MarkingReview = {
   aiSuggestedFeedback: string | null; reviewStatus: MarkingReviewStatus; approvedMarks: number | null;
   approvedFeedback: string | null; reviewedByUserId: number | null; reviewedAt: string | null;
   providerResponseValid: boolean | null;
+  diagnosticEvidence: DiagnosticEvidence[];
   history: Array<{ id: number; action: "APPROVED" | "REVISED" | "FLAGGED" | "RESET_TO_AI"; reviewerUserId: number; previousStatus: MarkingReviewStatus; newStatus: MarkingReviewStatus; previousMarks: number | null; newMarks: number | null; previousFeedback: string | null; newFeedback: string | null; createdAt: string }>;
 };
 
 const reviewStatuses = new Set<MarkingReviewStatus>(["PENDING_REVIEW", "FLAGGED", "APPROVED"]);
+const diagnosticCategories = new Set<DiagnosticCategory>(["CONCEPT", "KEYWORD", "EXPRESSION", "APPLICATION"]);
 const numberValue = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? value : null;
 const stringValue = (value: unknown) => typeof value === "string" ? value : null;
 export function parseMarkingReview(value: unknown): MarkingReview {
@@ -63,12 +67,18 @@ export function parseMarkingReview(value: unknown): MarkingReview {
   const ids = [raw.id, raw.studentId, raw.worksheetId, raw.worksheetQuestionId, raw.questionBankId].map(numberValue);
   if (ids.some((id) => id === null || id <= 0) || !reviewStatuses.has(raw.reviewStatus as MarkingReviewStatus)
     || typeof raw.extractedAnswer !== "string" || typeof raw.modelAnswer !== "string" || numberValue(raw.maxMarks) === null
-    || !Array.isArray(raw.missingKeywords) || !Array.isArray(raw.history)) throw new SubmissionApiError("The marking review response is invalid.");
+    || !Array.isArray(raw.missingKeywords) || !Array.isArray(raw.diagnosticEvidence) || !Array.isArray(raw.history)) throw new SubmissionApiError("The marking review response is invalid.");
+  const diagnosticEvidence = raw.diagnosticEvidence.map((entry): DiagnosticEvidence => {
+    if (!entry || typeof entry !== "object") throw new SubmissionApiError("The marking diagnostic evidence is invalid.");
+    const item = entry as Record<string, unknown>;
+    if (!diagnosticCategories.has(item.category as DiagnosticCategory) || typeof item.description !== "string" || !item.description.trim() || !Array.isArray(item.missingKeywords) || item.missingKeywords.some((keyword) => typeof keyword !== "string" || !keyword.trim())) throw new SubmissionApiError("The marking diagnostic evidence is invalid.");
+    return { category: item.category as DiagnosticCategory, description: item.description, missingKeywords: item.missingKeywords as string[] };
+  });
   return {
     id: ids[0]!, studentId: ids[1]!, worksheetId: ids[2]!, worksheetQuestionId: ids[3]!, questionBankId: ids[4]!, extractedAnswer: raw.extractedAnswer,
     modelAnswer: raw.modelAnswer, maxMarks: numberValue(raw.maxMarks)!, aiSuggestedMarks: numberValue(raw.aiSuggestedMarks), aiSuggestedOutcome: stringValue(raw.aiSuggestedOutcome), aiErrorCategory: stringValue(raw.aiErrorCategory),
     missingKeywords: raw.missingKeywords.filter((keyword): keyword is string => typeof keyword === "string"), aiSuggestedFeedback: stringValue(raw.aiSuggestedFeedback), reviewStatus: raw.reviewStatus as MarkingReviewStatus,
-    approvedMarks: numberValue(raw.approvedMarks), approvedFeedback: stringValue(raw.approvedFeedback), reviewedByUserId: numberValue(raw.reviewedByUserId), reviewedAt: stringValue(raw.reviewedAt), providerResponseValid: typeof raw.providerResponseValid === "boolean" ? raw.providerResponseValid : null,
+    approvedMarks: numberValue(raw.approvedMarks), approvedFeedback: stringValue(raw.approvedFeedback), reviewedByUserId: numberValue(raw.reviewedByUserId), reviewedAt: stringValue(raw.reviewedAt), providerResponseValid: typeof raw.providerResponseValid === "boolean" ? raw.providerResponseValid : null, diagnosticEvidence,
     history: raw.history.map((entry) => {
       if (!entry || typeof entry !== "object") throw new SubmissionApiError("The marking review history is invalid.");
       const item = entry as Record<string, unknown>; const id = numberValue(item.id); const reviewer = numberValue(item.reviewerUserId);
@@ -88,6 +98,9 @@ export function createManualResult(input: ManualResultRequest): Promise<MarkingR
   return reviewRequest("/manual", { method: "POST", body: JSON.stringify(input) });
 }
 export function fetchMarkingReview(submissionId: number): Promise<MarkingReview> { if (!Number.isSafeInteger(submissionId) || submissionId <= 0) return Promise.reject(new SubmissionApiError("The submission id is invalid.", 400)); return reviewRequest(`/${submissionId}`); }
-export function approveMarkingReview(submissionId: number, marks: number, feedback: string): Promise<MarkingReview> { if (!Number.isFinite(marks) || marks < 0 || !feedback.trim()) return Promise.reject(new SubmissionApiError("Marks and tutor feedback are required.", 400)); return reviewRequest(`/${submissionId}/approve`, { method: "POST", body: JSON.stringify({ marks, feedback }) }); }
+export function approveMarkingReview(submissionId: number, marks: number, feedback: string, diagnosticEvidence: DiagnosticEvidence[] = []): Promise<MarkingReview> {
+  if (!Number.isFinite(marks) || marks < 0 || !feedback.trim() || !Array.isArray(diagnosticEvidence) || diagnosticEvidence.some((item) => !diagnosticCategories.has(item.category) || !item.description.trim() || item.missingKeywords.some((keyword) => !keyword.trim()))) return Promise.reject(new SubmissionApiError("Marks, tutor feedback and diagnostic evidence are invalid.", 400));
+  return reviewRequest(`/${submissionId}/approve`, { method: "POST", body: JSON.stringify({ marks, feedback, diagnosticEvidence }) });
+}
 export function flagMarkingReview(submissionId: number, reason: string): Promise<MarkingReview> { if (!reason.trim()) return Promise.reject(new SubmissionApiError("A flag reason is required.", 400)); return reviewRequest(`/${submissionId}/flag`, { method: "POST", body: JSON.stringify({ reason }) }); }
 export function resetMarkingReview(submissionId: number): Promise<MarkingReview> { return reviewRequest(`/${submissionId}/reset`, { method: "POST", body: "{}" }); }

@@ -144,7 +144,9 @@ class MistakeRecordRepositoryTest {
             507L,
             "Extracted answer",
             "Model answer",
-            new BigDecimal("2.00")
+            new BigDecimal("2.00"),
+            607L,
+            "SCI-607"
         );
         pending.recordAiSuggestion(
             new BigDecimal("1.00"),
@@ -191,7 +193,9 @@ class MistakeRecordRepositoryTest {
             worksheetQuestionId + 100L,
             "Extracted answer",
             "Model answer",
-            new BigDecimal("2.00")
+            new BigDecimal("2.00"),
+            607L,
+            "SCI-607"
         );
         answer.approve(OWNER_ID, new BigDecimal("1.00"), "Tutor-approved answer");
         return answer;

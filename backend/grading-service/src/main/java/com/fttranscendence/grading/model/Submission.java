@@ -28,6 +28,7 @@ import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.Objects;
 
 @Entity
 @Table(name = "submissions")
@@ -59,6 +60,13 @@ public class Submission {
 
     @Column(name = "question_bank_id")
     private Long questionBankId;
+
+    /** Immutable syllabus-topic snapshot taken from Learning's protected question response. */
+    @Column(name = "syllabus_topic_id")
+    private Long syllabusTopicId;
+
+    @Column(name = "syllabus_topic_code", length = 120)
+    private String syllabusTopicCode;
 
     @Column(name = "legacy_question_reference", length = 255)
     private String legacyQuestionReference;
@@ -127,6 +135,19 @@ public class Submission {
     @JsonIgnore
     private List<MistakeRecord> mistakes = new ArrayList<>();
 
+    @OneToMany(
+        mappedBy = "submission",
+        cascade = CascadeType.ALL,
+        orphanRemoval = true,
+        fetch = FetchType.LAZY
+    )
+    @OrderBy("position ASC, id ASC")
+    @JsonIgnore
+    private List<ApprovedDiagnosticEvidence> approvedDiagnosticEvidence = new ArrayList<>();
+
+    @Column(name = "mastery_sync_revision", nullable = false)
+    private long masterySyncRevision;
+
     @Column(name = "legacy_record", nullable = false)
     private boolean legacyRecord;
 
@@ -149,7 +170,9 @@ public class Submission {
         Long questionBankId,
         String extractedAnswer,
         String modelAnswerSnapshot,
-        BigDecimal maxMarks
+        BigDecimal maxMarks,
+        Long syllabusTopicId,
+        String syllabusTopicCode
     ) {
         if (submissionDocument == null) {
             throw new IllegalArgumentException("Submission document is required");
@@ -173,6 +196,7 @@ public class Submission {
             "Model answer snapshot"
         );
         submission.maxMarks = normalizeMaximum(maxMarks);
+        submission.setSyllabusTopicSnapshot(syllabusTopicId, syllabusTopicCode);
         return submission;
     }
 
@@ -284,6 +308,34 @@ public class Submission {
     }
 
     /**
+     * Replaces the currently-approved diagnostic projection.  Evidence is
+     * accepted only after an explicit tutor approval; provider suggestions
+     * cannot reach this method.
+     */
+    public void replaceApprovedDiagnosticEvidence(List<DiagnosticEvidenceInput> inputs) {
+        if (reviewStatus != ReviewStatus.APPROVED) {
+            throw new IllegalStateException("Diagnostic evidence requires tutor approval");
+        }
+        approvedDiagnosticEvidence.clear();
+        if (inputs == null) return;
+        int position = 0;
+        for (DiagnosticEvidenceInput input : inputs) {
+            if (input == null) throw new IllegalArgumentException("Diagnostic evidence entry is required");
+            if (!Objects.equals(syllabusTopicId, input.syllabusTopicId())) {
+                throw new IllegalArgumentException("Diagnostic evidence must use the question syllabus topic");
+            }
+            approvedDiagnosticEvidence.add(ApprovedDiagnosticEvidence.create(
+                this, position++, input.syllabusTopicId(), input.category(), input.description(), input.missingKeywords()
+            ));
+        }
+    }
+
+    /** Advances the source revision used by Learning's idempotent projection. */
+    public long nextMasterySyncRevision() {
+        return ++masterySyncRevision;
+    }
+
+    /**
      * Adds one controlled mistake to this answer.  A single answer may have
      * multiple different mistake types, but the same type is recorded once;
      * the same type on another answer remains a separate history event.
@@ -342,6 +394,9 @@ public class Submission {
             requireCanonicalAnswer();
         }
         validateReviewState();
+        if (masterySyncRevision < 0) {
+            throw new IllegalStateException("Mastery synchronization revision cannot be negative");
+        }
     }
 
     private void requireCanonicalAnswer() {
@@ -354,6 +409,8 @@ public class Submission {
         requirePositive(worksheetId, "Worksheet id");
         requirePositive(worksheetQuestionId, "Worksheet question id");
         requirePositive(questionBankId, "Question bank id");
+        requirePositive(syllabusTopicId, "Syllabus topic id");
+        requireText(syllabusTopicCode, "Syllabus topic code");
         requireText(modelAnswerSnapshot, "Model answer snapshot");
         normalizeMaximum(maxMarks);
         if (!studentId.equals(submissionDocument.getStudentId())) {
@@ -476,6 +533,9 @@ public class Submission {
         return questionBankId;
     }
 
+    public Long getSyllabusTopicId() { return syllabusTopicId; }
+    public String getSyllabusTopicCode() { return syllabusTopicCode; }
+
     public String getExtractedAnswer() {
         return extractedAnswer;
     }
@@ -542,6 +602,14 @@ public class Submission {
                     Comparator.nullsLast(Comparator.naturalOrder())))
             .toList();
     }
+
+    public List<ApprovedDiagnosticEvidence> getApprovedDiagnosticEvidence() {
+        return approvedDiagnosticEvidence.stream()
+            .sorted(Comparator.comparing(ApprovedDiagnosticEvidence::getPosition))
+            .toList();
+    }
+
+    public long getMasterySyncRevision() { return masterySyncRevision; }
 
     public List<String> getMissingKeywords() {
         return missingKeywords.stream().sorted().toList();
@@ -610,4 +678,16 @@ public class Submission {
     public void setMissingKeywords(List<String> missingKeywords) {
         this.missingKeywords = normalizeKeywords(missingKeywords);
     }
+
+    private void setSyllabusTopicSnapshot(Long topicId, String topicCode) {
+        this.syllabusTopicId = requirePositive(topicId, "Syllabus topic id");
+        this.syllabusTopicCode = requireText(topicCode, "Syllabus topic code");
+    }
+
+    public record DiagnosticEvidenceInput(
+        Long syllabusTopicId,
+        DiagnosticCategory category,
+        String description,
+        List<String> missingKeywords
+    ) { }
 }

@@ -14,12 +14,17 @@ vi.mock("@/services/mastery", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/services/mastery")>();
   return { ...actual, fetchMasteryMap: vi.fn(), fetchMasteryTopic: vi.fn() };
 });
+vi.mock("@/services/insights", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/services/insights")>();
+  return { ...actual, fetchLearningProfile: vi.fn() };
+});
 
 import ProgressPage from "./progress/page";
 import StudentProfilePage from "./students/[studentId]/page";
 import TopicDetailPage from "./topics/[topicId]/page";
 import TopicsPage from "./topics/page";
 import { fetchMasteryMap, fetchMasteryTopic } from "@/services/mastery";
+import { fetchLearningProfile } from "@/services/insights";
 
 const map: MasteryMapData = {
   studentId: 31,
@@ -31,11 +36,14 @@ const detail: MasteryTopicDetail = {
   node: { topicId: 41, topicCode: "SCI-P5-01", topicName: "Adaptation", parentTopicId: 1, parentDepth: 0, depth: 3, nodeType: "TOPIC", score: 65, status: "PRACTISING", attemptCount: 2, calculatedAt: null },
   history: [],
 };
+const insightProfile = { studentId: 31, strengths: [], growthAreas: [], findings: [], dataAsOf: null, source: "DETERMINISTIC" as const };
 
 describe("mastery-backed pages", () => {
   beforeEach(() => {
     vi.mocked(fetchMasteryMap).mockReset();
     vi.mocked(fetchMasteryTopic).mockReset();
+    vi.mocked(fetchLearningProfile).mockReset();
+    vi.mocked(fetchLearningProfile).mockResolvedValue(insightProfile);
     navigation.topicId = "41";
     navigation.studentId = null;
   });
@@ -77,5 +85,6 @@ describe("mastery-backed pages", () => {
     render(<StudentProfilePage />);
     expect(await screen.findByText("Profile 31")).toBeVisible();
     await waitFor(() => expect(fetchMasteryMap).toHaveBeenCalledWith(31));
+    await waitFor(() => expect(fetchLearningProfile).toHaveBeenCalledWith(31));
   });
 });

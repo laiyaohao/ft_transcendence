@@ -198,7 +198,9 @@ class SubmissionRepositoryTest {
                 506L,
                 "Answer",
                 "Model answer",
-                new BigDecimal("2.00")
+                new BigDecimal("2.00"),
+                606L,
+                "SCI-606"
             )
         );
 
@@ -256,7 +258,9 @@ class SubmissionRepositoryTest {
             questionBankId,
             "Heat moves faster through metal.",
             "Metal is a better conductor.",
-            new BigDecimal("2.00")
+            new BigDecimal("2.00"),
+            606L,
+            "SCI-606"
         );
     }
 }

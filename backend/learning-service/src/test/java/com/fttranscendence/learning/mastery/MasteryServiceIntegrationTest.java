@@ -2,6 +2,7 @@ package com.fttranscendence.learning.mastery;
 
 import com.fttranscendence.learning.student.StudentProfile;
 import com.fttranscendence.learning.student.StudentProfileRepository;
+import com.fttranscendence.learning.LearningServiceApplication;
 import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
 import org.junit.jupiter.api.Test;
@@ -10,7 +11,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import java.math.BigDecimal;
 import static org.junit.jupiter.api.Assertions.*;
 
-@SpringBootTest
+@SpringBootTest(classes = LearningServiceApplication.class)
 @Transactional
 class MasteryServiceIntegrationTest {
     @Autowired MasteryService service; @Autowired StudentProfileRepository students;

@@ -81,9 +81,9 @@ class AiGradingServiceTest {
 
         var result = service.evaluateSubmission("Question", List.of("Target"), "Answer");
 
-        assertEquals("Analysis Complete", result.correctness());
-        assertEquals("Unclassified", result.errorCategory());
-        assertEquals("System error.", result.feedback());
+        assertEquals("Manual review required", result.correctness());
+        assertEquals("AI_RESPONSE_INVALID", result.errorCategory());
+        assertEquals("AI advice is unavailable. Review the rubric evidence before approving.", result.feedback());
     }
 
     @Test
@@ -101,8 +101,8 @@ class AiGradingServiceTest {
 
         var result = service.evaluateSubmission("Question", List.of("Target"), "Answer");
 
-        assertEquals("Unclassified", result.errorCategory());
-        assertEquals("System error.", result.feedback());
+        assertEquals("AI_RESPONSE_INVALID", result.errorCategory());
+        assertEquals("AI advice is unavailable. Review the rubric evidence before approving.", result.feedback());
     }
 
     @Test
@@ -115,7 +115,7 @@ class AiGradingServiceTest {
 
         var result = service.evaluateSubmission("Question", List.of("Target"), "Answer");
 
-        assertEquals("Unclassified", result.errorCategory());
-        assertEquals("System error.", result.feedback());
+        assertEquals("AI_UNAVAILABLE", result.errorCategory());
+        assertEquals("AI advice is unavailable. Review the rubric evidence before approving.", result.feedback());
     }
 }

@@ -6,8 +6,11 @@ import com.fttranscendence.grading.ocr.OcrExtraction;
 import com.fttranscendence.grading.repository.OcrExtractionRepository;
 import com.fttranscendence.grading.repository.SubmissionDocumentRepository;
 import com.fttranscendence.grading.repository.SubmissionRepository;
+import com.fttranscendence.grading.repository.MasterySyncOutboxRepository;
 import com.fttranscendence.grading.security.AuthenticatedUser;
 import com.fttranscendence.grading.service.MarkingReviewService;
+import com.fttranscendence.grading.service.MasterySyncDispatcher;
+import com.fttranscendence.grading.model.DiagnosticCategory;
 import com.fttranscendence.grading.storage.DocumentStorage;
 import jakarta.transaction.Transactional;
 import org.junit.jupiter.api.BeforeEach;
@@ -23,13 +26,19 @@ import java.math.BigDecimal;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.client.ExpectedCount.manyTimes;
 import static org.springframework.test.web.client.ExpectedCount.once;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
-@SpringBootTest(properties = "learning.service.url=http://localhost/learning")
+@SpringBootTest(properties = {
+    "learning.service.url=http://localhost/learning",
+    "learning.service.sync-key=test-sync-key"
+})
 @Transactional
 class MarkingApprovalIntegrationTest {
     private static final AuthenticatedUser TUTOR = new AuthenticatedUser(101L, "tutor@example.com", "TUTOR");
@@ -38,7 +47,9 @@ class MarkingApprovalIntegrationTest {
     @Autowired private SubmissionDocumentRepository documents;
     @Autowired private OcrExtractionRepository extractions;
     @Autowired private SubmissionRepository submissions;
+    @Autowired private MasterySyncOutboxRepository syncOutbox;
     @Autowired private RestTemplate restTemplate;
+    @Autowired private MasterySyncDispatcher syncDispatcher;
 
     private MockRestServiceServer server;
 
@@ -113,6 +124,88 @@ class MarkingApprovalIntegrationTest {
             new AuthenticatedUser(201L, "student@example.com", "STUDENT"), "Bearer token", pending.id()));
     }
 
+    @Test
+    void persistsOnlyTutorConfirmedDiagnosticsAndQueuesOneEventPerRevision() {
+        SubmissionDocument document = readyDocument();
+        extractions.saveAndFlush(new OcrExtraction(document.getPages().get(0), 403L,
+            "Metal gets hot", 0.95, "mock"));
+        expectTutorAndQuestion();
+        server.expect(once(), requestTo("http://localhost/ai-test"))
+            .andRespond(withSuccess(providerResult(), MediaType.APPLICATION_JSON));
+        MarkingReviewService.MarkingReview pending = service.createAdvisoryReview(TUTOR, "Bearer token",
+            new MarkingReviewService.CreateRequest(document.getId(), 403L, 501L));
+        server.verify();
+        assertEquals(1, syncOutbox.count(), "pending review event is durable");
+
+        server.reset();
+        expectTutorOnly();
+        var evidence = new MarkingReviewService.DiagnosticEvidenceRequest(
+            DiagnosticCategory.CONCEPT, "Does not explain heat transfer.", java.util.List.of("heat transfer")
+        );
+        MarkingReviewService.MarkingReview approved = service.approve(TUTOR, "Bearer token", pending.id(),
+            new MarkingReviewService.ApprovalRequest(new BigDecimal("1.00"), "Tutor confirmed.", java.util.List.of(evidence)));
+        assertEquals(1, approved.diagnosticEvidence().size());
+        assertEquals("CONCEPT", approved.diagnosticEvidence().get(0).category());
+        assertEquals(3, syncOutbox.count(), "approval queues mastery and resolved-review events");
+        assertTrue(syncOutbox.findAll().stream().anyMatch(event -> event.getPayload().contains("Does not explain heat transfer.")));
+        assertTrue(syncOutbox.findAll().stream().noneMatch(event -> event.getPayload().contains("Metal gets hot")),
+            "raw OCR answers must never leave the grading service");
+        server.verify();
+
+        server.reset();
+        expectTutorOnly();
+        service.approve(TUTOR, "Bearer token", pending.id(),
+            new MarkingReviewService.ApprovalRequest(new BigDecimal("1.00"), "Tutor confirmed.", java.util.List.of(evidence)));
+        assertEquals(3, syncOutbox.count(), "idempotent retry creates no extra evidence or events");
+        server.verify();
+    }
+
+    @Test
+    void dispatchesOnlyDurableEventsWithTheBackendIntegrationKey() {
+        SubmissionDocument document = readyDocument();
+        extractions.saveAndFlush(new OcrExtraction(document.getPages().get(0), 404L,
+            "Metal gets hot", 0.95, "mock"));
+        expectTutorAndQuestion();
+        server.expect(once(), requestTo("http://localhost/ai-test"))
+            .andRespond(withSuccess(providerResult(), MediaType.APPLICATION_JSON));
+        MarkingReviewService.MarkingReview pending = service.createAdvisoryReview(TUTOR, "Bearer token",
+            new MarkingReviewService.CreateRequest(document.getId(), 404L, 501L));
+        server.verify();
+
+        server.reset();
+        expectTutorOnly();
+        service.approve(TUTOR, "Bearer token", pending.id(),
+            new MarkingReviewService.ApprovalRequest(new BigDecimal("1.00"), "Tutor confirmed.", java.util.List.of(
+                new MarkingReviewService.DiagnosticEvidenceRequest(DiagnosticCategory.CONCEPT,
+                    "Tutor confirmed a heat-transfer concept gap.", java.util.List.of("heat transfer"))
+            )));
+        server.verify();
+
+        server.reset();
+        server.expect(once(), requestTo("http://localhost/learning/api/learning/internal/marking-review-state"))
+            .andExpect(method(org.springframework.http.HttpMethod.POST))
+            .andExpect(header("X-Learning-Integration-Key", "test-sync-key"))
+            .andRespond(withSuccess());
+        server.expect(once(), requestTo("http://localhost/learning/api/learning/internal/approved-marking-evidence"))
+            .andExpect(method(org.springframework.http.HttpMethod.POST))
+            .andExpect(header("X-Learning-Integration-Key", "test-sync-key"))
+            .andExpect(jsonPath("$.state").value("APPROVED"))
+            .andExpect(jsonPath("$.submissionId").value(pending.id()))
+            .andExpect(jsonPath("$.studentId").value(201))
+            .andExpect(jsonPath("$.syllabusTopicId").value(601))
+            .andExpect(jsonPath("$.diagnosticEvidence[0].category").value("CONCEPT"))
+            .andExpect(jsonPath("$.diagnosticEvidence[0].missingKeywords[0]").value("heat transfer"))
+            .andRespond(withSuccess());
+        server.expect(once(), requestTo("http://localhost/learning/api/learning/internal/marking-review-state"))
+            .andExpect(method(org.springframework.http.HttpMethod.POST))
+            .andExpect(header("X-Learning-Integration-Key", "test-sync-key"))
+            .andRespond(withSuccess());
+
+        syncDispatcher.dispatchPending();
+        assertTrue(syncOutbox.findAll().stream().allMatch(event -> event.getDeliveredAt() != null));
+        server.verify();
+    }
+
     private SubmissionDocument readyDocument() {
         SubmissionDocument document = new SubmissionDocument(101L, SubmissionDocument.OwnerRole.TUTOR,
             301L, 201L, SubmissionDocument.SourceType.IMAGES);
@@ -135,7 +228,7 @@ class MarkingApprovalIntegrationTest {
 
     private String question() {
         return """
-            {"id":501,"prompt":"Why does metal feel hot?","totalMarks":2,"modelAnswer":"Metal conducts heat.","keywords":["conductor"],"markingComponents":[{"position":0,"description":"Explains heat conduction","marks":2}]}
+            {"id":501,"prompt":"Why does metal feel hot?","totalMarks":2,"modelAnswer":"Metal conducts heat.","keywords":["conductor"],"syllabusTopic":{"id":601,"code":"SCI-601"},"markingComponents":[{"position":0,"description":"Explains heat conduction","marks":2}]}
             """;
     }
 
