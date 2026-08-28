@@ -126,15 +126,15 @@ export default function Sidebar({
               id="worksheets"
               title="Worksheets"
               icon={<DescriptionOutlinedIcon />}
-              href="/worksheets"
-              selected={pathname === '/worksheets'}
+              href="/std_worksheets"
+              selected={pathname === '/std_worksheets'}
             />
             <SidebarPageItem
               id="upload"
               title="Upload"
               icon={<FileUploadOutlinedIcon />}
-              href="/upload"
-              selected={pathname === '/upload'}
+              href="/std_upload"
+              selected={pathname === '/std_upload'}
             />
             <SidebarPageItem
               id="mistakes"

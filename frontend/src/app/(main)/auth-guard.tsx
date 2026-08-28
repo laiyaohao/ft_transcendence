@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 
-const PROTECTED_PATHS = ['/classes', '/students', '/upload'];
+const PROTECTED_PATHS = ['/classes', '/students', '/std_upload'];
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();

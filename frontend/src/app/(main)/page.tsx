@@ -113,7 +113,7 @@ export default function Page() {
         <Grid container spacing={2.5} sx={{ mb: 5 }}>
           <Grid size={{ xs: 12, sm: 4 }}>
             <QuickActionCard
-              href="/upload"
+              href="/std_upload"
               dark
               icon={<UploadFileIcon fontSize="small" />}
               iconBg={accent}
@@ -171,7 +171,7 @@ export default function Page() {
               <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ p: 2 }}>
                 <Button
                   component={Link}
-                  href="/upload"
+                  href="/std_upload"
                   fullWidth
                   variant="contained"
                   startIcon={<UploadFileIcon fontSize="small" />}
@@ -181,7 +181,7 @@ export default function Page() {
                 </Button>
                 <Button
                   component={Link}
-                  href="/worksheets"
+                  href="/std_worksheets"
                   variant="outlined"
                   sx={{ color: "rgb(45,41,38)", borderColor: "rgb(45,41,38)", textTransform: "none", fontWeight: 600, borderRadius: 2, whiteSpace: "nowrap", flexShrink: 0, width: { xs: "100%", sm: "auto" }, "&:hover": { backgroundColor: INK, color: "#fff", borderColor: INK } }}
                 >
@@ -228,7 +228,7 @@ export default function Page() {
               </Grid>
               <Button
                 component={Link}
-                href="/worksheets/ws1"
+                href="/std_worksheets/ws1"
                 fullWidth
                 endIcon={<ArrowForwardIcon fontSize="small" />}
                 sx={{ mt: 2.25, border: `1px solid ${BORDER}`, borderRadius: 2, py: 1.1, color: "rgb(155,68,48)", fontWeight: 600, textTransform: "none", "&:hover": { backgroundColor: "rgb(253,248,247)" } }}

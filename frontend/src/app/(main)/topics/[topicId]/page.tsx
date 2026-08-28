@@ -135,7 +135,7 @@ export default function Page({ params }: { params: Promise<{ topicId: string }> 
                 <Typography sx={{ fontFamily: "'EB Garamond', serif", fontSize: 20, lineHeight: 1.2, mb: 2 }}>{topic.recWs}</Typography>
                 <Button
                   component={Link}
-                  href={topic.recWsId ? `/upload?ws=${topic.recWsId}` : "/worksheets"}
+                  href={topic.recWsId ? `/std_upload?ws=${topic.recWsId}` : "/std_worksheets"}
                   fullWidth
                   endIcon={<ArrowForwardIcon sx={{ fontSize: 15 }} />}
                   sx={{ backgroundColor: accent, color: "#fff", textTransform: "none", fontWeight: 600, borderRadius: 2, py: 1.375, "&:hover": { backgroundColor: accent, filter: "brightness(0.96)" } }}

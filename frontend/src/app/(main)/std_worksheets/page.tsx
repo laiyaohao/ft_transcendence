@@ -198,7 +198,7 @@ export default function Page() {
                   </Box>
                   <Button
                     component={Link}
-                    href={`/worksheets/${w.id}`}
+                    href={`/std_worksheets/${w.id}`}
                     sx={{ borderRadius: 2, px: 2.25, py: 1.25, fontSize: 14, fontWeight: 600, color: "#fff", backgroundColor: INK, whiteSpace: "nowrap", textTransform: "none", "&:hover": { filter: "brightness(1.3)", backgroundColor: INK } }}
                   >
                     View Results
@@ -207,7 +207,7 @@ export default function Page() {
               ) : (
                 <Button
                   component={Link}
-                  href={`/upload?ws=${w.id}`}
+                  href={`/std_upload?ws=${w.id}`}
                   startIcon={<UploadFileIcon sx={{ fontSize: 15 }} />}
                   sx={{ borderRadius: 2, px: 2.25, py: 1.25, fontSize: 14, fontWeight: 600, color: "#fff", backgroundColor: accent, whiteSpace: "nowrap", textTransform: "none", "&:hover": { filter: "brightness(0.96)", backgroundColor: accent } }}
                 >

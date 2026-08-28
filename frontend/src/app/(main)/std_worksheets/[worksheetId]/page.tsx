@@ -60,7 +60,7 @@ export default function Page({ params }: { params: Promise<{ worksheetId: string
       <Box sx={{ maxWidth: 1000, mx: "auto" }}>
         <Button
           component={Link}
-          href="/worksheets"
+          href="/std_worksheets"
           startIcon={<ArrowBackIcon sx={{ fontSize: 16 }} />}
           sx={{ color: "rgb(77,69,64)", textTransform: "none", fontSize: 14, mb: 2, p: 0, minWidth: 0, "&:hover": { backgroundColor: "transparent", color: INK } }}
         >

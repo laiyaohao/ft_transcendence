@@ -327,14 +327,14 @@ function UploadWizard() {
             </Card>
             <Stack direction="row" spacing={1.5} sx={{ justifyContent: "center" }}>
               <Button
-                onClick={() => router.push("/worksheets")}
+                onClick={() => router.push("/std_worksheets")}
                 variant="outlined"
                 sx={{ borderColor: "rgb(45,41,38)", color: "rgb(45,41,38)", textTransform: "none", fontWeight: 600, borderRadius: 2, px: 2.75, py: 1.5, "&:hover": { backgroundColor: INK, color: "#fff" } }}
               >
                 Back to Worksheets
               </Button>
               <Button
-                onClick={() => router.push("/worksheets/ws1")}
+                onClick={() => router.push("/std_worksheets/ws1")}
                 sx={{ backgroundColor: accent, color: "#fff", textTransform: "none", fontWeight: 600, borderRadius: 2, px: 2.75, py: 1.5, "&:hover": { backgroundColor: accent, filter: "brightness(0.96)" } }}
               >
                 View a sample result

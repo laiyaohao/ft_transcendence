@@ -99,7 +99,7 @@ export default function Page() {
           </Box>
           <Button
             component={Link}
-            href="/worksheets"
+            href="/std_worksheets"
             sx={{ backgroundColor: INK, color: "#fff", textTransform: "none", fontWeight: 600, borderRadius: 2, px: 2.25, py: 1.25, whiteSpace: "nowrap", "&:hover": { backgroundColor: INK, filter: "brightness(1.3)" } }}
           >
             Start practice
