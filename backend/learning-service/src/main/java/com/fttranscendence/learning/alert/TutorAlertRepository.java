@@ -23,6 +23,17 @@ public interface TutorAlertRepository extends Repository<TutorAlert, Long> {
     );
 
     @org.springframework.data.jpa.repository.Query("""
+        select count(distinct alert.studentProfile.id)
+        from TutorAlert alert
+        where alert.tutorId = :tutorId
+          and alert.alertStatus in :statuses
+        """)
+    long countDistinctActiveStudentsByTutorId(
+        @org.springframework.data.repository.query.Param("tutorId") Long tutorId,
+        @org.springframework.data.repository.query.Param("statuses") List<TutorAlert.AlertStatus> statuses
+    );
+
+    @org.springframework.data.jpa.repository.Query("""
         select alert from TutorAlert alert
         where alert.tutorId = :tutorId
           and alert.studentProfile.id = :studentProfileId

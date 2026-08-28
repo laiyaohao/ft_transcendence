@@ -12,4 +12,6 @@ public interface ProgressReportRepository extends Repository<ProgressReport, Lon
     Optional<ProgressReport> findByIdAndTutorId(Long id, Long tutorId);
 
     List<ProgressReport> findAllByStudentProfileIdOrderByPeriodEndDesc(Long studentProfileId);
+
+    long countByTutorIdAndReportStatus(Long tutorId, ProgressReport.ReportStatus reportStatus);
 }
