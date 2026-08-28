@@ -39,8 +39,8 @@ public class SecurityConfig {
         .csrf(AbstractHttpConfigurer::disable)
         .authorizeHttpRequests(auth -> auth
             .requestMatchers("/api/auth/**").permitAll() // Public auth endpoints
-            .requestMatchers("/actuator/**").permitAll() // Health checks
-            .anyRequest().authenticated() // Everything else needs auth
+            .requestMatchers("/actuator/health").permitAll() // Container health check only
+            .anyRequest().denyAll() // Each exposed route must be explicitly allowed
         )
         .exceptionHandling(exception -> exception
             .authenticationEntryPoint(authenticationEntryPoint))

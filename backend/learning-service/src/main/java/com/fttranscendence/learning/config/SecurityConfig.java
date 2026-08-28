@@ -33,7 +33,8 @@ public class SecurityConfig {
                 .requestMatchers("/api/learning/tutor/**").hasRole("TUTOR")
                 .requestMatchers("/api/learning/student/**").hasRole("STUDENT")
                 .requestMatchers("/api/learning/shared/**").hasAnyRole("TUTOR", "STUDENT")
-                .anyRequest().authenticated())
+                // Every public domain route must be explicitly listed above.
+                .anyRequest().denyAll())
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();

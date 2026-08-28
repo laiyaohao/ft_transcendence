@@ -1,8 +1,8 @@
 package com.fttranscendence.learning.mastery;
 
 import com.fttranscendence.learning.security.AuthenticatedUser;
+import com.fttranscendence.learning.security.DomainAuthorizationService;
 import com.fttranscendence.learning.student.StudentProfile;
-import com.fttranscendence.learning.student.StudentProfileRepository;
 import com.fttranscendence.learning.syllabus.SyllabusTopic;
 import com.fttranscendence.learning.syllabus.SyllabusTopicRepository;
 import jakarta.validation.constraints.Positive;
@@ -33,12 +33,12 @@ public class MasteryController {
     private static final BigDecimal ZERO_SCORE = BigDecimal.ZERO.setScale(2);
 
     private final MasteryRecordRepository records;
-    private final StudentProfileRepository students;
+    private final DomainAuthorizationService authorization;
     private final SyllabusTopicRepository topics;
 
-    public MasteryController(MasteryRecordRepository records, StudentProfileRepository students, SyllabusTopicRepository topics) {
+    public MasteryController(MasteryRecordRepository records, DomainAuthorizationService authorization, SyllabusTopicRepository topics) {
         this.records = records;
-        this.students = students;
+        this.authorization = authorization;
         this.topics = topics;
     }
 
@@ -67,11 +67,13 @@ public class MasteryController {
     }
 
     private StudentProfile ownedStudent(long tutorId, long studentId) {
-        return students.findByIdAndTutorId(studentId, tutorId).orElseThrow(MasteryNotFoundException::new);
+        try { return authorization.requireTutorOwnedStudent(tutorId, studentId); }
+        catch (DomainAuthorizationService.ResourceNotFoundException exception) { throw new MasteryNotFoundException(); }
     }
 
     private StudentProfile linkedStudent(long loginUserId) {
-        return students.findByLoginUserId(loginUserId).orElseThrow(MasteryNotFoundException::new);
+        try { return authorization.requireStudentSelf(loginUserId); }
+        catch (DomainAuthorizationService.ResourceNotFoundException exception) { throw new MasteryNotFoundException(); }
     }
 
     private MasteryMapResponse mapFor(StudentProfile student) {

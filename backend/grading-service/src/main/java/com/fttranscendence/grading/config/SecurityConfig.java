@@ -24,14 +24,19 @@ public class SecurityConfig {
         .csrf(AbstractHttpConfigurer::disable)
         .exceptionHandling(exceptions -> exceptions
             .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
-        .sessionManagement(session ->
-            session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-        .authorizeHttpRequests(authorize -> authorize
-            .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-            .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
-            .requestMatchers("/api/grading/tutor/**").hasRole("TUTOR")
-            .requestMatchers(HttpMethod.POST, "/api/grading/ocr").hasAnyRole("TUTOR", "STUDENT")
-            .anyRequest().authenticated())
+            .sessionManagement(session ->
+                session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .authorizeHttpRequests(authorize -> authorize
+                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
+                // Every domain API is explicitly role-scoped.  Do not fall back to
+                // "authenticated" here: new endpoints must opt into a policy.
+                .requestMatchers("/api/grading/tutor/**").hasRole("TUTOR")
+                .requestMatchers(HttpMethod.PATCH, "/api/grading/ocr-extractions/**")
+                    .hasAnyRole("TUTOR", "STUDENT")
+                .requestMatchers(HttpMethod.POST, "/api/grading/submission-documents")
+                    .hasAnyRole("TUTOR", "STUDENT")
+                .anyRequest().denyAll())
         .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
     return http.build();

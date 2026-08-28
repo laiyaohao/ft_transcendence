@@ -1,42 +1,57 @@
 package com.fttranscendence.grading.controller;
 
-import com.fttranscendence.grading.service.AiOcrService;
 import com.fttranscendence.grading.ocr.OcrExtraction;
 import com.fttranscendence.grading.ocr.OcrReviewService;
 import com.fttranscendence.grading.security.AuthenticatedUser;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
-import java.util.Base64;
 import java.util.Map;
 
 @RestController
 @RequestMapping("/api/grading")
 public class OcrController {
 
-    private final AiOcrService aiOcrService; private final OcrReviewService reviews;
+    private final OcrReviewService reviews;
 
-    public OcrController(AiOcrService aiOcrService, OcrReviewService reviews) {
-        this.aiOcrService = aiOcrService; this.reviews=reviews;
+    public OcrController(OcrReviewService reviews) {
+        this.reviews = reviews;
     }
 
-    @PostMapping("/ocr")
-    public ResponseEntity<Map<String, String>> extractText(@RequestParam("file") MultipartFile file) {
-        try {
-            // Convert the uploaded image into a Base64 string
-            String base64Image = Base64.getEncoder().encodeToString(file.getBytes());
-            
-            // Send to Groq Vision Model
-            String extractedText = aiOcrService.extractTextFromImage(base64Image);
-            
-            // Return as JSON
-            return ResponseEntity.ok(Map.of("extracted_text", extractedText));
-
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Failed to process image file."));
-        }
-    }
+    /**
+     * OCR is deliberately not exposed as a context-free endpoint.  Source pages
+     * are authorized and persisted by {@link SubmissionDocumentController}; the
+     * review service runs OCR only after that protected upload flow.
+     */
     @PatchMapping("/ocr-extractions/{extractionId}")
-    public ResponseEntity<Map<String,Object>> correct(@AuthenticationPrincipal AuthenticatedUser user,@PathVariable long extractionId,@RequestBody Map<String,String> request){ OcrExtraction e=reviews.correct(user.userId(),extractionId,request.get("correctedText")); return ResponseEntity.ok(Map.of("id",e.getId(),"text",e.getCorrectedText(),"confidence",e.getConfidence(),"status",e.getStatus().name())); }
+    public ResponseEntity<Map<String, Object>> correct(
+        @AuthenticationPrincipal AuthenticatedUser user,
+        @PathVariable long extractionId,
+        @RequestBody Map<String, String> request
+    ) {
+        OcrExtraction extraction = reviews.correct(user.userId(), extractionId, request.get("correctedText"));
+        return ResponseEntity.ok(Map.of(
+            "id", extraction.getId(),
+            "text", extraction.getCorrectedText(),
+            "confidence", extraction.getConfidence(),
+            "status", extraction.getStatus().name()
+        ));
+    }
+
+    /**
+     * Treat a foreign extraction exactly like a missing one so extraction IDs
+     * cannot be used to enumerate another submitter's pages.
+     */
+    @ExceptionHandler(OcrReviewService.NotFound.class)
+    ResponseEntity<Map<String, String>> extractionNotFound() {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+            .body(Map.of("code", "OCR_EXTRACTION_NOT_FOUND", "error", "OCR extraction was not found."));
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    ResponseEntity<Map<String, String>> invalidCorrection(IllegalArgumentException exception) {
+        return ResponseEntity.badRequest()
+            .body(Map.of("code", "INVALID_OCR_CORRECTION", "error", exception.getMessage()));
+    }
 }

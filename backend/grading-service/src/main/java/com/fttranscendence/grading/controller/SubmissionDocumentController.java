@@ -1,11 +1,143 @@
 package com.fttranscendence.grading.controller;
-import com.fttranscendence.grading.model.*; import com.fttranscendence.grading.ocr.*; import com.fttranscendence.grading.repository.*; import com.fttranscendence.grading.security.AuthenticatedUser; import com.fttranscendence.grading.service.LearningAuthorizationClient; import com.fttranscendence.grading.storage.DocumentStorage;
-import org.springframework.http.*; import org.springframework.security.core.annotation.AuthenticationPrincipal; import org.springframework.web.bind.annotation.*; import org.springframework.web.multipart.MultipartFile; import java.util.*;
-@RestController @RequestMapping("/api/grading/submission-documents") public class SubmissionDocumentController {
- private final SubmissionDocumentRepository docs; private final DocumentStorage storage; private final OcrReviewService review; private final LearningAuthorizationClient auth;
- public SubmissionDocumentController(SubmissionDocumentRepository d,DocumentStorage s,OcrReviewService r,LearningAuthorizationClient a){docs=d;storage=s;review=r;auth=a;}
- @PostMapping(consumes=MediaType.MULTIPART_FORM_DATA_VALUE) public ResponseEntity<DocumentResponse> create(@AuthenticationPrincipal AuthenticatedUser user,@RequestHeader("Authorization") String bearer,@RequestParam long studentId,@RequestParam long worksheetId,@RequestParam(required=false) Long worksheetQuestionId,@RequestParam("files") List<MultipartFile> files) throws Exception { auth.assertCanSubmit(user,bearer,studentId); if(files.isEmpty())throw new IllegalArgumentException("At least one page is required."); boolean pdf=files.stream().anyMatch(f->"application/pdf".equals(f.getContentType())); if(pdf&&files.size()!=1)throw new IllegalArgumentException("A PDF submission must be uploaded alone."); SubmissionDocument doc=new SubmissionDocument(user.userId(),SubmissionDocument.OwnerRole.valueOf(user.role()),worksheetId,studentId,pdf?SubmissionDocument.SourceType.PDF:SubmissionDocument.SourceType.IMAGES); docs.saveAndFlush(doc); for(MultipartFile file:files) doc.addPage(storage.store(user.userId(),Objects.requireNonNullElse(file.getOriginalFilename(),"page"),file.getContentType(),file.getBytes())); docs.saveAndFlush(doc); List<OcrExtraction> extractions=new ArrayList<>(); for(SubmissionPage page:doc.getPages()) extractions.add(review.extract(page,worksheetQuestionId,storage.read(user.userId(),page.getStorageKey()))); doc.markReady(); docs.saveAndFlush(doc); return ResponseEntity.status(HttpStatus.CREATED).body(DocumentResponse.of(doc,extractions)); }
- public record PageResponse(long id,int pageNumber,long extractionId,String text,double confidence,String status){} public record DocumentResponse(long id,List<PageResponse> pages){static DocumentResponse of(SubmissionDocument d,List<OcrExtraction> e){return new DocumentResponse(d.getId(),java.util.stream.IntStream.range(0,e.size()).mapToObj(i->new PageResponse(d.getPages().get(i).getId(),d.getPages().get(i).getPageNumber(),e.get(i).getId(),e.get(i).getCorrectedText()==null?e.get(i).getExtractedText():e.get(i).getCorrectedText(),e.get(i).getConfidence(),e.get(i).getStatus().name())).toList());}}
- @ExceptionHandler({LearningAuthorizationClient.Forbidden.class}) ResponseEntity<Map<String,String>> forbidden(){return ResponseEntity.status(403).body(Map.of("error","You are not allowed to submit for this student."));}
- @ExceptionHandler({IllegalArgumentException.class}) ResponseEntity<Map<String,String>> bad(IllegalArgumentException e){return ResponseEntity.badRequest().body(Map.of("error",e.getMessage()));}
+
+import com.fttranscendence.grading.model.SubmissionDocument;
+import com.fttranscendence.grading.model.SubmissionPage;
+import com.fttranscendence.grading.ocr.OcrExtraction;
+import com.fttranscendence.grading.ocr.OcrReviewService;
+import com.fttranscendence.grading.repository.SubmissionDocumentRepository;
+import com.fttranscendence.grading.security.AuthenticatedUser;
+import com.fttranscendence.grading.service.LearningAuthorizationClient;
+import com.fttranscendence.grading.storage.DocumentStorage;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.IntStream;
+
+/** Stores source pages only after learning-service authorizes the target student. */
+@RestController
+@RequestMapping("/api/grading/submission-documents")
+public class SubmissionDocumentController {
+    private final SubmissionDocumentRepository documents;
+    private final DocumentStorage storage;
+    private final OcrReviewService review;
+    private final LearningAuthorizationClient authorization;
+
+    public SubmissionDocumentController(
+        SubmissionDocumentRepository documents,
+        DocumentStorage storage,
+        OcrReviewService review,
+        LearningAuthorizationClient authorization
+    ) {
+        this.documents = documents;
+        this.storage = storage;
+        this.review = review;
+        this.authorization = authorization;
+    }
+
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<DocumentResponse> create(
+        @AuthenticationPrincipal AuthenticatedUser user,
+        @RequestParam long studentId,
+        @RequestParam long worksheetId,
+        @RequestParam(required = false) Long worksheetQuestionId,
+        @RequestParam("files") List<MultipartFile> files
+    ) throws Exception {
+        // Students must resolve to themselves; Tutors must resolve to a student
+        // in their own learning-service scope.  The grading service never trusts
+        // a client-supplied studentId without this check.
+        authorization.assertCanSubmit(user, studentId, worksheetId, worksheetQuestionId);
+        if (files.isEmpty()) {
+            throw new IllegalArgumentException("At least one page is required.");
+        }
+        boolean pdf = files.stream().anyMatch(file -> "application/pdf".equals(file.getContentType()));
+        if (pdf && files.size() != 1) {
+            throw new IllegalArgumentException("A PDF submission must be uploaded alone.");
+        }
+
+        SubmissionDocument document = new SubmissionDocument(
+            user.userId(),
+            SubmissionDocument.OwnerRole.valueOf(user.role()),
+            worksheetId,
+            studentId,
+            pdf ? SubmissionDocument.SourceType.PDF : SubmissionDocument.SourceType.IMAGES
+        );
+        documents.saveAndFlush(document);
+        for (MultipartFile file : files) {
+            document.addPage(storage.store(
+                user.userId(),
+                Objects.requireNonNullElse(file.getOriginalFilename(), "page"),
+                file.getContentType(),
+                file.getBytes()
+            ));
+        }
+        documents.saveAndFlush(document);
+
+        List<OcrExtraction> extractions = new ArrayList<>();
+        for (SubmissionPage page : document.getPages()) {
+            extractions.add(review.extract(
+                page,
+                worksheetQuestionId,
+                storage.read(user.userId(), page.getStorageKey())
+            ));
+        }
+        document.markReady();
+        documents.saveAndFlush(document);
+        return ResponseEntity.status(HttpStatus.CREATED).body(DocumentResponse.of(document, extractions));
+    }
+
+    public record PageResponse(
+        long id,
+        int pageNumber,
+        long extractionId,
+        String text,
+        double confidence,
+        String status
+    ) { }
+
+    public record DocumentResponse(long id, List<PageResponse> pages) {
+        static DocumentResponse of(SubmissionDocument document, List<OcrExtraction> extractions) {
+            return new DocumentResponse(
+                document.getId(),
+                IntStream.range(0, extractions.size())
+                    .mapToObj(index -> {
+                        OcrExtraction extraction = extractions.get(index);
+                        return new PageResponse(
+                            document.getPages().get(index).getId(),
+                            document.getPages().get(index).getPageNumber(),
+                            extraction.getId(),
+                            extraction.getCorrectedText() == null
+                                ? extraction.getExtractedText()
+                                : extraction.getCorrectedText(),
+                            extraction.getConfidence(),
+                            extraction.getStatus().name()
+                        );
+                    })
+                    .toList()
+            );
+        }
+    }
+
+    @ExceptionHandler(LearningAuthorizationClient.Forbidden.class)
+    ResponseEntity<Map<String, String>> forbidden() {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+            .body(Map.of("code", "SUBMISSION_FORBIDDEN", "error", "You are not allowed to submit for this student."));
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    ResponseEntity<Map<String, String>> bad(IllegalArgumentException exception) {
+        return ResponseEntity.badRequest()
+            .body(Map.of("code", "INVALID_SUBMISSION_DOCUMENT", "error", exception.getMessage()));
+    }
 }

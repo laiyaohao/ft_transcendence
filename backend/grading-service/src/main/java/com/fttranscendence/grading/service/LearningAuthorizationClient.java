@@ -29,16 +29,30 @@ public class LearningAuthorizationClient {
         this.rest = rest;
     }
 
-    public void assertCanSubmit(AuthenticatedUser user, String bearer, long studentId) {
-        String path = "STUDENT".equals(user.role())
-            ? "/api/learning/student/profile"
-            : "/api/learning/tutor/students/" + studentId;
+    public void assertCanSubmit(AuthenticatedUser user, long studentId, long worksheetId, Long worksheetQuestionId) {
+        if (user == null || (!"STUDENT".equals(user.role()) && !"TUTOR".equals(user.role()))) {
+            throw new Forbidden();
+        }
         try {
-            ResponseEntity<Map> response = get(bearer, path);
-            if (!response.getStatusCode().is2xxSuccessful()
-                || ("STUDENT".equals(user.role()) && !sameId(response.getBody(), studentId))) {
+            if (syncKey == null || syncKey.isBlank()) {
                 throw new Forbidden();
             }
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("X-Learning-Integration-Key", syncKey);
+            headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+            Map<String, Object> request = new java.util.LinkedHashMap<>();
+            request.put("actorUserId", user.userId());
+            request.put("actorRole", user.role());
+            request.put("studentId", studentId);
+            request.put("worksheetId", worksheetId);
+            request.put("worksheetQuestionId", worksheetQuestionId);
+            ResponseEntity<Void> response = rest.exchange(
+                base + "/api/learning/internal/submission-authorization",
+                HttpMethod.POST,
+                new HttpEntity<>(request, headers),
+                Void.class
+            );
+            if (!response.getStatusCode().is2xxSuccessful()) throw new Forbidden();
         } catch (Forbidden exception) {
             throw exception;
         } catch (Exception exception) {

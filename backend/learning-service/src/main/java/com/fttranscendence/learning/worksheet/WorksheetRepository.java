@@ -11,6 +11,8 @@ public interface WorksheetRepository extends Repository<Worksheet, Long> {
 
     <S extends Worksheet> S save(S worksheet);
 
+    Optional<Worksheet> findById(Long id);
+
     Optional<Worksheet> findByIdAndTutorId(Long id, Long tutorId);
 
     Optional<Worksheet> findByTutorIdAndCode(Long tutorId, String code);

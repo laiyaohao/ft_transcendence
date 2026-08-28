@@ -11,6 +11,8 @@ public interface StudentProfileRepository extends Repository<StudentProfile, Lon
 
     <S extends StudentProfile> S save(S studentProfile);
 
+    Optional<StudentProfile> findById(Long id);
+
     Optional<StudentProfile> findByIdAndTutorId(Long id, Long tutorId);
 
     Optional<StudentProfile> findByLoginUserId(Long loginUserId);
