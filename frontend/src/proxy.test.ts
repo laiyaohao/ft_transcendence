@@ -20,19 +20,24 @@ describe("route proxy", () => {
     const response = proxy(request("/tutor/dashboard", "STUDENT"));
 
     expect(response.status).toBe(307);
-    expect(response.headers.get("location")).toBe("http://localhost:3000/");
+    expect(response.headers.get("location")).toBe("http://localhost:3000/student/dashboard");
   });
 
   it("protects the Question Bank and prevents Students from reaching its nested editor", () => {
     expect(proxy(request("/questions/7/edit", "TUTOR")).status).toBe(200);
     const response = proxy(request("/questions/7/edit", "STUDENT"));
     expect(response.status).toBe(307);
-    expect(response.headers.get("location")).toBe("http://localhost:3000/");
+    expect(response.headers.get("location")).toBe("http://localhost:3000/student/dashboard");
   });
 
   it("allows the Tutor worksheet builder but keeps the Student worksheet area separate", () => {
     expect(proxy(request("/tutor/worksheets/new", "TUTOR")).status).toBe(200);
-    expect(proxy(request("/tutor/worksheets/new", "STUDENT")).headers.get("location")).toBe("http://localhost:3000/");
+    expect(proxy(request("/tutor/worksheets/new", "STUDENT")).headers.get("location")).toBe("http://localhost:3000/student/dashboard");
+  });
+
+  it("allows the Student dashboard while preventing Tutor access", () => {
+    expect(proxy(request("/student/dashboard", "STUDENT")).status).toBe(200);
+    expect(proxy(request("/student/dashboard", "TUTOR")).headers.get("location")).toBe("http://localhost:3000/tutor/dashboard");
   });
 
   it("sends a signed-in Tutor away from login to the Tutor dashboard", () => {

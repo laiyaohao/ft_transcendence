@@ -28,7 +28,7 @@ describe('role-aware navigation configuration', () => {
     const items = getNavigationItems('STUDENT');
 
     expect(items.map((item) => item.href)).toEqual([
-      '/',
+      '/student/dashboard',
       '/worksheets',
       '/upload',
       '/mistakes',
@@ -45,7 +45,7 @@ describe('role-aware navigation configuration', () => {
     const home = getNavigationItems('STUDENT')[0];
     const worksheets = getNavigationItems('STUDENT')[1];
 
-    expect(isNavigationItemSelected(home, '/')).toBe(true);
+    expect(isNavigationItemSelected(home, '/student/dashboard')).toBe(true);
     expect(isNavigationItemSelected(home, '/worksheets')).toBe(false);
     expect(isNavigationItemSelected(worksheets, '/worksheets')).toBe(true);
     expect(isNavigationItemSelected(worksheets, '/worksheets/42')).toBe(true);

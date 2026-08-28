@@ -145,6 +145,11 @@ public class WorksheetAssignment {
         return id;
     }
 
+    /** Identifier used for navigation to the assigned worksheet. */
+    public Long getWorksheetId() {
+        return worksheet == null ? null : worksheet.getId();
+    }
+
     public Worksheet.AudienceType getAssignmentType() {
         return assignmentType;
     }

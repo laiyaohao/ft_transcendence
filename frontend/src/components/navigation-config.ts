@@ -33,7 +33,7 @@ const TUTOR_NAVIGATION: readonly NavigationItem[] = [
 ];
 
 const STUDENT_NAVIGATION: readonly NavigationItem[] = [
-  { id: 'home', title: 'Home', href: '/', icon: HomeOutlinedIcon },
+  { id: 'home', title: 'Home', href: '/student/dashboard', icon: HomeOutlinedIcon },
   { id: 'worksheets', title: 'Worksheets', href: '/worksheets', icon: DescriptionOutlinedIcon },
   { id: 'upload', title: 'Upload', href: '/upload', icon: FileUploadOutlinedIcon },
   { id: 'mistakes', title: 'Mistakes', href: '/mistakes', icon: WarningAmberOutlinedIcon },

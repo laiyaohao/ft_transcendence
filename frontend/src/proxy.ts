@@ -5,6 +5,7 @@ import { getRoleHome, isPathAllowed, parseAuthToken } from '@/lib/auth';
 const PUBLIC_PATHS = ['/login', '/signup'];
 const PROTECTED_PATHS = [
   '/',
+  '/student/dashboard',
   '/tutor/dashboard',
   '/tutor/worksheets',
   '/classes',
@@ -47,6 +48,7 @@ export function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     '/',
+    '/student/dashboard/:path*',
     '/tutor/dashboard/:path*',
     '/tutor/worksheets/:path*',
     '/classes/:path*',

@@ -22,6 +22,7 @@ interface TokenClaims {
 const TUTOR_PATHS = ['/tutor/dashboard', '/tutor/worksheets', '/tutor/alerts', '/classes', '/students', '/questions', '/reports', '/upload', '/profile'];
 const STUDENT_PATHS = [
   '/',
+  '/student/dashboard',
   '/worksheets',
   '/upload',
   '/mistakes',
@@ -66,7 +67,7 @@ export function parseAuthToken(token: string, nowMs = Date.now()): AuthSession |
 }
 
 export function getRoleHome(role: AuthRole): string {
-  return role === 'TUTOR' ? '/tutor/dashboard' : '/';
+  return role === 'TUTOR' ? '/tutor/dashboard' : '/student/dashboard';
 }
 
 export function isPathAllowed(role: AuthRole, pathname: string): boolean {

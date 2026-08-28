@@ -7,4 +7,5 @@ import java.util.Optional;
 public interface MasteryApprovedResultRepository extends JpaRepository<MasteryApprovedResult, Long> {
     Optional<MasteryApprovedResult> findBySourceSubmissionId(Long sourceSubmissionId);
     List<MasteryApprovedResult> findByStudentProfileIdAndSyllabusTopicIdAndActiveTrueOrderByReviewedAtAscSourceSubmissionIdAsc(Long studentProfileId, Long syllabusTopicId);
+    Optional<MasteryApprovedResult> findFirstByStudentProfileIdAndActiveTrueOrderByReviewedAtDescSourceSubmissionIdDesc(Long studentProfileId);
 }

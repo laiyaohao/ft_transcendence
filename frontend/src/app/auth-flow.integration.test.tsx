@@ -153,7 +153,7 @@ describe("authentication form integration", () => {
       }),
     );
     expect(localStorage.getItem("jwt_token")).toBe(token);
-    expect(navigation.replace).toHaveBeenCalledWith("/");
+    expect(navigation.replace).toHaveBeenCalledWith("/student/dashboard");
     expect(screen.queryByRole("button", { name: "Tutor" })).not.toBeInTheDocument();
   });
 

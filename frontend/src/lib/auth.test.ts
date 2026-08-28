@@ -63,13 +63,14 @@ describe('authentication sessions', () => {
   it('returns distinct role homes and prevents cross-role navigation', () => {
     expect(getRoleHome('TUTOR')).toBe('/tutor/dashboard');
     expect(isPathAllowed('TUTOR', '/tutor/dashboard')).toBe(true);
-    expect(getRoleHome('STUDENT')).toBe('/');
+    expect(getRoleHome('STUDENT')).toBe('/student/dashboard');
     expect(isPathAllowed('TUTOR', '/classes/42')).toBe(true);
     expect(isPathAllowed('TUTOR', '/questions/42/edit')).toBe(true);
     expect(isPathAllowed('TUTOR', '/tutor/worksheets/new')).toBe(true);
     expect(isPathAllowed('TUTOR', '/reports/12')).toBe(true);
     expect(isPathAllowed('TUTOR', '/progress')).toBe(false);
     expect(isPathAllowed('STUDENT', '/progress')).toBe(true);
+    expect(isPathAllowed('STUDENT', '/student/dashboard')).toBe(true);
     expect(isPathAllowed('STUDENT', '/reports/12')).toBe(true);
     expect(isPathAllowed('STUDENT', '/classes')).toBe(false);
     expect(isPathAllowed('STUDENT', '/questions')).toBe(false);

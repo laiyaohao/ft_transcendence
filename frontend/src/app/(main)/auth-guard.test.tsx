@@ -81,7 +81,7 @@ describe('AuthGuard', () => {
     render(<AuthGuard><div>Tutor classes</div></AuthGuard>);
 
     expect(await screen.findByText(/do not have permission/i)).toBeVisible();
-    await waitFor(() => expect(testState.replace).toHaveBeenCalledWith('/'));
+    await waitFor(() => expect(testState.replace).toHaveBeenCalledWith('/student/dashboard'));
     expect(screen.queryByText('Tutor classes')).not.toBeInTheDocument();
   });
 
