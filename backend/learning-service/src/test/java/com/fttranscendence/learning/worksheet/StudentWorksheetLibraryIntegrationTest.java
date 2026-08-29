@@ -20,6 +20,7 @@ import java.util.Date;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.nullValue;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -63,11 +64,13 @@ class StudentWorksheetLibraryIntegrationTest {
         jdbc.update("INSERT INTO class_memberships (student_profile_id, class_id, tutor_id) VALUES (?, ?, ?)", learner, classId, OWNER);
 
         long marked = worksheet(OWNER, "LIB-MARKED", "Marked science", "CLASS");
-        long markedQ1 = question(marked, topic, "LIB-MARKED-Q1", 0, new BigDecimal("2.00"));
-        long markedQ2 = question(marked, topic, "LIB-MARKED-Q2", 1, new BigDecimal("2.00"));
+        QuestionReference markedQ1 = question(marked, topic, "LIB-MARKED-Q1", 0, new BigDecimal("2.00"));
+        QuestionReference markedQ2 = question(marked, topic, "LIB-MARKED-Q2", 1, new BigDecimal("2.00"));
+        assertNotEquals(markedQ1.questionBankId(), markedQ1.worksheetQuestionId());
+        assertNotEquals(markedQ2.questionBankId(), markedQ2.worksheetQuestionId());
         classAssignment(marked, classId, "2026-08-10 09:00:00", "2026-08-25 17:00:00");
-        approved(marked, markedQ1, learner, topic, 5001L, "1.00", "2.00", "2026-08-15 09:00:00");
-        approved(marked, markedQ2, learner, topic, 5002L, "2.00", "2.00", "2026-08-15 10:00:00");
+        approved(marked, markedQ1.questionBankId(), learner, topic, 5001L, "1.00", "2.00", "2026-08-15 09:00:00");
+        approved(marked, markedQ2.questionBankId(), learner, topic, 5002L, "2.00", "2.00", "2026-08-15 10:00:00");
         review(marked, learner, 5001L, "RESOLVED", "2026-08-12 08:00:00");
 
         long submitted = worksheet(OWNER, "LIB-SUBMITTED", "Waiting for review", "STUDENT");
@@ -114,10 +117,10 @@ class StudentWorksheetLibraryIntegrationTest {
         long learner = student(OWNER, LEARNER_LOGIN, "Ari Learner");
         long topic = topic();
         long worksheet = worksheet(OWNER, "LIB-PARTIAL", "Partially marked", "STUDENT");
-        long q1 = question(worksheet, topic, "LIB-PARTIAL-Q1", 0, BigDecimal.ONE);
+        QuestionReference q1 = question(worksheet, topic, "LIB-PARTIAL-Q1", 0, BigDecimal.ONE);
         question(worksheet, topic, "LIB-PARTIAL-Q2", 1, BigDecimal.ONE);
         studentAssignment(worksheet, learner, "2026-08-10 09:00:00", null);
-        approved(worksheet, q1, learner, topic, 5101L, "1.00", "1.00", "2026-08-12 09:00:00");
+        approved(worksheet, q1.questionBankId(), learner, topic, 5101L, "1.00", "1.00", "2026-08-12 09:00:00");
         review(worksheet, learner, 5101L, "RESOLVED", "2026-08-11 09:00:00");
 
         mvc.perform(get("/api/learning/student/worksheets").header("Authorization", bearer("STUDENT", LEARNER_LOGIN)))
@@ -154,10 +157,25 @@ class StudentWorksheetLibraryIntegrationTest {
     private long topic() { return jdbc.queryForObject("SELECT id FROM syllabus_topics WHERE node_type = 'SUBTOPIC' AND active = true ORDER BY id LIMIT 1", Long.class); }
     private long tutorClass(long tutor, String name) { jdbc.update("INSERT INTO tutor_classes (tutor_id, class_name, normalized_class_name, subject, class_level, status) VALUES (?, ?, ?, 'Science', 'P5', 'ACTIVE')", tutor, name, name.toLowerCase()); return jdbc.queryForObject("SELECT id FROM tutor_classes WHERE tutor_id = ? AND class_name = ?", Long.class, tutor, name); }
     private long worksheet(long tutor, String code, String title, String audience) { jdbc.update("INSERT INTO worksheets (tutor_id, code, title, audience_type, status, approved_at) VALUES (?, ?, ?, ?, 'APPROVED', ?)", tutor, code, title, audience, java.sql.Timestamp.valueOf("2026-08-01 09:00:00")); return jdbc.queryForObject("SELECT id FROM worksheets WHERE tutor_id = ? AND code = ?", Long.class, tutor, code); }
-    private long question(long worksheet, long topic, String code, int position, BigDecimal marks) { jdbc.update("INSERT INTO questions (code, syllabus_topic_id, syllabus_topic_type, question_type, prompt, total_marks, model_answer, archive_state) VALUES (?, ?, 'SUBTOPIC', 'OPEN_ENDED', ?, ?, 'Answer', 'ACTIVE')", code, topic, code + " prompt", marks); long question = jdbc.queryForObject("SELECT id FROM questions WHERE code = ?", Long.class, code); jdbc.update("INSERT INTO marking_components (question_id, position, description, marks) VALUES (?, 0, 'Criterion', ?)", question, marks); jdbc.update("INSERT INTO worksheet_questions (worksheet_id, question_id, position) VALUES (?, ?, ?)", worksheet, question, position); return jdbc.queryForObject("SELECT id FROM worksheet_questions WHERE worksheet_id = ? AND question_id = ?", Long.class, worksheet, question); }
+    private QuestionReference question(long worksheet, long topic, String code, int position, BigDecimal marks) {
+        jdbc.update("INSERT INTO questions (code, syllabus_topic_id, syllabus_topic_type, question_type, prompt, total_marks, model_answer, archive_state) VALUES (?, ?, 'SUBTOPIC', 'OPEN_ENDED', ?, ?, 'Answer', 'ACTIVE')", code, topic, code + " prompt", marks);
+        long questionBankId = jdbc.queryForObject("SELECT id FROM questions WHERE code = ?", Long.class, code);
+        jdbc.update("INSERT INTO marking_components (question_id, position, description, marks) VALUES (?, 0, 'Criterion', ?)", questionBankId, marks);
+        jdbc.update("INSERT INTO worksheet_questions (worksheet_id, question_id, position) VALUES (?, ?, ?)", worksheet, questionBankId, position);
+        long worksheetQuestionId = jdbc.queryForObject("SELECT id FROM worksheet_questions WHERE worksheet_id = ? AND question_id = ?", Long.class, worksheet, questionBankId);
+        // The real producers send question-bank ids. Force the fixture's join-row
+        // identity into a different namespace so a mistaken comparison cannot pass.
+        if (worksheetQuestionId == questionBankId) {
+            long distinctWorksheetQuestionId = worksheetQuestionId + 1_000_000L;
+            jdbc.update("UPDATE worksheet_questions SET id = ? WHERE id = ?", distinctWorksheetQuestionId, worksheetQuestionId);
+            worksheetQuestionId = distinctWorksheetQuestionId;
+        }
+        return new QuestionReference(questionBankId, worksheetQuestionId);
+    }
     private void classAssignment(long worksheet, long classId, String assigned, String due) { jdbc.update("INSERT INTO worksheet_assignments (worksheet_id, tutor_id, assignment_type, target_id, class_id, assigned_at, due_at) VALUES (?, ?, 'CLASS', ?, ?, ?, ?)", worksheet, OWNER, classId, classId, java.sql.Timestamp.valueOf(assigned), java.sql.Timestamp.valueOf(due)); }
     private void studentAssignment(long worksheet, long student, String assigned, String due) { long tutor = jdbc.queryForObject("SELECT tutor_id FROM worksheets WHERE id = ?", Long.class, worksheet); jdbc.update("INSERT INTO worksheet_assignments (worksheet_id, tutor_id, assignment_type, target_id, student_profile_id, assigned_at, due_at) VALUES (?, ?, 'STUDENT', ?, ?, ?, ?)", worksheet, tutor, student, student, java.sql.Timestamp.valueOf(assigned), due == null ? null : java.sql.Timestamp.valueOf(due)); }
-    private void approved(long worksheet, long worksheetQuestion, long student, long topic, long submission, String marks, String max, String at) { jdbc.update("INSERT INTO mastery_approved_results (source_submission_id, tutor_id, worksheet_id, worksheet_question_id, student_profile_id, syllabus_topic_id, approved_marks, available_marks, repeated_mistake_count, revision, active, reviewed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 1, true, ?)", submission, OWNER, worksheet, worksheetQuestion, student, topic, new BigDecimal(marks), new BigDecimal(max), java.sql.Timestamp.valueOf(at)); }
+    private void approved(long worksheet, long questionBankId, long student, long topic, long submission, String marks, String max, String at) { jdbc.update("INSERT INTO mastery_approved_results (source_submission_id, tutor_id, worksheet_id, worksheet_question_id, student_profile_id, syllabus_topic_id, approved_marks, available_marks, repeated_mistake_count, revision, active, reviewed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 1, true, ?)", submission, OWNER, worksheet, questionBankId, student, topic, new BigDecimal(marks), new BigDecimal(max), java.sql.Timestamp.valueOf(at)); }
     private void review(long worksheet, long student, long submission, String state, String at) { jdbc.update("INSERT INTO marking_review_status_projection (source_submission_id, tutor_id, worksheet_id, student_profile_id, revision, review_state, requested_at) VALUES (?, ?, ?, ?, 1, ?, ?)", submission, OWNER, worksheet, student, state, java.sql.Timestamp.valueOf(at)); }
     private String bearer(String role, long user) { Instant now = Instant.now(); return "Bearer " + Jwts.builder().setSubject("student@example.com").claim("role", role).claim("userId", user).setIssuedAt(Date.from(now)).setExpiration(Date.from(now.plusSeconds(600))).signWith(Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8)), SignatureAlgorithm.HS256).compact(); }
+    private record QuestionReference(long questionBankId, long worksheetQuestionId) { }
 }

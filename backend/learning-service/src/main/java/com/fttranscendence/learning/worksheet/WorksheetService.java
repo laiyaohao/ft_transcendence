@@ -248,18 +248,24 @@ public class WorksheetService {
 
     private LibraryOutcome outcome(Worksheet worksheet, List<MasteryApprovedResult> results,
             List<MarkingReviewStatusProjection> reviews) {
-        Set<Long> questionIds = worksheet.getQuestions().stream().map(WorksheetQuestion::getId).collect(java.util.stream.Collectors.toSet());
-        Map<Long, MasteryApprovedResult> latestByQuestion = new HashMap<>();
+        // Grading publishes the question-bank id in the legacy worksheetQuestionId
+        // projection field. It never has the worksheet_questions join-row id, so
+        // completion must be evaluated in the same question-bank-id namespace.
+        Set<Long> questionBankIds = worksheet.getQuestions().stream()
+            .map(worksheetQuestion -> worksheetQuestion.getQuestion().getId())
+            .collect(java.util.stream.Collectors.toSet());
+        Map<Long, MasteryApprovedResult> latestByQuestionBankId = new HashMap<>();
         for (MasteryApprovedResult result : results) {
-            if (result.getWorksheetQuestionId() != null && questionIds.contains(result.getWorksheetQuestionId())) {
-                latestByQuestion.put(result.getWorksheetQuestionId(), result);
+            Long questionBankId = result.getWorksheetQuestionId();
+            if (questionBankId != null && questionBankIds.contains(questionBankId)) {
+                latestByQuestionBankId.put(questionBankId, result);
             }
         }
         LocalDateTime submittedAt = reviews.stream().map(MarkingReviewStatusProjection::getRequestedAt).min(LocalDateTime::compareTo).orElse(null);
         LocalDateTime reviewedAt = results.stream().map(MasteryApprovedResult::getReviewedAt).max(LocalDateTime::compareTo).orElse(null);
-        if (!questionIds.isEmpty() && latestByQuestion.keySet().containsAll(questionIds)) {
-            BigDecimal awarded = latestByQuestion.values().stream().map(MasteryApprovedResult::getApprovedMarks).reduce(BigDecimal.ZERO, BigDecimal::add);
-            BigDecimal available = latestByQuestion.values().stream().map(MasteryApprovedResult::getAvailableMarks).reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (!questionBankIds.isEmpty() && latestByQuestionBankId.keySet().containsAll(questionBankIds)) {
+            BigDecimal awarded = latestByQuestionBankId.values().stream().map(MasteryApprovedResult::getApprovedMarks).reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal available = latestByQuestionBankId.values().stream().map(MasteryApprovedResult::getAvailableMarks).reduce(BigDecimal.ZERO, BigDecimal::add);
             if (available.signum() > 0) return new LibraryOutcome(WorksheetRequests.StudentWorksheetStatus.MARKED,
                 submittedAt, reviewedAt, new WorksheetRequests.ScoreSummary(awarded, available,
                     awarded.multiply(BigDecimal.valueOf(100)).divide(available, 2, RoundingMode.HALF_UP)));

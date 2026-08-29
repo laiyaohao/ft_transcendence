@@ -13,6 +13,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -116,6 +117,24 @@ class StudentProgressIntegrationTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.node.status").value("NOT_STARTED"))
             .andExpect(jsonPath("$.history").isEmpty());
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void serializesApprovedHistoryWhenTheHttpRequestHasNoOpenPersistenceContext() throws Exception {
+        StudentProfile learner = student(TUTOR_ID, STUDENT_LOGIN_ID, "Detached History Learner");
+        long topicId = activeTopics(1).get(0);
+        approve(8241L, learner.getId(), topicId, "8.00", 0);
+
+        // This test deliberately opts out of the class transaction. It catches
+        // lazy collection access in the MVC controller when OSIV is disabled.
+        mvc.perform(get("/api/learning/student/mastery-map/topics/{topicId}", topicId)
+                .header("Authorization", bearer("STUDENT", STUDENT_LOGIN_ID)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.node.status").value("IMPROVING"))
+            .andExpect(jsonPath("$.history[0].previousScore").value(0.00))
+            .andExpect(jsonPath("$.history[0].newScore").value(80.00))
+            .andExpect(jsonPath("$.history[0].reason").value("Tutor-approved result: 80.00% attempt evidence"));
     }
 
     @Test

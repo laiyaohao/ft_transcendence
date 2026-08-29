@@ -31,20 +31,41 @@ export default function TopicDetailPage() {
   const [detail, setDetail] = React.useState<MasteryTopicDetail | null>(null);
   const [error, setError] = React.useState<string | null>(topicId ? null : "This topic reference is invalid.");
   const [loading, setLoading] = React.useState(Boolean(topicId));
+  const requestVersion = React.useRef(0);
   const load = React.useCallback(async () => {
     if (!topicId) return;
+    const version = ++requestVersion.current;
+    setDetail(null);
     setError(null);
     setLoading(true);
-    try { setDetail(await fetchMasteryTopic(topicId, studentId ?? undefined)); }
-    catch (reason) { setDetail(null); setError(reason instanceof Error ? reason.message : "Topic mastery could not be loaded."); }
-    finally { setLoading(false); }
+    try {
+      const loaded = await fetchMasteryTopic(topicId, studentId ?? undefined);
+      if (requestVersion.current === version) setDetail(loaded);
+    }
+    catch (reason) {
+      if (requestVersion.current === version) {
+        setDetail(null);
+        setError(reason instanceof Error ? reason.message : "Topic mastery could not be loaded.");
+      }
+    }
+    finally { if (requestVersion.current === version) setLoading(false); }
   }, [studentId, topicId]);
   React.useEffect(() => {
-    if (!topicId) return;
+    const version = ++requestVersion.current;
+    if (!topicId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- route changes must clear the prior topic before requesting the next one.
+      setDetail(null);
+      setLoading(false);
+      setError("This topic reference is invalid.");
+      return;
+    }
     let current = true;
+    setDetail(null);
+    setError(null);
+    setLoading(true);
     void fetchMasteryTopic(topicId, studentId ?? undefined).then(
-      (loaded) => { if (current) { setDetail(loaded); setLoading(false); } },
-      (reason: unknown) => { if (current) { setDetail(null); setError(reason instanceof Error ? reason.message : "Topic mastery could not be loaded."); setLoading(false); } },
+      (loaded) => { if (current && requestVersion.current === version) { setDetail(loaded); setLoading(false); } },
+      (reason: unknown) => { if (current && requestVersion.current === version) { setDetail(null); setError(reason instanceof Error ? reason.message : "Topic mastery could not be loaded."); setLoading(false); } },
     );
     return () => { current = false; };
   }, [studentId, topicId]);

@@ -23,16 +23,54 @@ const detail: MasteryTopicDetail = {
 describe("student topic detail", () => {
   beforeEach(() => { vi.mocked(fetchMasteryTopic).mockReset(); navigation.topicId = "41"; navigation.studentId = null; });
 
-  it("drills into the self-scoped canonical not-started topic and renders approved evidence history", async () => {
-    vi.mocked(fetchMasteryTopic).mockResolvedValue({ ...detail, history: [{ previousScore: 0, newScore: 65, previousStatus: "NOT_STARTED", newStatus: "LEARNING", reason: "Tutor-approved worksheet", occurredAt: "2026-08-01T00:00:00Z" }] });
+  it("drills into the self-scoped canonical topic and renders coherent approved evidence history", async () => {
+    vi.mocked(fetchMasteryTopic).mockResolvedValue({ ...detail, node: { ...detail.node, score: 65, status: "LEARNING", attemptCount: 1 }, history: [{ previousScore: 0, newScore: 65, previousStatus: "NOT_STARTED", newStatus: "LEARNING", reason: "Tutor-approved worksheet", occurredAt: "2026-08-01T00:00:00Z" }] });
     render(<Page />);
     expect(await screen.findByRole("heading", { name: "Adaptation" })).toBeVisible();
-    expect(screen.getByText("NOT STARTED")).toBeVisible();
-    expect(screen.getByText("0 approved attempts")).toBeVisible();
+    expect(screen.getByText("LEARNING")).toBeVisible();
+    expect(screen.getByText("1 approved attempt")).toBeVisible();
     expect(screen.getByText("Tutor-approved worksheet")).toBeVisible();
     expect(screen.getByText("0% → 65%")).toBeVisible();
     expect(screen.getByRole("link", { name: /Back to topics/i })).toHaveAttribute("href", "/topics");
     await waitFor(() => expect(fetchMasteryTopic).toHaveBeenCalledTimes(1));
+  });
+
+  it("clears stale topic detail while a changed route is loading", async () => {
+    let resolveNext!: (value: MasteryTopicDetail) => void;
+    vi.mocked(fetchMasteryTopic)
+      .mockResolvedValueOnce(detail)
+      .mockReturnValueOnce(new Promise((done) => { resolveNext = done; }));
+    const { rerender } = render(<Page />);
+    expect(await screen.findByRole("heading", { name: "Adaptation" })).toBeVisible();
+
+    navigation.topicId = "42";
+    rerender(<Page />);
+    expect(await screen.findByLabelText("Loading topic mastery")).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Adaptation" })).not.toBeInTheDocument();
+    expect(fetchMasteryTopic).toHaveBeenLastCalledWith(42, undefined);
+
+    resolveNext({ ...detail, node: { ...detail.node, topicId: 42, topicName: "Evolution" } });
+    expect(await screen.findByRole("heading", { name: "Evolution" })).toBeVisible();
+  });
+
+  it("does not let a retried former route overwrite the newer topic", async () => {
+    let resolveRetry!: (value: MasteryTopicDetail) => void;
+    vi.mocked(fetchMasteryTopic)
+      .mockRejectedValueOnce(new Error("Adaptation unavailable"))
+      .mockReturnValueOnce(new Promise((done) => { resolveRetry = done; }))
+      .mockResolvedValueOnce({ ...detail, node: { ...detail.node, topicId: 42, topicName: "Evolution" } });
+    const { rerender } = render(<Page />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Adaptation unavailable");
+
+    await userEvent.setup().click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByLabelText("Loading topic mastery")).toBeVisible();
+    navigation.topicId = "42";
+    rerender(<Page />);
+    expect(await screen.findByRole("heading", { name: "Evolution" })).toBeVisible();
+
+    resolveRetry(detail);
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Evolution" })).toBeVisible());
+    expect(screen.queryByRole("heading", { name: "Adaptation" })).not.toBeInTheDocument();
   });
 
   it("shows loading and retries a topic API failure", async () => {

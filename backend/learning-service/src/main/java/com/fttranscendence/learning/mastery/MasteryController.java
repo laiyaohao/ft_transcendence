@@ -101,7 +101,7 @@ public class MasteryController {
     private MasteryTopicDetailResponse topicFor(StudentProfile student, long topicId) {
         SyllabusTopic topic = topics.findById(topicId).filter(SyllabusTopic::isActive)
             .orElseThrow(MasteryNotFoundException::new);
-        MasteryRecord record = records.findByStudentProfileIdAndSyllabusTopicId(student.getId(), topicId).orElse(null);
+        MasteryRecord record = records.findByStudentProfileIdAndSyllabusTopicIdWithHistory(student.getId(), topicId).orElse(null);
         List<MasteryHistoryItem> history = record == null ? List.of() : record.getHistory().stream()
             .map(item -> new MasteryHistoryItem(item.getPreviousScore(), item.getNewScore(), item.getPreviousStatus(),
                 item.getNewStatus(), item.getReason(), item.getCreatedAt()))

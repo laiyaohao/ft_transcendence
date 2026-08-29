@@ -16,6 +16,22 @@ public interface MasteryRecordRepository extends Repository<MasteryRecord, Long>
         Long syllabusTopicId
     );
 
+    /**
+     * Used by the non-transactional HTTP topic-detail projection.  History is
+     * deliberately fetched here because Open Session in View is disabled.
+     */
+    @Query("""
+        select distinct mastery
+        from MasteryRecord mastery
+        left join fetch mastery.history history
+        where mastery.studentProfile.id = :studentProfileId
+          and mastery.syllabusTopic.id = :syllabusTopicId
+        """)
+    Optional<MasteryRecord> findByStudentProfileIdAndSyllabusTopicIdWithHistory(
+        @Param("studentProfileId") Long studentProfileId,
+        @Param("syllabusTopicId") Long syllabusTopicId
+    );
+
     List<MasteryRecord> findAllByStudentProfileIdOrderByScoreDesc(Long studentProfileId);
 
     @Query("""
