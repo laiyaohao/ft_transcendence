@@ -19,10 +19,20 @@ public class MistakeHistoryService {
 
     @Transactional(readOnly = true)
     public List<MistakeHistoryItem> historyFor(long studentId) {
-        if (studentId <= 0) throw new IllegalArgumentException("Student id must be positive.");
-        return mistakes.findByStudentIdOrderByCreatedAtDescIdDesc(studentId).stream()
+        return recordsFor(studentId).stream()
             .map(MistakeHistoryItem::from)
             .toList();
+    }
+
+    /**
+     * Returns the durable, Tutor-approved records that back every mistake
+     * history projection.  Callers may add a presentation-specific filter,
+     * but must calculate repeated-error counts from this complete history.
+     */
+    @Transactional(readOnly = true)
+    public List<MistakeRecord> recordsFor(long studentId) {
+        if (studentId <= 0) throw new IllegalArgumentException("Student id must be positive.");
+        return mistakes.findByStudentIdOrderByCreatedAtDescIdDesc(studentId);
     }
 
     public record MistakeHistoryItem(

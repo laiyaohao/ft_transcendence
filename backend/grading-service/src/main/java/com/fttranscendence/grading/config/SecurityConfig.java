@@ -34,6 +34,8 @@ public class SecurityConfig {
                 .requestMatchers("/api/grading/tutor/**").hasRole("TUTOR")
                 .requestMatchers(HttpMethod.GET, "/api/grading/student/worksheets/*/results")
                     .hasRole("STUDENT")
+                .requestMatchers(HttpMethod.GET, "/api/grading/student/mistakes")
+                    .hasRole("STUDENT")
                 .requestMatchers(HttpMethod.GET, "/api/grading/mistakes/**")
                     .hasAnyRole("TUTOR", "STUDENT")
                 .requestMatchers(HttpMethod.PATCH, "/api/grading/ocr-extractions/**")

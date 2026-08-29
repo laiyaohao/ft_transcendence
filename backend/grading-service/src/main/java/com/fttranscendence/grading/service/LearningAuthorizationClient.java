@@ -12,6 +12,8 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.client.HttpClientErrorException;
 
 import java.math.BigDecimal;
+import java.util.ArrayDeque;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -147,6 +149,49 @@ public class LearningAuthorizationClient {
             throw exception;
         } catch (Exception exception) {
             throw new StudentWorksheetNotFound();
+        }
+    }
+
+    /**
+     * Loads the public curriculum tree and turns it into immutable topic and
+     * subject lookup data.  Grading stores topic snapshots, while the owning
+     * subject remains curriculum metadata owned by Learning.
+     */
+    public SyllabusTaxonomy loadSyllabusTaxonomy(String bearer) {
+        try {
+            Map<?, ?> body = get(bearer, "/api/learning/shared/syllabus/tree").getBody();
+            Object items = body == null ? null : body.get("items");
+            if (!(items instanceof List<?> roots)) throw new SyllabusUnavailable();
+            Map<Long, SyllabusSubject> subjects = new HashMap<>();
+            Map<Long, SyllabusTopic> topics = new HashMap<>();
+            ArrayDeque<SyllabusTreeNode> pending = new ArrayDeque<>();
+            for (Object root : roots) pending.addLast(new SyllabusTreeNode(root, null));
+            while (!pending.isEmpty()) {
+                SyllabusTreeNode treeNode = pending.removeFirst();
+                if (!(treeNode.value() instanceof Map<?, ?> node)) throw new SyllabusUnavailable();
+                long id = positiveId(node.get("id"));
+                String name = text(node.get("name"));
+                String nodeType = text(node.get("nodeType"));
+                Object children = node.get("children");
+                if (name == null || nodeType == null || !(children instanceof List<?> childNodes)) {
+                    throw new SyllabusUnavailable();
+                }
+                SyllabusSubject subject = treeNode.subject();
+                if ("SUBJECT".equals(nodeType)) {
+                    subject = new SyllabusSubject(id, name);
+                    if (subjects.putIfAbsent(id, subject) != null) throw new SyllabusUnavailable();
+                } else if ("TOPIC".equals(nodeType) || "SUBTOPIC".equals(nodeType)) {
+                    if (topics.putIfAbsent(id, new SyllabusTopic(id, name, subject)) != null) {
+                        throw new SyllabusUnavailable();
+                    }
+                }
+                for (Object child : childNodes) pending.addLast(new SyllabusTreeNode(child, subject));
+            }
+            return new SyllabusTaxonomy(Map.copyOf(subjects), Map.copyOf(topics));
+        } catch (SyllabusUnavailable exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new SyllabusUnavailable();
         }
     }
 
@@ -324,6 +369,11 @@ public class LearningAuthorizationClient {
         return first instanceof Number left && second instanceof Number right && left.longValue() == right.longValue();
     }
 
+    private static long positiveId(Object value) {
+        if (!(value instanceof Number number) || number.longValue() <= 0) throw new SyllabusUnavailable();
+        return number.longValue();
+    }
+
     private static String text(Object value) {
         return value instanceof String string && !string.isBlank() ? string.trim() : null;
     }
@@ -392,6 +442,11 @@ public class LearningAuthorizationClient {
     }
 
     private record TopicContext(long id, String code) { }
+    private record SyllabusTreeNode(Object value, SyllabusSubject subject) { }
+
+    public record SyllabusTaxonomy(Map<Long, SyllabusSubject> subjects, Map<Long, SyllabusTopic> topics) { }
+    public record SyllabusSubject(long id, String name) { }
+    public record SyllabusTopic(long id, String name, SyllabusSubject subject) { }
 
     public static class Forbidden extends RuntimeException { }
     public static class QuestionUnavailable extends RuntimeException { }
@@ -399,6 +454,7 @@ public class LearningAuthorizationClient {
     public static class ManualResultContextNotFound extends RuntimeException { }
     public static class MistakeHistoryNotFound extends RuntimeException { }
     public static class StudentWorksheetNotFound extends RuntimeException { }
+    public static class SyllabusUnavailable extends RuntimeException { }
     public static class LearningSyncUnavailable extends RuntimeException {
         public LearningSyncUnavailable(String message) { super(message); }
     }
