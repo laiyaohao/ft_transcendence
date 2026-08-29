@@ -27,7 +27,7 @@ class PostgresMigrationIntegrationTest {
             .locations("classpath:db/migration")
             .load();
 
-        assertEquals(16, flyway.migrate().migrationsExecuted);
+        assertEquals(19, flyway.migrate().migrationsExecuted);
         assertEquals(0, flyway.migrate().migrationsExecuted);
 
         try (Connection connection = POSTGRES.createConnection("");
@@ -51,7 +51,7 @@ class PostgresMigrationIntegrationTest {
                  "SELECT COUNT(*) FROM learning.syllabus_topics "
                      + "WHERE curriculum_version = 'MOE_PRIMARY_SCIENCE_2023'")) {
             result.next();
-            assertEquals(24, result.getInt(1));
+            assertEquals(28, result.getInt(1));
         }
     }
 }

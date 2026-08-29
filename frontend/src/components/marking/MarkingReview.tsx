@@ -15,7 +15,7 @@ import {
   approveMarkingReview,
   flagMarkingReview,
   resetMarkingReview,
-  type DiagnosticCategory,
+  type MistakeType,
   type MarkingReview as MarkingReviewData,
 } from "@/services/submissions";
 
@@ -40,7 +40,7 @@ export default function MarkingReview({
   const [feedback, setFeedback] = React.useState(initialReview.approvedFeedback ?? initialReview.aiSuggestedFeedback ?? "");
   const [flagReason, setFlagReason] = React.useState("");
   const [includeDiagnostic, setIncludeDiagnostic] = React.useState(initialReview.diagnosticEvidence.length > 0);
-  const [diagnosticCategory, setDiagnosticCategory] = React.useState<DiagnosticCategory>(initialReview.diagnosticEvidence[0]?.category ?? "CONCEPT");
+  const [mistakeType, setMistakeType] = React.useState<MistakeType>(initialReview.diagnosticEvidence[0]?.mistakeType ?? "CONCEPT_MISUNDERSTANDING");
   const [diagnosticDescription, setDiagnosticDescription] = React.useState(initialReview.diagnosticEvidence[0]?.description ?? "");
   const [diagnosticKeywords, setDiagnosticKeywords] = React.useState(initialReview.diagnosticEvidence[0]?.missingKeywords.join(", ") ?? "");
   const [busy, setBusy] = React.useState(false);
@@ -64,7 +64,7 @@ export default function MarkingReview({
   const isManualResult = review.aiSuggestedMarks === null
     && review.aiSuggestedOutcome === null
     && review.aiSuggestedFeedback === null;
-  const diagnosticEvidence = includeDiagnostic ? [{ category: diagnosticCategory, description: diagnosticDescription.trim(), missingKeywords: diagnosticKeywords.split(",").map((keyword) => keyword.trim()).filter(Boolean) }] : [];
+  const diagnosticEvidence = includeDiagnostic ? [{ mistakeType, description: diagnosticDescription.trim(), missingKeywords: diagnosticKeywords.split(",").map((keyword) => keyword.trim()).filter(Boolean) }] : [];
 
   return (
     <Box sx={{ maxWidth: 1120, mx: "auto", py: { xs: 2, sm: 4 }, px: { xs: 1.5, sm: 2.5 } }}>
@@ -116,8 +116,17 @@ export default function MarkingReview({
             <TextField label="Tutor feedback" value={feedback} onChange={(event) => setFeedback(event.target.value)} fullWidth multiline minRows={3} disabled={busy} />
             <FormControlLabel control={<Checkbox checked={includeDiagnostic} onChange={() => setIncludeDiagnostic((current) => !current)} disabled={busy} />} label="Include Tutor-confirmed diagnostic evidence" sx={{ mt: 1 }} />
             {includeDiagnostic && <Stack sx={{ gap: 1, mt: .5 }}>
-              <TextField select label="Diagnostic category" value={diagnosticCategory} onChange={(event) => setDiagnosticCategory(event.target.value as DiagnosticCategory)} disabled={busy}>
-                <MenuItem value="CONCEPT">Concept weakness</MenuItem><MenuItem value="KEYWORD">Keyword omission</MenuItem><MenuItem value="EXPRESSION">Expression weakness</MenuItem><MenuItem value="APPLICATION">Application weakness</MenuItem>
+              <TextField select label="Mistake type" value={mistakeType} onChange={(event) => setMistakeType(event.target.value as MistakeType)} disabled={busy} helperText="The learning-profile grouping is derived automatically.">
+                <MenuItem value="CONCEPT_MISUNDERSTANDING">Concept misunderstanding</MenuItem>
+                <MenuItem value="MISSING_KEY_POINT">Missing key point</MenuItem>
+                <MenuItem value="WEAK_EXPLANATION">Weak explanation</MenuItem>
+                <MenuItem value="WRONG_UNITS">Wrong units</MenuItem>
+                <MenuItem value="ANSWER_FORMAT_ISSUE">Answer format issue</MenuItem>
+                <MenuItem value="CALCULATION_ERROR">Calculation error</MenuItem>
+                <MenuItem value="MISREAD_QUESTION">Misread question</MenuItem>
+                <MenuItem value="INCOMPLETE_WORKING">Incomplete working</MenuItem>
+                <MenuItem value="INCORRECT_FORMULA">Incorrect formula</MenuItem>
+                <MenuItem value="CARELESS_MISTAKE">Careless mistake</MenuItem>
               </TextField>
               <TextField label="Tutor diagnostic rationale" value={diagnosticDescription} onChange={(event) => setDiagnosticDescription(event.target.value)} fullWidth multiline minRows={2} required disabled={busy} helperText="This evidence is shared with the learning profile only after approval." />
               <TextField label="Supporting missing words or phrases" value={diagnosticKeywords} onChange={(event) => setDiagnosticKeywords(event.target.value)} fullWidth disabled={busy} helperText="Optional; separate entries with commas." />

@@ -4,6 +4,7 @@ import com.fttranscendence.learning.classroom.TutorClass;
 import com.fttranscendence.learning.classroom.TutorClassRepository;
 import com.fttranscendence.learning.question.Question;
 import com.fttranscendence.learning.question.QuestionRepository;
+import com.fttranscendence.learning.question.MarkingComponent;
 import com.fttranscendence.learning.student.StudentProfile;
 import com.fttranscendence.learning.student.StudentProfileRepository;
 import com.fttranscendence.learning.syllabus.SyllabusTopicRepository;
@@ -40,6 +41,7 @@ class WorksheetRepositoryTest {
     @Autowired private SyllabusTopicRepository syllabusRepository;
     @Autowired private TutorClassRepository classRepository;
     @Autowired private StudentProfileRepository studentRepository;
+    @Autowired private WorksheetService worksheetService;
     @Autowired private EntityManager entityManager;
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private Validator validator;
@@ -94,8 +96,12 @@ class WorksheetRepositoryTest {
         repository.save(worksheet);
         entityManager.flush();
 
-        worksheet.moveQuestion(2, 0);
-        entityManager.flush();
+        worksheetService.updateWorksheet(
+            TUTOR_ID,
+            worksheet.getId(),
+            new WorksheetRequests.UpdateWorksheetRequest(null, null,
+                List.of(third.getId(), first.getId(), second.getId()))
+        );
         entityManager.clear();
 
         Worksheet reordered = repository.findByIdAndTutorId(worksheet.getId(), TUTOR_ID).orElseThrow();
@@ -107,6 +113,50 @@ class WorksheetRepositoryTest {
             List.of(0, 1, 2),
             reordered.getQuestions().stream().map(WorksheetQuestion::getPosition).toList()
         );
+    }
+
+    @Test
+    void persistsAssessmentMetadataAndQuestionSnapshots() {
+        Question source = persistQuestion("SCI-WS-SNAPSHOT-001");
+        Worksheet worksheet = worksheet("DIAGNOSTIC-SNAPSHOT-001", Worksheet.AudienceType.CLASS);
+        worksheet.setWorksheetType(Worksheet.WorksheetType.DIAGNOSTIC);
+        worksheet.setSubject("  Science  ");
+        worksheet.addQuestion(source);
+        repository.save(worksheet);
+        entityManager.flush();
+
+        source.setCode("SCI-WS-SNAPSHOT-CHANGED");
+        source.setPrompt("This later bank edit must not change the worksheet.");
+        source.setQuestionType(Question.QuestionType.CALCULATION);
+        source.setTotalMarks(BigDecimal.valueOf(2));
+        source.replaceMarkingComponents(List.of(new MarkingComponent("Updated criterion", BigDecimal.valueOf(2))));
+        entityManager.flush();
+        entityManager.clear();
+
+        Worksheet loaded = repository.findByIdAndTutorId(worksheet.getId(), TUTOR_ID).orElseThrow();
+        WorksheetQuestion captured = loaded.getQuestions().get(0);
+        assertEquals(Worksheet.WorksheetType.DIAGNOSTIC, loaded.getWorksheetType());
+        assertEquals("Science", loaded.getSubject());
+        assertEquals("SCI-WS-SNAPSHOT-001", captured.getQuestionCodeSnapshot());
+        assertEquals("Explain the science concept for SCI-WS-SNAPSHOT-001.", captured.getPromptSnapshot());
+        assertEquals(Question.QuestionType.OPEN_ENDED, captured.getQuestionTypeSnapshot());
+        assertEquals(0, BigDecimal.ONE.compareTo(captured.getTotalMarksSnapshot()));
+    }
+
+    @Test
+    void databaseRejectsTwoQuestionsAtTheSameWorksheetPosition() {
+        Question first = persistQuestion("SCI-WS-POSITION-001");
+        Question second = persistQuestion("SCI-WS-POSITION-002");
+        Worksheet worksheet = worksheet("POSITION-UNIQUE-001", Worksheet.AudienceType.CLASS);
+        worksheet.addQuestion(first);
+        worksheet.addQuestion(second);
+        repository.save(worksheet);
+        entityManager.flush();
+
+        assertThrows(DataIntegrityViolationException.class, () -> jdbcTemplate.update(
+            "UPDATE worksheet_questions SET position = 0 WHERE worksheet_id = ? AND question_id = ?",
+            worksheet.getId(), second.getId()
+        ));
     }
 
     @Test

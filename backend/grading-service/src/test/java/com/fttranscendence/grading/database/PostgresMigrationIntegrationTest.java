@@ -27,7 +27,7 @@ class PostgresMigrationIntegrationTest {
             .locations("classpath:db/migration")
             .load();
 
-        assertEquals(5, flyway.migrate().migrationsExecuted);
+        assertEquals(8, flyway.migrate().migrationsExecuted);
         assertEquals(0, flyway.migrate().migrationsExecuted);
 
         try (Connection connection = POSTGRES.createConnection("");

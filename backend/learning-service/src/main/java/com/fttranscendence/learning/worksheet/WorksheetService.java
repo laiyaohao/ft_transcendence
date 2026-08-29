@@ -1,5 +1,6 @@
 package com.fttranscendence.learning.worksheet;
 
+import com.fttranscendence.learning.classroom.TutorClass;
 import com.fttranscendence.learning.classroom.TutorClassRepository;
 import com.fttranscendence.learning.alert.MarkingReviewStatusProjection;
 import com.fttranscendence.learning.alert.MarkingReviewStatusProjectionRepository;
@@ -62,7 +63,7 @@ public class WorksheetService {
             if (!existing.get().getRequestHash().equals(hash)) throw new IdempotencyConflictException();
             return generationResponse(existing.get(), tutorId);
         }
-        requireClass(tutorId, classId);
+        TutorClass tutorClass = ownedClass(tutorId, classId);
         requireTopics(normalized.topicIds());
         Set<Long> members = validateTargets(tutorId, classId, normalized.targetMode(), normalized.studentIds());
         WorksheetGenerationRequest request = new WorksheetGenerationRequest(tutorId, classId, normalized.targetMode(),
@@ -76,8 +77,8 @@ public class WorksheetService {
             return generationResponse(winner, tutorId);
         }
         request.start();
-        List<Question> bank = questions.findDeterministicActiveQuestionBank(normalized.topicIds(), normalized.questionType());
-        if (bank.size() < normalized.questionCount()) {
+        List<Question> selected = selectBalancedQuestions(normalized.topicIds(), normalized.questionCount(), normalized.questionType());
+        if (selected.size() != normalized.questionCount()) {
             request.fail("INSUFFICIENT_ACTIVE_QUESTIONS", "The active question bank does not contain enough matching questions.");
             return generationResponse(request, tutorId);
         }
@@ -86,10 +87,12 @@ public class WorksheetService {
         worksheet.setCode("GEN-" + request.getId());
         worksheet.setTitle(normalized.title() == null ? "Generated worksheet " + request.getId() : normalized.title());
         worksheet.setInstructions(normalized.instructions());
+        worksheet.setSubject(tutorClass.getSubject());
+        worksheet.setWorksheetType(normalized.worksheetType());
         worksheet.setAudienceType(normalized.targetMode() == WorksheetGenerationRequest.TargetMode.CLASS
             ? Worksheet.AudienceType.CLASS : Worksheet.AudienceType.STUDENT);
         worksheet.setGenerationRequest(request);
-        bank.stream().limit(normalized.questionCount()).forEach(worksheet::addQuestion);
+        selected.forEach(worksheet::addQuestion);
         worksheets.save(worksheet);
         request.succeed();
         entityManager.flush();
@@ -144,9 +147,34 @@ public class WorksheetService {
         if (worksheet.getStatus() != Worksheet.Status.DRAFT) throw new WorksheetNotDraftException();
         if (input.title() != null) worksheet.setTitle(requireText(input.title(), "title"));
         if (input.instructions() != null) worksheet.setInstructions(input.instructions());
-        if (input.questionIds() != null) worksheet.replaceQuestions(loadActiveQuestions(input.questionIds()));
+        if (input.questionIds() != null) {
+            /*
+             * `(worksheet_id, position)` is deliberately unique. A normal
+             * JPA list reorder updates rows one at a time, so a swap can
+             * transiently collide with the row that still owns the target
+             * position. Draft questions have no approved-result dependency;
+             * replace their join rows within this transaction, then recreate
+             * the ordered aggregate.
+             */
+            replaceDraftQuestions(worksheet, input.questionIds());
+            worksheet = ownedWorksheet(tutorId, worksheetId);
+        }
         entityManager.flush();
         return WorksheetRequests.WorksheetResponse.from(worksheet);
+    }
+
+    private void replaceDraftQuestions(Worksheet worksheet, List<Long> questionIds) {
+        List<Long> requestedIds = List.copyOf(questionIds);
+        // Validate before deleting so an invalid request leaves the draft unchanged.
+        loadActiveQuestions(requestedIds);
+        entityManager.flush();
+        entityManager.createNativeQuery("DELETE FROM worksheet_questions WHERE worksheet_id = :worksheetId")
+            .setParameter("worksheetId", worksheet.getId())
+            .executeUpdate();
+        entityManager.clear();
+
+        Worksheet refreshed = ownedWorksheet(worksheet.getTutorId(), worksheet.getId());
+        refreshed.replaceQuestions(loadActiveQuestions(requestedIds));
     }
 
     @Transactional
@@ -281,7 +309,10 @@ public class WorksheetService {
         requireClass(tutorId, classId);
         return worksheets.findClassAssignedWorksheetsByTutorId(tutorId, classId);
     }
-    private void requireClass(long tutorId, long classId) { if (classes.findByIdAndTutorId(classId, tutorId).isEmpty()) throw new ClassNotFoundException(); }
+    private TutorClass ownedClass(long tutorId, long classId) {
+        return classes.findByIdAndTutorId(classId, tutorId).orElseThrow(ClassNotFoundException::new);
+    }
+    private void requireClass(long tutorId, long classId) { ownedClass(tutorId, classId); }
     private void requireTopics(List<Long> topicIds) {
         if (topics.findAllById(topicIds).size() != topicIds.size()) throw new InvalidWorksheetRequestException("Every topicId must exist.");
     }
@@ -303,13 +334,44 @@ public class WorksheetService {
             .orElseThrow(() -> new InvalidWorksheetRequestException("Every questionId must be active in the question bank.")));
         return loaded;
     }
+
+    /**
+     * Selects a deterministic, even mix across every requested topic.  A topic
+     * cannot be silently dropped merely because another topic has a large bank.
+     * Remainder questions go to topic ids in canonical order, which makes a retry
+     * reproducible and keeps the request idempotency hash meaningful.
+     */
+    private List<Question> selectBalancedQuestions(List<Long> topicIds, int questionCount,
+            Question.QuestionType questionType) {
+        if (questionCount < topicIds.size()) {
+            return List.of();
+        }
+        Map<Long, List<Question>> byTopic = new HashMap<>();
+        for (Question question : questions.findDeterministicActiveQuestionBank(topicIds, questionType)) {
+            byTopic.computeIfAbsent(question.getSyllabusTopic().getId(), ignored -> new ArrayList<>()).add(question);
+        }
+        int base = questionCount / topicIds.size();
+        int remainder = questionCount % topicIds.size();
+        List<Question> selected = new ArrayList<>(questionCount);
+        for (int index = 0; index < topicIds.size(); index++) {
+            int required = base + (index < remainder ? 1 : 0);
+            List<Question> candidates = byTopic.getOrDefault(topicIds.get(index), List.of());
+            if (candidates.size() < required) {
+                return List.of();
+            }
+            selected.addAll(candidates.subList(0, required));
+        }
+        return selected;
+    }
     private NormalizedGeneration normalize(WorksheetRequests.GenerateWorksheetRequest input) {
         List<Long> topicIds = input.topicIds().stream().distinct().sorted().toList();
         if (topicIds.size() != input.topicIds().size()) throw new InvalidWorksheetRequestException("topicIds must be unique.");
         Set<Long> studentIds = input.studentIds() == null ? Set.of() : new LinkedHashSet<>(input.studentIds());
         if (input.studentIds() != null && studentIds.size() != input.studentIds().size()) throw new InvalidWorksheetRequestException("studentIds must be unique.");
+        Worksheet.WorksheetType worksheetType = input.worksheetType() == null
+            ? Worksheet.WorksheetType.STANDARD : input.worksheetType();
         return new NormalizedGeneration(input.targetMode(), topicIds, input.questionCount(), input.questionType(), input.dueAt(),
-            blankToNull(input.title()), blankToNull(input.instructions()), studentIds);
+            blankToNull(input.title()), blankToNull(input.instructions()), studentIds, worksheetType);
     }
     private String requireIdempotencyKey(String raw) {
         if (raw == null || raw.isBlank() || raw.trim().length() > 128) throw new InvalidWorksheetRequestException("Idempotency-Key is required and may not exceed 128 characters.");
@@ -318,13 +380,14 @@ public class WorksheetService {
     private String requireText(String value, String field) { if (value.isBlank()) throw new InvalidWorksheetRequestException(field + " must not be blank."); return value.trim(); }
     private String blankToNull(String value) { return value == null || value.isBlank() ? null : value.trim(); }
     private String requestHash(long classId, NormalizedGeneration value) {
-        String canonical = classId + "|" + value.targetMode() + "|" + value.topicIds() + "|" + value.questionCount() + "|" + value.questionType()
+        String canonical = classId + "|" + value.targetMode() + "|" + value.topicIds() + "|" + value.questionCount() + "|" + value.questionType() + "|" + value.worksheetType()
             + "|" + value.dueAt() + "|" + value.title() + "|" + value.instructions() + "|" + value.studentIds().stream().sorted().toList();
         try { byte[] bytes = MessageDigest.getInstance("SHA-256").digest(canonical.getBytes(StandardCharsets.UTF_8)); return java.util.HexFormat.of().formatHex(bytes); }
         catch (NoSuchAlgorithmException exception) { throw new IllegalStateException("SHA-256 is unavailable", exception); }
     }
     private record NormalizedGeneration(WorksheetGenerationRequest.TargetMode targetMode, List<Long> topicIds, int questionCount,
-        Question.QuestionType questionType, LocalDateTime dueAt, String title, String instructions, Set<Long> studentIds) { }
+        Question.QuestionType questionType, LocalDateTime dueAt, String title, String instructions, Set<Long> studentIds,
+        Worksheet.WorksheetType worksheetType) { }
     public record StudentWorksheetFilter(Long subjectId, Long topicId, WorksheetRequests.StudentWorksheetStatus status,
                                          LocalDate assignedFrom, LocalDate assignedTo) { }
     private record LibraryOutcome(WorksheetRequests.StudentWorksheetStatus status, LocalDateTime submittedAt,

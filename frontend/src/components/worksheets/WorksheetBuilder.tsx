@@ -4,64 +4,88 @@ import * as React from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
+import Checkbox from "@mui/material/Checkbox";
 import Chip from "@mui/material/Chip";
+import FormControlLabel from "@mui/material/FormControlLabel";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
-
 import SyllabusPicker from "@/components/syllabus/SyllabusPicker";
+import { fetchTutorQuestions, type QuestionBankItem } from "@/services/questions";
 import type { SyllabusTree } from "@/services/syllabus";
-import { approveWorksheet, generateWorksheet, type TutorWorksheet } from "@/services/worksheets";
+import { fetchTutorStudents, type TutorStudent } from "@/services/students";
+import { approveWorksheet, fetchDiagnosticRecommendations, generateDiagnosticWorksheet, generateWorksheet, updateWorksheet, type DiagnosticRecommendations, type TutorWorksheet, type WorksheetTargetMode } from "@/services/worksheets";
 
-export function WorksheetBuilder({
-  classId,
-  generate = generateWorksheet,
-  approve = approveWorksheet,
-  loadSyllabus,
-}: {
-  classId: number;
-  generate?: typeof generateWorksheet;
-  approve?: typeof approveWorksheet;
-  loadSyllabus?: () => Promise<SyllabusTree>;
-}) {
-  const [topicIds, setTopicIds] = React.useState<number[]>([]);
-  const [pendingTopicId, setPendingTopicId] = React.useState<number | null>(null);
-  const [count, setCount] = React.useState("15");
-  const [title, setTitle] = React.useState("");
-  const [draft, setDraft] = React.useState<TutorWorksheet | null>(null);
-  const [error, setError] = React.useState<string | null>(null);
-  const [busy, setBusy] = React.useState(false);
-  const addTopic = () => {
-    if (!pendingTopicId) return;
-    setTopicIds((current) => current.includes(pendingTopicId) ? current : [...current, pendingTopicId]);
-    setPendingTopicId(null);
-  };
+const steps = ["Select", "Configure", "AI Preview", "Edit", "Export"];
+const card = { borderRadius: "14px", bgcolor: "#FFFDFA", borderColor: "#EBE4D9", boxShadow: "none" } as const;
+const secondary = { border: "1px solid #E4DCD0", borderRadius: "9px", color: "#2A2622", textTransform: "none", fontWeight: 500, bgcolor: "#FFFDFA", "&:hover": { bgcolor: "#F4EFE6" } } as const;
+const randomKey = () => typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `worksheet-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+function recommendationCopy(item: DiagnosticRecommendations["recommendations"][number]) {
+  if (item.reason === "NEW_TOPIC") return `${item.topicName} is covered but has no approved attempts yet.`;
+  if (item.reason === "LOW_MASTERY") return `${item.topicName} is at ${Math.round(item.masteryPercent ?? 0)}% after ${item.attemptCount} approved attempt${item.attemptCount === 1 ? "" : "s"}.`;
+  return `${item.topicName} needs a retrieval check after ${item.attemptCount} approved attempt${item.attemptCount === 1 ? "" : "s"}.`;
+}
+
+/** A tutor-controlled draft: machine/evidence output remains distinct from approval. */
+export function WorksheetBuilder({ classId, generate = generateWorksheet, generateDiagnostic = generateDiagnosticWorksheet,
+  approve = approveWorksheet, update = updateWorksheet, loadSyllabus, loadStudents = fetchTutorStudents,
+  loadDiagnostic = fetchDiagnosticRecommendations, loadQuestions = fetchTutorQuestions, initialStudentId,
+}: { classId: number; generate?: typeof generateWorksheet; generateDiagnostic?: typeof generateDiagnosticWorksheet;
+  approve?: typeof approveWorksheet; update?: typeof updateWorksheet; loadSyllabus?: () => Promise<SyllabusTree>;
+  loadStudents?: (classId?: number) => Promise<TutorStudent[]>; loadDiagnostic?: (classId: number) => Promise<DiagnosticRecommendations>;
+  loadQuestions?: typeof fetchTutorQuestions; initialStudentId?: number; }) {
+  const [topics, setTopics] = React.useState<number[]>([]); const [pendingTopic, setPendingTopic] = React.useState<number | null>(null);
+  const [count, setCount] = React.useState("15"); const [title, setTitle] = React.useState(""); const [instructions, setInstructions] = React.useState(""); const [dueAt, setDueAt] = React.useState("");
+  const validInitialStudentId = Number.isSafeInteger(initialStudentId) && (initialStudentId ?? 0) > 0 ? initialStudentId : null;
+  const [targetMode, setTargetMode] = React.useState<WorksheetTargetMode>(validInitialStudentId ? "STUDENTS" : "CLASS"); const [students, setStudents] = React.useState<TutorStudent[]>([]); const [selectedStudents, setSelectedStudents] = React.useState<number[]>(validInitialStudentId ? [validInitialStudentId] : []);
+  const [diagnostic, setDiagnostic] = React.useState(false); const [recommendations, setRecommendations] = React.useState<DiagnosticRecommendations | null>(null);
+  const [draft, setDraft] = React.useState<TutorWorksheet | null>(null); const [bank, setBank] = React.useState<QuestionBankItem[]>([]); const [error, setError] = React.useState<string | null>(null); const [busy, setBusy] = React.useState(false);
+
+  React.useEffect(() => {
+    if (targetMode !== "STUDENTS" || !classId) return;
+    let current = true;
+    void loadStudents(classId).then((loaded) => {
+      if (!current) return;
+      setStudents(loaded);
+      if (validInitialStudentId && !loaded.some((student) => student.id === validInitialStudentId)) {
+        setSelectedStudents((selected) => selected.filter((studentId) => studentId !== validInitialStudentId));
+        setError("This student is not an active member of the selected class.");
+      }
+    }).catch((reason: unknown) => {
+      if (current) setError(reason instanceof Error ? reason.message : "Students could not be loaded.");
+    });
+    return () => { current = false; };
+  }, [classId, loadStudents, targetMode, validInitialStudentId]);
+  const addTopic = () => { if (pendingTopic) setTopics((value) => value.includes(pendingTopic) ? value : [...value, pendingTopic].sort((a, b) => a - b)); setPendingTopic(null); };
+  const toggleStudent = (id: number) => setSelectedStudents((value) => value.includes(id) ? value.filter((item) => item !== id) : [...value, id]);
+  const showDiagnostic = async () => { if (!classId) { setError("Open the builder from a class before generating a worksheet."); return; } setBusy(true); setError(null); try { const value = await loadDiagnostic(classId); setRecommendations(value); setDiagnostic(true); if (value.status === "READY" && !topics.length) setTopics([...new Set(value.recommendations.map((item) => item.topicId))].slice(0, 3)); } catch (reason) { setError(reason instanceof Error ? reason.message : "Diagnostic evidence could not be loaded."); } finally { setBusy(false); } };
   const submit = async () => {
-    const questionCount = Number(count);
-    if (!Number.isSafeInteger(classId) || classId < 1) { setError("Open the builder from a class before generating a worksheet."); return; }
-    if (!topicIds.length || !Number.isSafeInteger(questionCount) || questionCount < 1 || questionCount > 100) {
-      setError("Choose at least one syllabus topic and between 1 and 100 questions."); return;
-    }
-    setBusy(true); setError(null);
-    try {
-      const response = await generate(classId, { targetMode: "CLASS", topicIds, questionCount, title: title || undefined }, crypto.randomUUID());
-      if (!response.worksheet) throw new Error(response.message || "Worksheet generation did not produce a draft.");
-      setDraft(response.worksheet);
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "Worksheet generation could not be started."); }
-    finally { setBusy(false); }
+    const questionCount = Number(count); if (!classId) { setError("Open the builder from a class before generating a worksheet."); return; }
+    if (!topics.length || !Number.isSafeInteger(questionCount) || questionCount < topics.length || questionCount > 100) { setError("Choose at least one question for every selected topic, up to 100 questions."); return; }
+    if (targetMode === "STUDENTS" && !selectedStudents.length) { setError("Choose at least one student target."); return; }
+    setBusy(true); setError(null); const input = { targetMode, studentIds: targetMode === "STUDENTS" ? selectedStudents : undefined, topicIds: topics, questionCount, dueAt: dueAt || undefined, title: title || undefined, instructions: instructions || undefined };
+    try { const response = diagnostic ? await generateDiagnostic(classId, input, randomKey()) : await generate(classId, input, randomKey()); if (!response.worksheet) throw new Error(response.message || "Worksheet generation did not produce a draft."); setDraft(response.worksheet); const pages = await Promise.all(topics.map((topicId) => loadQuestions({ topicId, archiveState: "ACTIVE", size: 100 }))); setBank(pages.flatMap((page) => page.items)); } catch (reason) { setError(reason instanceof Error ? reason.message : "Worksheet generation could not be started."); } finally { setBusy(false); }
   };
-  const approveDraft = async () => {
-    if (!draft) return;
-    setBusy(true); setError(null);
-    try { setDraft(await approve(draft.id)); }
-    catch (caught) { setError(caught instanceof Error ? caught.message : "Worksheet could not be approved."); }
-    finally { setBusy(false); }
-  };
-  return <Box sx={{ maxWidth: 1100, mx: "auto", py: 3 }}><Typography component="h1" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: { xs: 30, sm: 38 }, mb: 2 }}>Build worksheet</Typography>
-    {!draft ? <Card variant="outlined" sx={{ p: 3, borderRadius: "14px", bgcolor: "#FFFDFA", borderColor: "#EBE4D9" }}><Typography component="h2" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 22, mb: 2 }}>Configure a Tutor-reviewed draft</Typography><TextField label="Worksheet title" value={title} onChange={(event) => setTitle(event.target.value)} fullWidth sx={{ mb: 2 }} />
-      <SyllabusPicker value={pendingTopicId} onChange={setPendingTopicId} label="Covered syllabus topic" helperText="Add one or more topics that this class has covered." loadSyllabus={loadSyllabus} />
-      <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1, mt: 1 }}><Button type="button" disabled={!pendingTopicId || topicIds.includes(pendingTopicId)} onClick={addTopic} sx={{ minHeight: 36, border: "1px solid #E4DCD0", borderRadius: "9px", color: "#2A2622", textTransform: "none", fontWeight: 500 }}>Add selected topic</Button>{topicIds.map((id) => <Chip key={id} label={`Topic #${id}`} onDelete={() => setTopicIds((current) => current.filter((item) => item !== id))} sx={{ bgcolor: "#F4E4DE", color: "#9E3A24", fontSize: 12 }} />)}</Box>
-      <TextField label="Question count" type="number" value={count} onChange={(event) => setCount(event.target.value)} slotProps={{ htmlInput: { min: 1, max: 100 } }} sx={{ mt: 2, mb: 2 }} />
-      {error && <Typography role="alert" sx={{ color: "#B4573F", mb: 2 }}>{error}</Typography>}<Button onClick={() => void submit()} disabled={busy} sx={{ bgcolor: "#E08A72", color: "#1B1917", textTransform: "none", minHeight: 42, fontWeight: 600 }}>{busy ? "Creating draft…" : "Generate worksheet draft"}</Button>
-    </Card> : <Card variant="outlined" sx={{ p: 3, borderRadius: "14px", bgcolor: "#FFFDFA", borderColor: "#EBE4D9" }}><Typography component="h2" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 24 }}>{draft.title}</Typography><Typography sx={{ color: "#6F675E", mb: 2 }}>Draft — Tutor review required before assignment.</Typography>{draft.questions.length === 0 ? <Typography>No questions were selected.</Typography> : <Box component="ol">{draft.questions.map((question) => <li key={question.id}><Typography sx={{ py: 1 }}>{question.prompt} · {question.totalMarks.toFixed(1)} marks</Typography></li>)}</Box>}{error && <Typography role="alert" sx={{ color: "#B4573F", mb: 1 }}>{error}</Typography>}<Button onClick={() => void approveDraft()} disabled={busy || draft.questions.length === 0 || draft.status !== "DRAFT"} sx={{ bgcolor: "#9E3A24", color: "#FFFDFA", textTransform: "none", minHeight: 42 }}>Approve & assign worksheet</Button></Card>}
+  const saveQuestions = async (questionIds: number[]) => { if (!draft || !questionIds.length) { setError("A worksheet needs at least one question."); return; } setBusy(true); setError(null); try { setDraft(await update(draft.id, { title: title || draft.title, instructions: instructions || draft.instructions, questionIds })); } catch (reason) { setError(reason instanceof Error ? reason.message : "The draft could not be updated."); } finally { setBusy(false); } };
+  const move = (index: number, direction: -1 | 1) => { if (!draft || index + direction < 0 || index + direction >= draft.questions.length) return; const ids = draft.questions.map((item) => item.id); [ids[index], ids[index + direction]] = [ids[index + direction], ids[index]]; void saveQuestions(ids); };
+  const replace = (questionId: number) => { if (!draft) return; const currentQuestion = draft.questions.find((question) => question.id === questionId); const replacement = bank.find((item) => item.syllabusTopic.id === currentQuestion?.topicId && !draft.questions.some((question) => question.id === item.id)) ?? bank.find((item) => currentQuestion?.topicId === undefined && !draft.questions.some((question) => question.id === item.id)); if (!replacement) { setError("No unused active question is available for replacement in this topic."); return; } void saveQuestions(draft.questions.map((question) => question.id === questionId ? replacement.id : question.id)); };
+  const approveDraft = async () => { if (!draft) return; setBusy(true); setError(null); try { setDraft(await approve(draft.id, dueAt || undefined)); } catch (reason) { setError(reason instanceof Error ? reason.message : "Worksheet could not be approved."); } finally { setBusy(false); } };
+  const current = draft ? 3 : 1;
+
+  return <Box sx={{ maxWidth: 1120, mx: "auto", py: 3 }}><Typography component="h1" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: { xs: 30, sm: 38 }, mb: 2 }}>Build worksheet</Typography>
+    <Box aria-label="Worksheet generation steps" sx={{ display: "flex", alignItems: "flex-start", overflowX: "auto", mb: 3 }}>{steps.map((name, index) => <Box key={name} sx={{ display: "flex", alignItems: "center", flex: "1 0 116px" }}><Box sx={{ display: "grid", justifyItems: "center", gap: .7 }}><Box aria-current={index === current ? "step" : undefined} sx={{ width: 29, height: 29, borderRadius: "50%", display: "grid", placeItems: "center", fontSize: 12, fontWeight: 700, bgcolor: index < current ? "#9E3A24" : index === current ? "#FFFDFA" : "#F4EFE6", color: index < current ? "#FFFDFA" : index === current ? "#9E3A24" : "#A09488", border: "2px solid", borderColor: index <= current ? "#9E3A24" : "#E4DCD0" }}>{index < current ? "✓" : index + 1}</Box><Typography sx={{ fontSize: 11.5, fontWeight: index === current ? 600 : 400, whiteSpace: "nowrap" }}>{name}</Typography></Box>{index < 4 && <Box sx={{ height: 2, bgcolor: index < current ? "#9E3A24" : "#E4DCD0", flex: 1, mt: -2.7 }} />}</Box>)}</Box>
+    {!draft ? <Card variant="outlined" sx={{ ...card, p: { xs: 2, sm: 3 } }}><Typography component="h2" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 24 }}>Who is this worksheet for?</Typography><Typography sx={{ color: "#6F675E", fontSize: 13.5, mb: 2 }}>Generate a suggestion, then edit the draft before it is assigned.</Typography>
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, minmax(0, 1fr))" }, gap: 1, mb: 2 }}>{(["CLASS", "STUDENTS"] as const).map((mode) => <Button key={mode} aria-pressed={targetMode === mode} onClick={() => setTargetMode(mode)} sx={{ justifyContent: "flex-start", textAlign: "left", minHeight: 76, border: "1.5px solid", borderColor: targetMode === mode ? "#9E3A24" : "#EBE4D9", bgcolor: targetMode === mode ? "#FDF6F3" : "#FFFDFA", color: "#2A2622", textTransform: "none", borderRadius: "10px", p: 1.5 }}><Box><Typography sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 18 }}>{mode === "CLASS" ? "Whole class" : "Selected students"}</Typography><Typography sx={{ color: "#6F675E", fontSize: 12.5 }}>{mode === "CLASS" ? "One worksheet for the class." : "Target active members of this class."}</Typography></Box></Button>)}</Box>
+      {targetMode === "STUDENTS" && <Box component="fieldset" sx={{ border: 0, p: 0, m: 0, mb: 2 }}><Typography component="legend" sx={{ color: "#6F675E", fontSize: 11.5, fontWeight: 600 }}>Choose students</Typography>{students.length ? students.map((student) => <FormControlLabel key={student.id} control={<Checkbox checked={selectedStudents.includes(student.id)} onChange={() => toggleStudent(student.id)} />} label={student.fullName} />) : <Typography role="status" sx={{ color: "#8B837A", fontSize: 12.5 }}>Loading active class members…</Typography>}</Box>}
+      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 1, flexWrap: "wrap", mb: 1 }}><Typography component="h2" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 22 }}>What should it practise?</Typography><Button onClick={() => void showDiagnostic()} disabled={busy} sx={{ bgcolor: "#E08A72", color: "#1B1917", textTransform: "none", minHeight: 38, borderRadius: "9px", fontWeight: 600 }}>Get diagnostic suggestions</Button></Box>
+      {recommendations && <Box sx={{ bgcolor: "#1B1917", color: "#E8E2D9", borderRadius: "12px", p: 2, mb: 2 }}><Typography sx={{ color: "#E08A72", fontSize: 10.5, fontWeight: 700, letterSpacing: ".1em" }}>DIAGNOSTIC RECOMMENDATION</Typography><Typography sx={{ color: "#CFC7BC", fontSize: 13, mt: .5 }}>{recommendations.message}</Typography>{recommendations.recommendations.slice(0, 5).map((item) => <Typography key={`${item.studentId ?? "class"}-${item.topicId}`} sx={{ color: "#A8A096", fontSize: 12, mt: .6 }}>• {recommendationCopy(item)}</Typography>)}<Typography sx={{ color: "#7A7268", fontSize: 10.5, mt: 1 }}>Suggestion only — not saved or assigned.</Typography></Box>}
+      <TextField label="Worksheet title" value={title} onChange={(event) => setTitle(event.target.value)} fullWidth sx={{ mb: 2 }} /><SyllabusPicker value={pendingTopic} onChange={setPendingTopic} label="Covered syllabus topic" helperText="Add existing topics covered by this class." loadSyllabus={loadSyllabus} />
+      <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1, mt: 1 }}><Button disabled={!pendingTopic || topics.includes(pendingTopic)} onClick={addTopic} sx={secondary}>Add selected topic</Button>{topics.map((id) => <Chip key={id} label={`Topic #${id}`} onDelete={() => setTopics((value) => value.filter((item) => item !== id))} sx={{ bgcolor: "#F4E4DE", color: "#9E3A24", fontSize: 12 }} />)}</Box>
+      <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1.25, mt: 2 }}><TextField label="Question count" type="number" value={count} onChange={(event) => setCount(event.target.value)} slotProps={{ htmlInput: { min: 1, max: 100 } }} /><TextField label="Due date" type="datetime-local" value={dueAt} onChange={(event) => setDueAt(event.target.value)} slotProps={{ inputLabel: { shrink: true } }} /></Box><TextField label="Tutor instructions" value={instructions} onChange={(event) => setInstructions(event.target.value)} fullWidth multiline minRows={3} sx={{ mt: 2 }} />
+      {error && <Typography role="alert" sx={{ color: "#B4573F", mt: 2 }}>{error}</Typography>}<Button onClick={() => void submit()} disabled={busy} sx={{ mt: 2, bgcolor: "#E08A72", color: "#1B1917", textTransform: "none", minHeight: 42, fontWeight: 600, borderRadius: "10px" }}>{busy ? "Creating draft…" : diagnostic ? "Generate diagnostic draft" : "Generate worksheet draft"}</Button>
+    </Card> : <Card variant="outlined" sx={{ ...card, p: { xs: 2, sm: 3 } }}><Typography component="h2" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 25 }}>{draft.title}</Typography><Typography sx={{ color: "#6F675E", mb: 1.5 }}>{draft.worksheetType === "DIAGNOSTIC" ? "Diagnostic draft" : "Draft"} — Tutor review required before assignment.</Typography><Box sx={{ bgcolor: "#1B1917", borderRadius: "12px", p: 2, mb: 2 }}><Typography sx={{ color: "#E08A72", fontSize: 10.5, fontWeight: 700, letterSpacing: ".1em" }}>AI PREVIEW</Typography><Typography sx={{ color: "#CFC7BC", fontSize: 13, mt: .5 }}>{draft.instructions || "The selected question mix is ready for your review."}</Typography><Typography sx={{ color: "#7A7268", fontSize: 10.5, mt: 1 }}>Suggestion only — edit and approval remain tutor decisions.</Typography></Box><Typography component="h3" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 22, mb: 1 }}>Edit question order</Typography>
+      <Box sx={{ display: "grid", gap: 1.1 }}>{draft.questions.map((question, index) => <Box key={question.id} sx={{ display: "flex", gap: 1.2, p: 1.5, border: "1px solid #EBE4D9", borderRadius: "12px" }}><Box sx={{ display: "grid", gap: .35, alignContent: "start" }}><Button aria-label={`Move question ${index + 1} up`} onClick={() => move(index, -1)} disabled={busy || index === 0} sx={{ minWidth: 30, width: 30, height: 30, p: 0, ...secondary }}>↑</Button><Typography sx={{ textAlign: "center", fontFamily: "'Playfair Display', Georgia, serif" }}>{index + 1}</Typography><Button aria-label={`Move question ${index + 1} down`} onClick={() => move(index, 1)} disabled={busy || index === draft.questions.length - 1} sx={{ minWidth: 30, width: 30, height: 30, p: 0, ...secondary }}>↓</Button></Box><Box sx={{ flex: 1, minWidth: 0 }}><Typography sx={{ color: "#8B837A", fontSize: 11.5 }}>{question.questionType.replaceAll("_", " ")} · {question.topicName}</Typography><Typography sx={{ fontSize: 13.5, lineHeight: 1.55 }}>{question.prompt}</Typography><Typography sx={{ color: "#8B837A", fontSize: 11.5, mt: .4 }}>{question.totalMarks.toFixed(1)} marks</Typography></Box><Box sx={{ display: "grid", gap: .5 }}><Button aria-label={`Replace question ${index + 1}`} onClick={() => replace(question.id)} disabled={busy} sx={{ minWidth: 34, width: 34, height: 34, p: 0, ...secondary }}>↻</Button><Button aria-label={`Remove question ${index + 1}`} onClick={() => void saveQuestions(draft.questions.filter((item) => item.id !== question.id).map((item) => item.id))} disabled={busy || draft.questions.length === 1} sx={{ minWidth: 34, width: 34, height: 34, p: 0, border: "1px solid #EBE4D9", color: "#B4573F", borderRadius: "8px" }}>×</Button></Box></Box>)}</Box>
+      {bank.filter((item) => !draft.questions.some((question) => question.id === item.id)).slice(0, 4).map((item) => <Button key={item.id} onClick={() => void saveQuestions([...draft.questions.map((question) => question.id), item.id])} disabled={busy} sx={{ ...secondary, mr: .75, mt: 1.5 }}>Add {item.code}</Button>)}{error && <Typography role="alert" sx={{ color: "#B4573F", mt: 1.5 }}>{error}</Typography>}<Box sx={{ display: "flex", flexWrap: "wrap", gap: 1.25, mt: 2 }}><Button onClick={() => void approveDraft()} disabled={busy || draft.questions.length === 0 || draft.status !== "DRAFT"} sx={{ bgcolor: "#9E3A24", color: "#FFFDFA", textTransform: "none", minHeight: 42, borderRadius: "10px" }}>{draft.status === "APPROVED" ? "Worksheet approved" : "Approve & assign worksheet"}</Button><Button onClick={() => setDraft(null)} disabled={busy || draft.status !== "DRAFT"} sx={secondary}>Back to configuration</Button></Box>
+    </Card>}
   </Box>;
 }

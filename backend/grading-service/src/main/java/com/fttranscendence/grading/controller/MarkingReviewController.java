@@ -45,6 +45,24 @@ public class MarkingReviewController {
         return ResponseEntity.status(HttpStatus.CREATED).body(reviews.createManualResult(user, bearer, request));
     }
 
+    @PostMapping("/manual/batch")
+    public ResponseEntity<java.util.List<MarkingReviewService.MarkingReview>> createManualResults(
+        @AuthenticationPrincipal AuthenticatedUser user,
+        @RequestHeader("Authorization") String bearer,
+        @RequestBody MarkingReviewService.ManualResultBatchRequest request
+    ) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(reviews.createManualResults(user, bearer, request));
+    }
+
+    @GetMapping("/manual/worksheets/{worksheetId}")
+    public MarkingReviewService.ManualResultsResponse listManualResults(
+        @AuthenticationPrincipal AuthenticatedUser user,
+        @RequestHeader("Authorization") String bearer,
+        @PathVariable long worksheetId
+    ) {
+        return reviews.listManualResults(user, bearer, worksheetId);
+    }
+
     @GetMapping("/{submissionId}")
     public MarkingReviewService.MarkingReview get(
         @AuthenticationPrincipal AuthenticatedUser user,

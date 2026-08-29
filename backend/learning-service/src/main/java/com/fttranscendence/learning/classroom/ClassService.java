@@ -62,6 +62,11 @@ public class ClassService {
             .toList();
     }
 
+    /**
+     * The detail projection itself remains read-only. Its insight availability lookup
+     * opens a separate write-capable transaction only when it needs to enqueue a
+     * background refresh; see {@link ClassInsightService#insights(long, long)}.
+     */
     @Transactional(readOnly = true)
     public ClassDetailResponse getOwnedClassDetail(long tutorId, long classId) {
         requireTutor(tutorId);

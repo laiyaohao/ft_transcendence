@@ -36,6 +36,7 @@ class QuestionMutationIntegrationTest {
 
     @BeforeEach
     void clearQuestionBank() {
+        jdbcTemplate.update("DELETE FROM worksheet_assignments");
         jdbcTemplate.update("DELETE FROM worksheet_questions");
         jdbcTemplate.update("DELETE FROM worksheets");
         jdbcTemplate.update("DELETE FROM question_keywords");

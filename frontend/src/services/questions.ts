@@ -6,6 +6,8 @@ export interface QuestionBankFilters {
   topicId?: number;
   questionType?: QuestionType;
   archiveState?: QuestionArchiveState;
+  /** A literal, case- and accent-insensitive search over code, prompt, and keywords. */
+  search?: string;
   page?: number;
   size?: number;
 }
@@ -181,13 +183,16 @@ function queryString(filters: QuestionBankFilters): string {
   if (!isNonNegativeInteger(page) || !Number.isSafeInteger(size) || size < 1 || size > 100
     || (filters.topicId !== undefined && !isPositiveId(filters.topicId))
     || (filters.questionType !== undefined && !isQuestionType(filters.questionType))
-    || (filters.archiveState !== undefined && !isArchiveState(filters.archiveState))) {
+    || (filters.archiveState !== undefined && !isArchiveState(filters.archiveState))
+    || (filters.search !== undefined && (typeof filters.search !== "string" || filters.search.trim().length > 120))) {
     throw new QuestionApiError("Question bank filters are invalid.", 400);
   }
   const params = new URLSearchParams({ page: String(page), size: String(size) });
   if (filters.topicId !== undefined) params.set("topicId", String(filters.topicId));
   if (filters.questionType !== undefined) params.set("questionType", filters.questionType);
   if (filters.archiveState !== undefined) params.set("archiveState", filters.archiveState);
+  const search = filters.search?.trim();
+  if (search) params.set("search", search);
   return params.toString();
 }
 

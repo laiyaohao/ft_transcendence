@@ -7,10 +7,12 @@ import com.fttranscendence.grading.repository.OcrExtractionRepository;
 import com.fttranscendence.grading.repository.SubmissionDocumentRepository;
 import com.fttranscendence.grading.repository.SubmissionRepository;
 import com.fttranscendence.grading.repository.MasterySyncOutboxRepository;
+import com.fttranscendence.grading.repository.MistakeRecordRepository;
 import com.fttranscendence.grading.security.AuthenticatedUser;
 import com.fttranscendence.grading.service.MarkingReviewService;
 import com.fttranscendence.grading.service.MasterySyncDispatcher;
 import com.fttranscendence.grading.model.DiagnosticCategory;
+import com.fttranscendence.grading.model.MistakeType;
 import com.fttranscendence.grading.storage.DocumentStorage;
 import jakarta.transaction.Transactional;
 import org.junit.jupiter.api.BeforeEach;
@@ -48,6 +50,7 @@ class MarkingApprovalIntegrationTest {
     @Autowired private OcrExtractionRepository extractions;
     @Autowired private SubmissionRepository submissions;
     @Autowired private MasterySyncOutboxRepository syncOutbox;
+    @Autowired private MistakeRecordRepository mistakes;
     @Autowired private RestTemplate restTemplate;
     @Autowired private MasterySyncDispatcher syncDispatcher;
 
@@ -140,12 +143,15 @@ class MarkingApprovalIntegrationTest {
         server.reset();
         expectTutorOnly();
         var evidence = new MarkingReviewService.DiagnosticEvidenceRequest(
-            DiagnosticCategory.CONCEPT, "Does not explain heat transfer.", java.util.List.of("heat transfer")
+            MistakeType.CONCEPT_MISUNDERSTANDING, DiagnosticCategory.CONCEPT,
+            "Does not explain heat transfer.", java.util.List.of("heat transfer")
         );
         MarkingReviewService.MarkingReview approved = service.approve(TUTOR, "Bearer token", pending.id(),
             new MarkingReviewService.ApprovalRequest(new BigDecimal("1.00"), "Tutor confirmed.", java.util.List.of(evidence)));
         assertEquals(1, approved.diagnosticEvidence().size());
+        assertEquals("CONCEPT_MISUNDERSTANDING", approved.diagnosticEvidence().get(0).mistakeType());
         assertEquals("CONCEPT", approved.diagnosticEvidence().get(0).category());
+        assertEquals(1, mistakes.findBySubmissionIdOrderByCreatedAtAscIdAsc(pending.id()).size());
         assertEquals(3, syncOutbox.count(), "approval queues mastery and resolved-review events");
         assertTrue(syncOutbox.findAll().stream().anyMatch(event -> event.getPayload().contains("Does not explain heat transfer.")));
         assertTrue(syncOutbox.findAll().stream().noneMatch(event -> event.getPayload().contains("Metal gets hot")),
@@ -157,6 +163,35 @@ class MarkingApprovalIntegrationTest {
         service.approve(TUTOR, "Bearer token", pending.id(),
             new MarkingReviewService.ApprovalRequest(new BigDecimal("1.00"), "Tutor confirmed.", java.util.List.of(evidence)));
         assertEquals(3, syncOutbox.count(), "idempotent retry creates no extra evidence or events");
+        assertEquals(1, mistakes.findBySubmissionIdOrderByCreatedAtAscIdAsc(pending.id()).size(),
+            "idempotent approval does not duplicate canonical mistake history");
+        server.verify();
+    }
+
+    @Test
+    void rejectsMismatchedCompatibilityCategoryBeforeMutatingApproval() {
+        SubmissionDocument document = readyDocument();
+        extractions.saveAndFlush(new OcrExtraction(document.getPages().get(0), 406L,
+            "Metal gets hot", 0.95, "mock"));
+        expectTutorAndQuestion();
+        server.expect(once(), requestTo("http://localhost/ai-test"))
+            .andRespond(withSuccess(providerResult(), MediaType.APPLICATION_JSON));
+        MarkingReviewService.MarkingReview pending = service.createAdvisoryReview(TUTOR, "Bearer token",
+            new MarkingReviewService.CreateRequest(document.getId(), 406L, 501L));
+        server.verify();
+
+        server.reset();
+        expectTutorOnly();
+        assertThrows(MarkingReviewService.InvalidReviewRequest.class, () -> service.approve(
+            TUTOR, "Bearer token", pending.id(), new MarkingReviewService.ApprovalRequest(
+                new BigDecimal("1.00"), "Tutor confirmed.", java.util.List.of(
+                    new MarkingReviewService.DiagnosticEvidenceRequest(MistakeType.MISSING_KEY_POINT,
+                        DiagnosticCategory.CONCEPT, "The required phrase is absent.", java.util.List.of("conduction"))
+            )
+        )));
+        assertEquals(Submission.ReviewStatus.PENDING_REVIEW, submissions.findById(pending.id()).orElseThrow().getReviewStatus());
+        assertEquals(0, mistakes.findBySubmissionIdOrderByCreatedAtAscIdAsc(pending.id()).size());
+        assertEquals(1, syncOutbox.count(), "a rejected decision emits no mastery event");
         server.verify();
     }
 
@@ -176,8 +211,8 @@ class MarkingApprovalIntegrationTest {
         expectTutorOnly();
         service.approve(TUTOR, "Bearer token", pending.id(),
             new MarkingReviewService.ApprovalRequest(new BigDecimal("1.00"), "Tutor confirmed.", java.util.List.of(
-                new MarkingReviewService.DiagnosticEvidenceRequest(DiagnosticCategory.CONCEPT,
-                    "Tutor confirmed a heat-transfer concept gap.", java.util.List.of("heat transfer"))
+                new MarkingReviewService.DiagnosticEvidenceRequest(MistakeType.CONCEPT_MISUNDERSTANDING,
+                    DiagnosticCategory.CONCEPT, "Tutor confirmed a heat-transfer concept gap.", java.util.List.of("heat transfer"))
             )));
         server.verify();
 
@@ -193,6 +228,7 @@ class MarkingApprovalIntegrationTest {
             .andExpect(jsonPath("$.submissionId").value(pending.id()))
             .andExpect(jsonPath("$.studentId").value(201))
             .andExpect(jsonPath("$.syllabusTopicId").value(601))
+            .andExpect(jsonPath("$.diagnosticEvidence[0].mistakeType").value("CONCEPT_MISUNDERSTANDING"))
             .andExpect(jsonPath("$.diagnosticEvidence[0].category").value("CONCEPT"))
             .andExpect(jsonPath("$.diagnosticEvidence[0].missingKeywords[0]").value("heat transfer"))
             .andRespond(withSuccess());
@@ -203,6 +239,56 @@ class MarkingApprovalIntegrationTest {
 
         syncDispatcher.dispatchPending();
         assertTrue(syncOutbox.findAll().stream().allMatch(event -> event.getDeliveredAt() != null));
+        server.verify();
+    }
+
+    @Test
+    void retractionQueuesThePriorTutorApprovedSnapshotAndDispatchesItOnce() {
+        SubmissionDocument document = readyDocument();
+        extractions.saveAndFlush(new OcrExtraction(document.getPages().get(0), 405L,
+            "Metal gets hot", 0.95, "mock"));
+        expectTutorAndQuestion();
+        server.expect(once(), requestTo("http://localhost/ai-test"))
+            .andRespond(withSuccess(providerResult(), MediaType.APPLICATION_JSON));
+        MarkingReviewService.MarkingReview pending = service.createAdvisoryReview(TUTOR, "Bearer token",
+            new MarkingReviewService.CreateRequest(document.getId(), 405L, 501L));
+        server.verify();
+
+        server.reset();
+        expectTutorOnly();
+        service.approve(TUTOR, "Bearer token", pending.id(),
+            new MarkingReviewService.ApprovalRequest(new BigDecimal("1.00"), "Tutor confirmed.", java.util.List.of(
+                new MarkingReviewService.DiagnosticEvidenceRequest(MistakeType.CONCEPT_MISUNDERSTANDING,
+                    DiagnosticCategory.CONCEPT, "Tutor confirmed a concept gap.", java.util.List.of("heat transfer"))
+            )));
+        server.verify();
+
+        server.reset();
+        expectTutorOnly();
+        service.reset(TUTOR, "Bearer token", pending.id());
+        server.verify();
+
+        assertEquals(0, mistakes.findBySubmissionIdOrderByCreatedAtAscIdAsc(pending.id()).size(),
+            "retraction removes canonical mistake history from active grading state");
+
+        var retraction = syncOutbox.findAll().stream()
+            .filter(event -> event.getPayload().contains("\"state\":\"RETRACTED\""))
+            .findFirst().orElseThrow();
+        assertTrue(retraction.getPayload().contains("\"approvedMarks\":1.00"),
+            "The historical approved mark survives clearing the live review fields.");
+        assertTrue(retraction.getPayload().contains("\"diagnosticEvidence\":[]"),
+            "Retracted evidence must no longer influence learning insights.");
+
+        server.reset();
+        server.expect(once(), requestTo("http://localhost/learning/api/learning/internal/approved-marking-evidence"))
+            .andExpect(method(org.springframework.http.HttpMethod.POST))
+            .andExpect(header("X-Learning-Integration-Key", "test-sync-key"))
+            .andExpect(jsonPath("$.state").value("RETRACTED"))
+            .andExpect(jsonPath("$.approvedMarks").value(1.00))
+            .andExpect(jsonPath("$.diagnosticEvidence").isEmpty())
+            .andRespond(withSuccess());
+        syncDispatcher.dispatchOne(retraction);
+        assertTrue(retraction.getDeliveredAt() != null);
         server.verify();
     }
 

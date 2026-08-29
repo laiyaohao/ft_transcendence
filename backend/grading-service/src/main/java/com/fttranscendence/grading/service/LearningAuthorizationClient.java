@@ -9,6 +9,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.HttpClientErrorException;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -76,6 +77,48 @@ public class LearningAuthorizationClient {
         }
     }
 
+    /**
+     * Resolves an actor's mistake-history scope without exposing whether a
+     * foreign student identifier exists. Tutors may read owned students only;
+     * Students have only a `/me` route resolved from their own login identity.
+     */
+    public long resolveMistakeHistoryStudent(AuthenticatedUser user, String bearer, Long requestedStudentId) {
+        if (user == null) {
+            throw new Forbidden();
+        }
+        if ("TUTOR".equals(user.role())) {
+            if (requestedStudentId == null || requestedStudentId <= 0) {
+                throw new MistakeHistoryNotFound();
+            }
+            try {
+                Map<?, ?> student = get(bearer, "/api/learning/tutor/students/" + requestedStudentId).getBody();
+                if (!sameId(student, requestedStudentId)) {
+                    throw new MistakeHistoryNotFound();
+                }
+                return requestedStudentId;
+            } catch (MistakeHistoryNotFound exception) {
+                throw exception;
+            } catch (Exception exception) {
+                throw new MistakeHistoryNotFound();
+            }
+        }
+        if ("STUDENT".equals(user.role()) && requestedStudentId == null) {
+            try {
+                Map<?, ?> student = get(bearer, "/api/learning/student/profile").getBody();
+                Object id = student == null ? null : student.get("id");
+                if (!(id instanceof Number number) || number.longValue() <= 0) {
+                    throw new MistakeHistoryNotFound();
+                }
+                return number.longValue();
+            } catch (MistakeHistoryNotFound exception) {
+                throw exception;
+            } catch (Exception exception) {
+                throw new MistakeHistoryNotFound();
+            }
+        }
+        throw new Forbidden();
+    }
+
     /** Loads the question and its marking rubric through the existing owner-scoped learning API. */
     public QuestionContext loadQuestion(AuthenticatedUser user, String bearer, long questionBankId) {
         if (user == null || !"TUTOR".equals(user.role())) {
@@ -90,13 +133,21 @@ public class LearningAuthorizationClient {
             String modelAnswer = text(body.get("modelAnswer"));
             BigDecimal totalMarks = decimal(body.get("totalMarks"));
             List<String> keywords = strings(body.get("keywords"));
-            List<String> criteria = criteria(body.get("markingComponents"));
+            List<MarkingComponentContext> components = components(body.get("markingComponents"), totalMarks);
+            List<String> criteria = components.stream().map(MarkingComponentContext::description).toList();
             TopicContext topic = topic(body.get("syllabusTopic"));
             if (prompt == null || modelAnswer == null || totalMarks == null || totalMarks.signum() <= 0 || criteria.isEmpty() || topic == null) {
                 throw new QuestionUnavailable();
             }
-            return new QuestionContext(prompt, modelAnswer, totalMarks, criteria, keywords, topic.id(), topic.code());
-        } catch (Forbidden | QuestionUnavailable exception) {
+            return new QuestionContext(prompt, modelAnswer, totalMarks, criteria, components, keywords, topic.id(), topic.code());
+        } catch (HttpClientErrorException.NotFound exception) {
+            // The learning service deliberately returns the same response for
+            // a missing and a foreign question. Preserve that non-enumerating
+            // contract at the grading boundary.
+            throw new QuestionNotFound();
+        } catch (HttpClientErrorException.Forbidden exception) {
+            throw new Forbidden();
+        } catch (Forbidden | QuestionUnavailable | QuestionNotFound exception) {
             throw exception;
         } catch (Exception exception) {
             throw new QuestionUnavailable();
@@ -132,6 +183,27 @@ public class LearningAuthorizationClient {
             }
             return question;
         } catch (Forbidden | QuestionUnavailable | ManualResultContextNotFound exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new ManualResultContextNotFound();
+        }
+    }
+
+    /**
+     * Verifies ownership before returning even an empty manual-result list.
+     * Learning's owner-scoped worksheet endpoint deliberately gives the same
+     * outcome for a foreign and a missing identifier.
+     */
+    public void assertCanManageManualResults(AuthenticatedUser user, String bearer, long worksheetId) {
+        if (user == null || !"TUTOR".equals(user.role())) {
+            throw new Forbidden();
+        }
+        try {
+            Map<?, ?> worksheet = get(bearer, "/api/learning/tutor/worksheets/" + worksheetId).getBody();
+            if (!sameId(worksheet, worksheetId)) {
+                throw new ManualResultContextNotFound();
+            }
+        } catch (ManualResultContextNotFound exception) {
             throw exception;
         } catch (Exception exception) {
             throw new ManualResultContextNotFound();
@@ -235,12 +307,25 @@ public class LearningAuthorizationClient {
             .map(String::trim).filter(item -> !item.isBlank()).distinct().toList();
     }
 
-    private static List<String> criteria(Object value) {
-        if (!(value instanceof List<?> values)) {
-            return List.of();
+    private static List<MarkingComponentContext> components(Object value, BigDecimal questionTotal) {
+        if (!(value instanceof List<?> values) || questionTotal == null) return List.of();
+        List<MarkingComponentContext> components = new java.util.ArrayList<>();
+        java.util.Set<Integer> positions = new java.util.HashSet<>();
+        BigDecimal allocated = BigDecimal.ZERO;
+        for (Object valueItem : values) {
+            if (!(valueItem instanceof Map<?, ?> component)) return List.of();
+            Object positionValue = component.get("position");
+            String description = text(component.get("description"));
+            BigDecimal marks = decimal(component.get("marks"));
+            if (!(positionValue instanceof Number position) || position.intValue() < 0 || description == null
+                || marks == null || marks.signum() <= 0 || marks.scale() > 2 || !positions.add(position.intValue())) {
+                return List.of();
+            }
+            allocated = allocated.add(marks);
+            components.add(new MarkingComponentContext(position.intValue(), description, marks));
         }
-        return values.stream().filter(Map.class::isInstance).map(Map.class::cast)
-            .map(component -> text(component.get("description"))).filter(Objects::nonNull).toList();
+        if (allocated.compareTo(questionTotal) != 0) return List.of();
+        return components.stream().sorted(java.util.Comparator.comparingInt(MarkingComponentContext::position)).toList();
     }
 
     private static TopicContext topic(Object value) {
@@ -256,16 +341,25 @@ public class LearningAuthorizationClient {
         String modelAnswer,
         BigDecimal totalMarks,
         List<String> markingCriteria,
+        List<MarkingComponentContext> markingComponents,
         List<String> keywords,
         Long syllabusTopicId,
         String syllabusTopicCode
     ) { }
 
+    public record MarkingComponentContext(int position, String description, BigDecimal marks) {
+        public RuleBasedAnswerChecker.WeightedMarkingComponent toRuleComponent() {
+            return new RuleBasedAnswerChecker.WeightedMarkingComponent(position, description, marks);
+        }
+    }
+
     private record TopicContext(long id, String code) { }
 
     public static class Forbidden extends RuntimeException { }
     public static class QuestionUnavailable extends RuntimeException { }
+    public static class QuestionNotFound extends RuntimeException { }
     public static class ManualResultContextNotFound extends RuntimeException { }
+    public static class MistakeHistoryNotFound extends RuntimeException { }
     public static class LearningSyncUnavailable extends RuntimeException {
         public LearningSyncUnavailable(String message) { super(message); }
     }

@@ -10,6 +10,7 @@ import com.fttranscendence.learning.syllabus.SyllabusTopic;
 import com.fttranscendence.learning.syllabus.SyllabusTopicRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -90,7 +91,13 @@ public class ClassInsightService {
         return settings;
     }
 
-    @Transactional
+    /**
+     * Reads the most recent snapshot and atomically records a refresh request when the
+     * snapshot is absent or stale. Class detail is intentionally a read-only query, so
+     * this method must not join that transaction: PostgreSQL rejects queue DML after a
+     * connection has been marked read-only.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public ClassInsightResponse insights(long tutorId, long classId) {
         requireOwned(tutorId, classId);
         requestRefreshIfMissingOrStale(tutorId, classId);

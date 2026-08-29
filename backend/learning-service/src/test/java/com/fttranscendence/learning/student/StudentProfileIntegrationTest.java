@@ -42,6 +42,9 @@ class StudentProfileIntegrationTest {
     void clearData() {
         jdbcTemplate.update("DELETE FROM tutor_alerts");
         jdbcTemplate.update("DELETE FROM progress_reports");
+        jdbcTemplate.update("DELETE FROM mastery_diagnostic_evidence_keywords");
+        jdbcTemplate.update("DELETE FROM mastery_diagnostic_evidence");
+        jdbcTemplate.update("DELETE FROM mastery_approved_results");
         jdbcTemplate.update("DELETE FROM mastery_history");
         jdbcTemplate.update("DELETE FROM mastery_records");
         jdbcTemplate.update("DELETE FROM worksheet_assignments");
@@ -63,10 +66,18 @@ class StudentProfileIntegrationTest {
         insertMastery(studentId, plantTopic, 55, "PRACTISING", 2);
         jdbcTemplate.update("INSERT INTO mastery_history (mastery_record_id, previous_score, new_score, previous_status, new_status, source_submission_id, reason) VALUES (?, ?, ?, ?, ?, ?, ?)",
             waterMastery, 70, 92, "IMPROVING", "MASTERED", 7001L, "Consistent revision");
-        insertWorksheet("P5-CLASS-01", "Class revision", OWNER_ID, "CLASS", classId, classId,
+        long classWorksheetId = insertWorksheet("P5-CLASS-01", "Class revision", OWNER_ID, "CLASS", classId, classId,
             LocalDateTime.of(2026, 9, 15, 17, 0));
-        insertWorksheet("P5-DIRECT-01", "Direct revision", OWNER_ID, "STUDENT", studentId, null,
+        long directWorksheetId = insertWorksheet("P5-DIRECT-01", "Direct revision", OWNER_ID, "STUDENT", studentId, null,
             LocalDateTime.of(2026, 9, 16, 17, 0));
+        insertApprovedProjection(8101L, OWNER_ID, studentId, waterTopic, classWorksheetId, true);
+        // Two approved questions on one worksheet are one worksheet metric.
+        insertApprovedProjection(8102L, OWNER_ID, studentId, plantTopic, classWorksheetId, true);
+        // A retracted result never counts as an approved worksheet outcome.
+        insertApprovedProjection(8103L, OWNER_ID, studentId, plantTopic, directWorksheetId, false);
+        // The aggregate is owner-scoped even if a malformed external write
+        // created an otherwise matching projection.
+        insertApprovedProjection(8104L, 202L, studentId, plantTopic, directWorksheetId, true);
         insertAlert(OWNER_ID, studentId, "WEAK_TOPIC", "WARNING", "Water follow-up");
         insertReport(OWNER_ID, studentId, "P5-TERM-3", LocalDate.of(2026, 7, 1), LocalDate.of(2026, 9, 30));
 
@@ -88,6 +99,7 @@ class StudentProfileIntegrationTest {
             .andExpect(jsonPath("$.worksheets[0].assignmentType").exists())
             .andExpect(jsonPath("$.tutorOnly.activeAlerts[0].title").value("Water follow-up"))
             .andExpect(jsonPath("$.tutorOnly.reports[0].reportCode").value("P5-TERM-3"))
+            .andExpect(jsonPath("$.tutorOnly.approvedWorksheetCount").value(1))
             .andExpect(jsonPath("$.tutorOnly.reports[0].snapshot").doesNotExist());
 
         mockMvc.perform(get("/api/learning/student/profile")
@@ -115,7 +127,8 @@ class StudentProfileIntegrationTest {
             .andExpect(jsonPath("$.history").isEmpty())
             .andExpect(jsonPath("$.worksheets").isEmpty())
             .andExpect(jsonPath("$.tutorOnly.activeAlerts").isEmpty())
-            .andExpect(jsonPath("$.tutorOnly.reports").isEmpty());
+            .andExpect(jsonPath("$.tutorOnly.reports").isEmpty())
+            .andExpect(jsonPath("$.tutorOnly.approvedWorksheetCount").value(0));
     }
 
     @Test
@@ -170,7 +183,7 @@ class StudentProfileIntegrationTest {
         return jdbcTemplate.queryForObject("SELECT id FROM mastery_records WHERE student_profile_id = ? AND syllabus_topic_id = ?", Long.class, studentId, topicId);
     }
 
-    private void insertWorksheet(String code, String title, long tutorId, String audienceType, long targetId, Long classId, LocalDateTime dueAt) {
+    private long insertWorksheet(String code, String title, long tutorId, String audienceType, long targetId, Long classId, LocalDateTime dueAt) {
         jdbcTemplate.update("INSERT INTO worksheets (tutor_id, code, title, audience_type, status, approved_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
             tutorId, code, title, audienceType, "APPROVED");
         Long worksheetId = jdbcTemplate.queryForObject("SELECT id FROM worksheets WHERE tutor_id = ? AND code = ?", Long.class, tutorId, code);
@@ -181,6 +194,19 @@ class StudentProfileIntegrationTest {
             jdbcTemplate.update("INSERT INTO worksheet_assignments (worksheet_id, tutor_id, assignment_type, target_id, student_profile_id, due_at) VALUES (?, ?, ?, ?, ?, ?)",
                 worksheetId, tutorId, audienceType, targetId, targetId, dueAt);
         }
+        return worksheetId;
+    }
+
+    private void insertApprovedProjection(long sourceSubmissionId, long tutorId, long studentId, long topicId,
+                                          long worksheetId, boolean active) {
+        jdbcTemplate.update("""
+            INSERT INTO mastery_approved_results (
+                source_submission_id, tutor_id, worksheet_id, student_profile_id, syllabus_topic_id,
+                approved_marks, available_marks, repeated_mistake_count, revision, active, reviewed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """,
+            sourceSubmissionId, tutorId, worksheetId, studentId, topicId,
+            1, 2, 0, 1, active);
     }
 
     private void insertAlert(long tutorId, long studentId, String type, String severity, String title) {

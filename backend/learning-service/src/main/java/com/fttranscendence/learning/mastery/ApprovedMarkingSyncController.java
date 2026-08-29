@@ -72,11 +72,22 @@ public class ApprovedMarkingSyncController {
                 evidence.stream().map(item -> item.toMasteryInput(syllabusTopicId)).toList());
         }
     }
-    record DiagnosticSyncEvidence(long syllabusTopicId, String category, String description, List<String> missingKeywords) {
+    record DiagnosticSyncEvidence(long syllabusTopicId, String mistakeType, String category, String description, List<String> missingKeywords) {
         MasteryService.DiagnosticEvidence toMasteryInput(long resultTopicId) {
             if (syllabusTopicId != resultTopicId) throw new MasteryService.InvalidResultException("Diagnostic evidence topic must match the approved result topic.");
-            try { return new MasteryService.DiagnosticEvidence(MasteryDiagnosticEvidence.Category.valueOf(category), description, missingKeywords); }
-            catch (RuntimeException exception) { throw new MasteryService.InvalidResultException("Diagnostic evidence category is invalid."); }
+            try {
+                MasteryDiagnosticEvidence.Category parsedCategory = category == null || category.isBlank() ? null
+                    : MasteryDiagnosticEvidence.Category.valueOf(category.trim());
+                MasteryDiagnosticEvidence.MistakeType parsedMistakeType = mistakeType == null || mistakeType.isBlank() ? null
+                    : MasteryDiagnosticEvidence.MistakeType.valueOf(mistakeType.trim());
+                MasteryService.DiagnosticEvidence input = new MasteryService.DiagnosticEvidence(
+                    parsedMistakeType, parsedCategory, description, missingKeywords
+                );
+                input.canonicalMistakeType();
+                return input;
+            } catch (RuntimeException exception) {
+                throw new MasteryService.InvalidResultException("Diagnostic evidence mistake type or category is invalid.");
+            }
         }
     }
 }

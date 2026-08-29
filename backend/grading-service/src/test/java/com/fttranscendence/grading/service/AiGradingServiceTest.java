@@ -30,7 +30,7 @@ class AiGradingServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new AiGradingService(restTemplate, new ObjectMapper());
+        service = new AiGradingService(restTemplate, new ObjectMapper(), new RuleBasedAnswerChecker());
         ReflectionTestUtils.setField(service, "apiUrl", "http://localhost/ai-test");
         ReflectionTestUtils.setField(service, "apiModel", "test-model");
         ReflectionTestUtils.setField(service, "apiKey", "test-api-key");

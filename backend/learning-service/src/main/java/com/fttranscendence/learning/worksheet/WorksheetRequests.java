@@ -24,6 +24,31 @@ public final class WorksheetRequests {
         @Future LocalDateTime dueAt,
         @Size(max = 200) String title,
         @Size(max = 2000) String instructions,
+        @Size(max = 100) List<@Positive Long> studentIds,
+        Worksheet.WorksheetType worksheetType
+    ) {
+        /** Keeps the established standard-generation wire shape source compatible. */
+        public GenerateWorksheetRequest(WorksheetGenerationRequest.TargetMode targetMode, List<Long> topicIds,
+                Integer questionCount, Question.QuestionType questionType, LocalDateTime dueAt, String title,
+                String instructions, List<Long> studentIds) {
+            this(targetMode, topicIds, questionCount, questionType, dueAt, title, instructions, studentIds,
+                Worksheet.WorksheetType.STANDARD);
+        }
+    }
+
+    /**
+     * Diagnostics derive their eligible topics and their explanation from persisted
+     * mastery evidence.  A tutor still selects the audience and explicitly starts
+     * generation; this request can never approve or assign a worksheet.
+     */
+    public record GenerateDiagnosticWorksheetRequest(
+        @NotNull WorksheetGenerationRequest.TargetMode targetMode,
+        @NotEmpty @Size(max = 100) List<@Positive Long> topicIds,
+        @NotNull @Positive @Max(100) Integer questionCount,
+        Question.QuestionType questionType,
+        @Future LocalDateTime dueAt,
+        @Size(max = 200) String title,
+        @Size(max = 2000) String instructions,
         @Size(max = 100) List<@Positive Long> studentIds
     ) { }
 
@@ -43,16 +68,22 @@ public final class WorksheetRequests {
                                     Long studentProfileId, LocalDateTime assignedAt, LocalDateTime dueAt) { }
 
     public record WorksheetResponse(Long id, String code, String title, String instructions,
+                                    String subject, Worksheet.WorksheetType worksheetType,
                                     Worksheet.AudienceType audienceType, Worksheet.Status status,
                                     Long generationRequestId, List<QuestionSummary> questions,
                                     List<AssignmentSummary> assignments) {
         static WorksheetResponse from(Worksheet worksheet) {
             return new WorksheetResponse(worksheet.getId(), worksheet.getCode(), worksheet.getTitle(),
-                worksheet.getInstructions(), worksheet.getAudienceType(), worksheet.getStatus(),
+                worksheet.getInstructions(), worksheet.getSubject(), worksheet.getWorksheetType(),
+                worksheet.getAudienceType(), worksheet.getStatus(),
                 worksheet.getGenerationRequestId(), worksheet.getQuestions().stream().map(item -> {
                     Question question = item.getQuestion();
-                    return new QuestionSummary(question.getId(), question.getCode(), question.getPrompt(),
-                        question.getQuestionType(), question.getTotalMarks(), question.getSyllabusTopic().getId(), question.getSyllabusTopic().getName());
+                    return new QuestionSummary(question.getId(),
+                        item.getQuestionCodeSnapshot() == null ? question.getCode() : item.getQuestionCodeSnapshot(),
+                        item.getPromptSnapshot() == null ? question.getPrompt() : item.getPromptSnapshot(),
+                        item.getQuestionTypeSnapshot() == null ? question.getQuestionType() : item.getQuestionTypeSnapshot(),
+                        item.getTotalMarksSnapshot() == null ? question.getTotalMarks() : item.getTotalMarksSnapshot(),
+                        question.getSyllabusTopic().getId(), question.getSyllabusTopic().getName());
                 }).toList(), worksheet.getAssignments().stream().map(assignment -> new AssignmentSummary(
                     assignment.getId(), assignment.getAssignmentType(), assignment.getClassId(),
                     assignment.getStudentProfileId(), assignment.getAssignedAt(), assignment.getDueAt()

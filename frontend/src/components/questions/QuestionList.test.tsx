@@ -55,6 +55,26 @@ describe("QuestionList", () => {
     await waitFor(() => expect(loadQuestions).toHaveBeenLastCalledWith(expect.objectContaining({ page: 0, topicId: 14, questionType: "OPEN_ENDED" })));
   });
 
+  it("debounces a combined server search, resets pagination, and retains selections", async () => {
+    const user = userEvent.setup();
+    const loadQuestions = vi.fn(async (filters: QuestionBankFilters) => filters.page === 1 ? secondPage : firstPage);
+    render(<QuestionList loadQuestions={loadQuestions} loadSyllabus={async () => syllabus} />);
+    await screen.findByText("Explain evaporation.");
+
+    await user.click(screen.getByRole("checkbox", { name: "Select SCI-WATER-001" }));
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(await screen.findByText("Choose the energy conversion.")).toBeVisible();
+    await user.click(screen.getByRole("checkbox", { name: "Select SCI-ENERGY-001" }));
+    expect(screen.getByText("2 selected")).toBeVisible();
+
+    loadQuestions.mockClear();
+    await user.type(screen.getByLabelText("Search questions"), "cafe");
+    expect(loadQuestions).not.toHaveBeenCalled();
+    await waitFor(() => expect(loadQuestions).toHaveBeenCalledTimes(1), { timeout: 1200 });
+    expect(loadQuestions).toHaveBeenLastCalledWith(expect.objectContaining({ search: "cafe", page: 0 }));
+    expect(screen.getByText("2 selected")).toBeVisible();
+  });
+
   it("renders a responsive empty state and clears filters", async () => {
     const user = userEvent.setup();
     const loadQuestions = vi.fn().mockResolvedValue({ ...firstPage, items: [], totalElements: 0, totalPages: 0, hasNext: false });

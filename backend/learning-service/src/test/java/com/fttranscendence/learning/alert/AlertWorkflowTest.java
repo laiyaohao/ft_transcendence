@@ -53,6 +53,15 @@ class AlertWorkflowTest {
     private long student(long tutor, String name) { jdbc.update("INSERT INTO student_profiles (tutor_id, full_name) VALUES (?, ?)", tutor, name); return jdbc.queryForObject("SELECT id FROM student_profiles WHERE full_name = ?", Long.class, name); }
     private long topic() { return jdbc.queryForObject("SELECT id FROM syllabus_topics WHERE active = true ORDER BY id LIMIT 1", Long.class); }
     private long mastery(long student, long topic, int score, int attempts) { jdbc.update("INSERT INTO mastery_records (student_profile_id, syllabus_topic_id, score, mastery_status, attempt_count, calculated_at) VALUES (?, ?, ?, 'PRACTISING', ?, CURRENT_TIMESTAMP)", student, topic, score, attempts); return jdbc.queryForObject("SELECT id FROM mastery_records WHERE student_profile_id = ? AND syllabus_topic_id = ?", Long.class, student, topic); }
-    private void diagnostic(long record, long student, long tutor, long submission, String category) { jdbc.update("INSERT INTO mastery_diagnostic_evidence (mastery_record_id, student_profile_id, tutor_id, source_submission_id, diagnostic_category, tutor_rationale) VALUES (?, ?, ?, ?, ?, 'Tutor confirmed this evidence')", record, student, tutor, submission, category); }
+    private void diagnostic(long record, long student, long tutor, long submission, String category) {
+        String mistakeType = switch (category) {
+            case "CONCEPT" -> "CONCEPT_MISUNDERSTANDING";
+            case "KEYWORD" -> "MISSING_KEY_POINT";
+            case "EXPRESSION" -> "WEAK_EXPLANATION";
+            case "APPLICATION" -> "INCOMPLETE_WORKING";
+            default -> throw new IllegalArgumentException("Unsupported diagnostic category: " + category);
+        };
+        jdbc.update("INSERT INTO mastery_diagnostic_evidence (mastery_record_id, student_profile_id, tutor_id, source_submission_id, diagnostic_category, mistake_type, tutor_rationale) VALUES (?, ?, ?, ?, ?, ?, 'Tutor confirmed this evidence')", record, student, tutor, submission, category, mistakeType);
+    }
     private String bearer(String role, long user) { Instant now = Instant.now(); return "Bearer " + Jwts.builder().setSubject("person@example.com").claim("role", role).claim("userId", user).setIssuedAt(Date.from(now)).setExpiration(Date.from(now.plusSeconds(600))).signWith(Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8)), SignatureAlgorithm.HS256).compact(); }
 }

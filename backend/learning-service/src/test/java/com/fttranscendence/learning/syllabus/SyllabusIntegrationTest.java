@@ -8,6 +8,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -24,16 +25,26 @@ class SyllabusIntegrationTest {
     @Autowired private JdbcTemplate jdbcTemplate;
 
     @Test
-    void seedsTheReviewedP5AndP6ScienceRootsAndCompleteTopicSet() {
+    void seedsTheReviewedP5AndP6ScienceMvpTaxonomyWithStableNodeCounts() {
         SyllabusTopic science = topic("SCI");
         List<SyllabusTopic> levels = childrenOf(science);
 
         assertEquals(SyllabusTopic.NodeType.SUBJECT, science.getNodeType());
         assertEquals(0, science.getDepth());
-        assertEquals(24, repository.countByCurriculumVersionAndActiveTrue(VERSION));
+        assertEquals(27, repository.countByCurriculumVersionAndActiveTrue(VERSION));
         assertEquals(List.of("SCI_P5", "SCI_P6"), codes(levels));
         assertEquals(List.of("Cycles", "Systems"), names(childrenOf(topic("SCI_P5"))));
         assertEquals(List.of("Energy", "Interactions"), names(childrenOf(topic("SCI_P6"))));
+        assertEquals(
+            Map.of(
+                SyllabusTopic.NodeType.SUBJECT, 1L,
+                SyllabusTopic.NodeType.LEVEL, 2L,
+                SyllabusTopic.NodeType.THEME, 4L,
+                SyllabusTopic.NodeType.TOPIC, 9L,
+                SyllabusTopic.NodeType.SUBTOPIC, 11L
+            ),
+            activeNodeCounts()
+        );
 
         assertEquals(
             List.of(
@@ -56,6 +67,38 @@ class SyllabusIntegrationTest {
         );
         assertTrue(science.getSourceReference().contains("moe.gov.sg"));
         assertEquals(VERSION, science.getCurriculumVersion());
+    }
+
+    @Test
+    void activeMvpTopicsAlwaysHaveAnActiveLeafAndTheHumanSystemKeepsTheCanonicalRespiratoryLeaf() {
+        List<SyllabusTopic> topics = repository.findAllByNodeTypeAndActiveTrueOrderBySortOrderAscCodeAsc(
+            SyllabusTopic.NodeType.TOPIC
+        );
+
+        assertTrue(topics.stream().allMatch(topic -> childrenOf(topic).stream()
+            .anyMatch(child -> child.getNodeType() == SyllabusTopic.NodeType.SUBTOPIC)));
+        assertEquals(
+            List.of("SCI_P5_SYSTEMS_HUMAN_RESPIRATORY_CIRCULATORY"),
+            codes(childrenOf(topic("SCI_P5_SYSTEMS_HUMAN")).stream()
+                .filter(child -> "Respiratory and circulatory systems".equals(child.getName()))
+                .toList())
+        );
+        assertFalse(topic("SCI_P5_SYSTEMS_PLANT_RESPIRATORY_CIRCULATORY").isActive());
+        assertFalse(childrenOf(topic("SCI_P5_SYSTEMS_PLANT")).stream()
+            .anyMatch(child -> "Respiratory and circulatory systems".equals(child.getName())));
+    }
+
+    @Test
+    void everySeededNodeHasNonblankCurriculumAndSourceMetadata() {
+        Integer blankMetadataRows = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM syllabus_topics "
+                + "WHERE curriculum_version IS NULL OR TRIM(curriculum_version) = '' "
+                + "OR source_reference IS NULL OR TRIM(source_reference) = ''",
+            Integer.class
+        );
+
+        assertEquals(0, blankMetadataRows);
+        assertEquals(28, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM syllabus_topics", Integer.class));
     }
 
     @Test
@@ -142,5 +185,13 @@ class SyllabusIntegrationTest {
 
     private List<String> names(List<SyllabusTopic> topics) {
         return topics.stream().map(SyllabusTopic::getName).toList();
+    }
+
+    private Map<SyllabusTopic.NodeType, Long> activeNodeCounts() {
+        return repository.findAllByActiveTrueOrderByDepthAscSortOrderAscCodeAsc().stream()
+            .collect(java.util.stream.Collectors.groupingBy(
+                SyllabusTopic::getNodeType,
+                java.util.stream.Collectors.counting()
+            ));
     }
 }

@@ -31,6 +31,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -116,6 +117,76 @@ class DataAccessAuthorizationIntegrationTest {
                 .header(HttpHeaders.AUTHORIZATION, bearer("STUDENT", OWNER_STUDENT_USER_ID))
                 .file("file", pngBytes("retired")))
             .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void ruleChecksRequireTutorAndUseNonEnumeratingAuthoritativeQuestionScope() throws Exception {
+        mockMvc.perform(post("/api/grading/tutor/questions/601/rule-check")
+                .contentType(MediaType.APPLICATION_JSON).content("{\"answer\":\"heat conduction\"}"))
+            .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(post("/api/grading/tutor/questions/601/rule-check")
+                .header(HttpHeaders.AUTHORIZATION, bearer("STUDENT", OWNER_STUDENT_USER_ID))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"answer\":\"heat conduction\"}"))
+            .andExpect(status().isForbidden());
+
+        learningServer.expect(once(), requestTo("http://localhost:8083/api/learning/tutor/questions/601"))
+            .andRespond(withStatus(HttpStatus.NOT_FOUND));
+        mockMvc.perform(post("/api/grading/tutor/questions/601/rule-check")
+                .header(HttpHeaders.AUTHORIZATION, bearer("TUTOR", UNRELATED_TUTOR_USER_ID))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"answer\":\"heat conduction\"}"))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.code").value("QUESTION_NOT_FOUND"));
+        learningServer.verify();
+
+        learningServer.reset();
+        learningServer.expect(once(), requestTo("http://localhost:8083/api/learning/tutor/questions/601"))
+            .andRespond(withSuccess("""
+                {"id":601,"prompt":"Why?","modelAnswer":"Heat conducts.","totalMarks":2,
+                 "keywords":["conductor"],"syllabusTopic":{"id":44,"code":"SCI-44"},
+                 "markingComponents":[{"position":0,"description":"Explains heat conduction","marks":2}]}
+                """, MediaType.APPLICATION_JSON));
+        mockMvc.perform(post("/api/grading/tutor/questions/601/rule-check")
+                .header(HttpHeaders.AUTHORIZATION, bearer("TUTOR", UNRELATED_TUTOR_USER_ID))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"answer\":\"heat conduction\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.awardedMarks").value(2.0))
+            .andExpect(jsonPath("$.componentResults[0].matched").value(true));
+        learningServer.verify();
+    }
+
+    @Test
+    void mistakeHistoryIsSelfScopedForStudentsAndNonEnumeratingForTutors() throws Exception {
+        learningServer.expect(once(), requestTo("http://localhost:8083/api/learning/student/profile"))
+            .andRespond(withSuccess("{\"id\":501}", MediaType.APPLICATION_JSON));
+
+        mockMvc.perform(get("/api/grading/mistakes/me")
+                .header(HttpHeaders.AUTHORIZATION, bearer("STUDENT", OWNER_STUDENT_USER_ID)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$").isArray());
+        learningServer.verify();
+
+        mockMvc.perform(get("/api/grading/mistakes/students/501")
+                .header(HttpHeaders.AUTHORIZATION, bearer("STUDENT", OWNER_STUDENT_USER_ID)))
+            .andExpect(status().isForbidden());
+
+        learningServer.reset();
+        learningServer.expect(once(), requestTo("http://localhost:8083/api/learning/tutor/students/501"))
+            .andRespond(withStatus(HttpStatus.NOT_FOUND));
+        mockMvc.perform(get("/api/grading/mistakes/students/501")
+                .header(HttpHeaders.AUTHORIZATION, bearer("TUTOR", UNRELATED_TUTOR_USER_ID)))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.code").value("MISTAKE_HISTORY_NOT_FOUND"));
+        learningServer.verify();
+
+        learningServer.reset();
+        learningServer.expect(once(), requestTo("http://localhost:8083/api/learning/tutor/students/999999"))
+            .andRespond(withStatus(HttpStatus.NOT_FOUND));
+        mockMvc.perform(get("/api/grading/mistakes/students/999999")
+                .header(HttpHeaders.AUTHORIZATION, bearer("TUTOR", UNRELATED_TUTOR_USER_ID)))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.code").value("MISTAKE_HISTORY_NOT_FOUND"));
+        learningServer.verify();
     }
 
     @Test

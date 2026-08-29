@@ -95,6 +95,8 @@ export interface StudentProfileReport {
 export interface TutorOnlyStudentProfile {
   activeAlerts: StudentProfileAlert[];
   reports: StudentProfileReport[];
+  /** Distinct worksheets with at least one active Tutor-approved result. */
+  approvedWorksheetCount: number;
 }
 
 export interface TutorStudentProfile {
@@ -111,6 +113,14 @@ export interface TutorStudentProfile {
   worksheets: StudentProfileWorksheet[];
   /** Null is returned by the student self-profile endpoint, never by the tutor endpoint. */
   tutorOnly: TutorOnlyStudentProfile | null;
+}
+
+/**
+ * The student endpoint deliberately uses the same factual profile shape as the
+ * tutor endpoint, but never exposes tutor-only alerts, reports, or notes.
+ */
+export interface StudentSelfProfile extends Omit<TutorStudentProfile, "tutorOnly"> {
+  tutorOnly: null;
 }
 
 export interface TutorNote {
@@ -292,7 +302,8 @@ function isTutorOnlyStudentProfile(value: unknown): value is TutorOnlyStudentPro
   return Array.isArray(candidate.activeAlerts)
     && candidate.activeAlerts.every(isStudentProfileAlert)
     && Array.isArray(candidate.reports)
-    && candidate.reports.every(isStudentProfileReport);
+    && candidate.reports.every(isStudentProfileReport)
+    && isNonNegativeInteger(candidate.approvedWorksheetCount);
 }
 
 function isTutorStudentProfile(value: unknown): value is TutorStudentProfile {
@@ -348,6 +359,14 @@ export function parseTutorStudentProfile(payload: unknown): TutorStudentProfile 
     throw new Error("The learning service returned an invalid student profile. Please try again.");
   }
   return payload;
+}
+
+export function parseStudentSelfProfile(payload: unknown): StudentSelfProfile {
+  const profile = parseTutorStudentProfile(payload);
+  if (profile.tutorOnly !== null) {
+    throw new Error("The learning service returned an invalid student profile. Please try again.");
+  }
+  return { ...profile, tutorOnly: null };
 }
 
 export function parseTutorNote(payload: unknown): TutorNote {
@@ -418,6 +437,13 @@ export async function fetchTutorStudentProfile(studentId: number): Promise<Tutor
   const response = await fetch(`${LEARNING_API_URL}${STUDENT_LIST_PATH}/${studentId}/profile`, { headers: authHeaders() });
   if (!response.ok) throw await responseError(response);
   return parseTutorStudentProfile(await response.json());
+}
+
+/** Loads the profile belonging to the authenticated Student; no student id is client-controlled. */
+export async function fetchStudentSelfProfile(): Promise<StudentSelfProfile> {
+  const response = await fetch(`${LEARNING_API_URL}/api/learning/student/profile`, { headers: authHeaders() });
+  if (!response.ok) throw await responseError(response);
+  return parseStudentSelfProfile(await response.json());
 }
 
 function notePath(studentId: number, noteId?: number) {

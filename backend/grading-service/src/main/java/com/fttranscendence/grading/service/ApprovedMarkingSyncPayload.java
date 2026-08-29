@@ -25,13 +25,15 @@ public record ApprovedMarkingSyncPayload(
 ) {
     public record DiagnosticEvidence(
         long syllabusTopicId,
+        String mistakeType,
         String category,
         String description,
         List<String> missingKeywords
     ) {
         static DiagnosticEvidence from(ApprovedDiagnosticEvidence evidence) {
             return new DiagnosticEvidence(
-                evidence.getSyllabusTopicId(), evidence.getCategory().name(), evidence.getDescription(), evidence.getMissingKeywords()
+                evidence.getSyllabusTopicId(), evidence.getMistakeType().name(), evidence.getCategory().name(),
+                evidence.getDescription(), evidence.getMissingKeywords()
             );
         }
     }

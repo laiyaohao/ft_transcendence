@@ -10,6 +10,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * A deliberately small, deterministic keyword checker.
@@ -61,8 +62,97 @@ public class RuleBasedAnswerChecker {
             maximumMarks,
             matched,
             missing,
-            explanation
+            explanation,
+            List.of()
         );
+    }
+
+    /**
+     * Scores explicit marking components before any unweighted keyword
+     * fallback. Component marks are authoritative allocations: their total
+     * must exactly equal the question maximum, so no suggestion can silently
+     * award more than the question permits.
+     *
+     * <p>The current question-bank contract stores a component description
+     * rather than a free-form AI rule. We therefore perform only exact,
+     * normalized phrase matching against that description and its stable
+     * action-verb-free form (for example, "Explains heat conduction" also
+     * accepts "heat conduction"). This remains reproducible and deliberately
+     * avoids fuzzy or generative interpretation.</p>
+     */
+    public RuleCheckResult checkWeighted(
+        String answer,
+        List<WeightedMarkingComponent> components,
+        BigDecimal maximumMarks
+    ) {
+        validateMaximumMarks(maximumMarks);
+        List<WeightedMarkingComponent> validated = validateComponents(components, maximumMarks);
+        String normalizedAnswer = normalize(answer);
+        BigDecimal awarded = ZERO;
+        List<RuleCheckResult.ComponentResult> results = new ArrayList<>();
+        List<String> matched = new ArrayList<>();
+        List<String> missing = new ArrayList<>();
+
+        for (WeightedMarkingComponent component : validated) {
+            List<String> targets = componentTargets(component.description());
+            boolean componentMatched = targets.stream().anyMatch(target -> containsPhrase(normalizedAnswer, target));
+            if (componentMatched) {
+                awarded = awarded.add(component.marks());
+                matched.add(component.description());
+            } else {
+                missing.add(component.description());
+            }
+            results.add(new RuleCheckResult.ComponentResult(
+                component.position(), component.description(), component.marks(), componentMatched,
+                componentMatched ? targets : List.of(), componentMatched ? List.of() : targets,
+                componentMatched ? "Matched deterministic component target." : "No deterministic component target was found."
+            ));
+        }
+        awarded = awarded.setScale(2, RoundingMode.HALF_UP).min(maximumMarks).max(BigDecimal.ZERO);
+        String explanation = "Matched " + matched.size() + " of " + validated.size() + " weighted marking components.";
+        return new RuleCheckResult(awarded, maximumMarks, matched, missing, explanation, results);
+    }
+
+    private List<WeightedMarkingComponent> validateComponents(
+        List<WeightedMarkingComponent> components, BigDecimal maximumMarks
+    ) {
+        if (components == null || components.isEmpty()) {
+            throw new IllegalArgumentException("At least one weighted marking component is required.");
+        }
+        List<WeightedMarkingComponent> normalized = new ArrayList<>();
+        Set<Integer> positions = new java.util.HashSet<>();
+        BigDecimal allocated = BigDecimal.ZERO;
+        for (WeightedMarkingComponent component : components) {
+            if (component == null || component.position() < 0 || component.description() == null
+                || component.description().isBlank() || component.marks() == null || component.marks().signum() <= 0) {
+                throw new IllegalArgumentException("Each weighted marking component needs a position, description, and positive marks.");
+            }
+            if (!positions.add(component.position())) {
+                throw new IllegalArgumentException("Weighted marking component positions must be unique.");
+            }
+            if (component.marks().scale() > 2) {
+                throw new IllegalArgumentException("Weighted marking component marks may have at most two decimal places.");
+            }
+            allocated = allocated.add(component.marks());
+            normalized.add(new WeightedMarkingComponent(component.position(), component.description().trim(), component.marks()));
+        }
+        if (allocated.compareTo(maximumMarks) > 0) {
+            throw new IllegalArgumentException("Weighted marking component marks cannot exceed the question total.");
+        }
+        if (allocated.compareTo(maximumMarks) != 0) {
+            throw new IllegalArgumentException("Weighted marking component marks must exactly equal the question total.");
+        }
+        return normalized.stream().sorted(java.util.Comparator.comparingInt(WeightedMarkingComponent::position)).toList();
+    }
+
+    private List<String> componentTargets(String description) {
+        String normalized = normalize(description);
+        if (normalized.isEmpty()) return List.of();
+        String withoutLeadingVerb = normalized.replaceFirst(
+            "^(explains|explain|states|state|identifies|identify|calculates|calculate|uses|use|shows|show|describes|describe|mentions|mention) ", ""
+        );
+        if (withoutLeadingVerb.equals(normalized)) return List.of(normalized);
+        return List.of(normalized, withoutLeadingVerb);
     }
 
     private List<RubricTarget> validateAndNormalizeRubric(
@@ -145,8 +235,15 @@ public class RuleBasedAnswerChecker {
         }
 
         private static boolean containsPhrase(String normalizedAnswer, String phrase) {
-            return !normalizedAnswer.isEmpty()
-                && (" " + normalizedAnswer + " ").contains(" " + phrase + " ");
+            return RuleBasedAnswerChecker.containsPhrase(normalizedAnswer, phrase);
         }
     }
+
+    private static boolean containsPhrase(String normalizedAnswer, String phrase) {
+        return !normalizedAnswer.isEmpty() && !phrase.isEmpty()
+            && (" " + normalizedAnswer + " ").contains(" " + phrase + " ");
+    }
+
+    /** A server-supplied mark allocation, never trusted from a browser request. */
+    public record WeightedMarkingComponent(int position, String description, BigDecimal marks) { }
 }

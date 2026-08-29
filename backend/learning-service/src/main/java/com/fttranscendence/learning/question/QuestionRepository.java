@@ -59,6 +59,22 @@ public interface QuestionRepository extends Repository<Question, Long> {
             where (:topicId is null or topic.id = :topicId)
               and (:questionType is null or question.questionType = :questionType)
               and question.archiveState = :archiveState
+              and (
+                :search is null
+                or cast(function('translate', lower(question.code),
+                  'àáâãäåāăąçćčďèéêëēĕėęěìíîïīĭįłñńňòóôõöōŏőřŕśšşťùúûüūŭůűųýÿźžż',
+                  'aaaaaaaaacccdeeeeeeeeeiiiiiiilnnnoooooooorrssstuuuuuuuuuyyzzz') as string) like :search escape '!'
+                or cast(function('translate', lower(question.prompt),
+                  'àáâãäåāăąçćčďèéêëēĕėęěìíîïīĭįłñńňòóôõöōŏőřŕśšşťùúûüūŭůűųýÿźžż',
+                  'aaaaaaaaacccdeeeeeeeeeiiiiiiilnnnoooooooorrssstuuuuuuuuuyyzzz') as string) like :search escape '!'
+                or exists (
+                  select 1 from Question keywordQuestion join keywordQuestion.keywords keyword
+                  where keywordQuestion = question
+                    and cast(function('translate', lower(keyword),
+                      'àáâãäåāăąçćčďèéêëēĕėęěìíîïīĭįłñńňòóôõöōŏőřŕśšşťùúûüūŭůűųýÿźžż',
+                      'aaaaaaaaacccdeeeeeeeeeiiiiiiilnnnoooooooorrssstuuuuuuuuuyyzzz') as string) like :search escape '!'
+                )
+              )
             order by question.code asc, question.id asc
             """,
         countQuery = """
@@ -67,12 +83,29 @@ public interface QuestionRepository extends Repository<Question, Long> {
             where (:topicId is null or question.syllabusTopic.id = :topicId)
               and (:questionType is null or question.questionType = :questionType)
               and question.archiveState = :archiveState
+              and (
+                :search is null
+                or cast(function('translate', lower(question.code),
+                  'àáâãäåāăąçćčďèéêëēĕėęěìíîïīĭįłñńňòóôõöōŏőřŕśšşťùúûüūŭůűųýÿźžż',
+                  'aaaaaaaaacccdeeeeeeeeeiiiiiiilnnnoooooooorrssstuuuuuuuuuyyzzz') as string) like :search escape '!'
+                or cast(function('translate', lower(question.prompt),
+                  'àáâãäåāăąçćčďèéêëēĕėęěìíîïīĭįłñńňòóôõöōŏőřŕśšşťùúûüūŭůűųýÿźžż',
+                  'aaaaaaaaacccdeeeeeeeeeiiiiiiilnnnoooooooorrssstuuuuuuuuuyyzzz') as string) like :search escape '!'
+                or exists (
+                  select 1 from Question keywordQuestion join keywordQuestion.keywords keyword
+                  where keywordQuestion = question
+                    and cast(function('translate', lower(keyword),
+                      'àáâãäåāăąçćčďèéêëēĕėęěìíîïīĭįłñńňòóôõöōŏőřŕśšşťùúûüūŭůűųýÿźžż',
+                      'aaaaaaaaacccdeeeeeeeeeiiiiiiilnnnoooooooorrssstuuuuuuuuuyyzzz') as string) like :search escape '!'
+                )
+              )
             """
     )
     Page<Question> findQuestionBank(
         @Param("topicId") Long topicId,
         @Param("questionType") Question.QuestionType questionType,
         @Param("archiveState") Question.ArchiveState archiveState,
+        @Param("search") String search,
         Pageable pageable
     );
 }

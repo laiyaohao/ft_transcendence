@@ -29,7 +29,7 @@ public class QuestionService {
     @Transactional(readOnly = true)
     public QuestionPage list(QuestionQuery query) {
         Page<Question> result = questions.findQuestionBank(
-            query.topicId(), query.questionType(), query.archiveState(),
+            query.topicId(), query.questionType(), query.archiveState(), normalizeSearch(query.search()),
             PageRequest.of(query.page(), query.size())
         );
         return new QuestionPage(
@@ -169,10 +169,24 @@ public class QuestionService {
         return List.copyOf(normalized);
     }
 
+    /**
+     * The repository uses ! as the explicit LIKE escape character. Keeping the
+     * escaping here makes a search for a code such as SCI_01 or 50% literal,
+     * rather than turning user input into a pattern.
+     */
+    private String normalizeSearch(String search) {
+        if (search == null || search.isBlank()) return null;
+        String normalized = java.text.Normalizer.normalize(search.trim(), java.text.Normalizer.Form.NFD)
+            .replaceAll("\\p{M}+", "")
+            .toLowerCase(Locale.ROOT);
+        return "%" + normalized.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%";
+    }
+
     public record QuestionQuery(
         Long topicId,
         Question.QuestionType questionType,
         Question.ArchiveState archiveState,
+        String search,
         int page,
         int size
     ) {}

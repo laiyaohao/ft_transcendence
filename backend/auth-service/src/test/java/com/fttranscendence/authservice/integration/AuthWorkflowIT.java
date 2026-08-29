@@ -66,7 +66,7 @@ class AuthWorkflowIT {
         String registrationToken = registrationJson.get("token").asText();
         mockMvc.perform(get("/api/private-check")
                 .header("Authorization", "Bearer " + registrationToken))
-            .andExpect(status().isNotFound());
+            .andExpect(status().isForbidden());
 
         mockMvc.perform(post("/api/auth/login")
                 .contentType(MediaType.APPLICATION_JSON)

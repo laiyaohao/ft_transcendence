@@ -14,13 +14,15 @@ describe("MarkingReview", () => {
   });
 
   it("requires and sends Tutor-confirmed diagnostic evidence only when selected", async () => {
-    const approve = vi.fn().mockResolvedValue({ ...pending, reviewStatus: "APPROVED", diagnosticEvidence: [{ category: "CONCEPT", description: "Heat transfer concept is incomplete.", missingKeywords: ["conduction"] }] });
+    const approve = vi.fn().mockResolvedValue({ ...pending, reviewStatus: "APPROVED", diagnosticEvidence: [{ mistakeType: "CONCEPT_MISUNDERSTANDING", category: "CONCEPT", description: "Heat transfer concept is incomplete.", missingKeywords: ["conduction"] }] });
     const user = userEvent.setup(); render(<MarkingReview review={pending} approve={approve} />);
     await user.click(screen.getByRole("checkbox", { name: "Include Tutor-confirmed diagnostic evidence" }));
+    await user.click(screen.getByLabelText("Mistake type"));
+    await user.click(await screen.findByRole("option", { name: "Wrong units" }));
     await user.type(await screen.findByLabelText(/Tutor diagnostic rationale/), "Heat transfer concept is incomplete.");
     await user.type(screen.getByLabelText("Supporting missing words or phrases"), "conduction");
     await user.click(screen.getByRole("button", { name: "Approve final result" }));
-    expect(approve).toHaveBeenCalledWith(1, 1, "Explain heat transfer.", [{ category: "CONCEPT", description: "Heat transfer concept is incomplete.", missingKeywords: ["conduction"] }]);
+    expect(approve).toHaveBeenCalledWith(1, 1, "Explain heat transfer.", [{ mistakeType: "WRONG_UNITS", description: "Heat transfer concept is incomplete.", missingKeywords: ["conduction"] }]);
   });
 
   it("supports flagging, resetting, and prevents invalid local approval", async () => {

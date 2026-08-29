@@ -73,7 +73,9 @@ export default function SyllabusPicker({
     catch (reason) { setLoadError(reason instanceof Error ? reason.message : "The syllabus could not be loaded. Please try again."); }
   }, [loadSyllabus]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- the async load owns its loading state.
   React.useEffect(() => { void load(); }, [load]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- selection is derived from the loaded tree and controlled value.
   React.useEffect(() => { setSelection(selectionFor(tree, value)); }, [tree, value]);
 
   const change = (depth: number, rawValue: string) => {

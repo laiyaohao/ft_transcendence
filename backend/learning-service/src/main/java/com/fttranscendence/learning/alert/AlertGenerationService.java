@@ -68,16 +68,16 @@ public class AlertGenerationService {
             }
         }
         Map<String, List<MasteryDiagnosticEvidence>> repeated = diagnostics.findByStudentProfileIdOrderByCreatedAtDescIdDesc(student.getId()).stream()
-            .collect(Collectors.groupingBy(item -> item.getMasteryRecord().getId() + ":" + item.getCategory()));
+            .collect(Collectors.groupingBy(item -> item.getMasteryRecord().getId() + ":" + item.getMistakeType()));
         for (List<MasteryDiagnosticEvidence> occurrences : repeated.values()) {
             if (occurrences.size() < REPEATED_DIAGNOSTIC_THRESHOLD) continue;
             MasteryDiagnosticEvidence latest = occurrences.get(0);
             MasteryRecord record = latest.getMasteryRecord();
             createIfAbsent(tutorId, student, record, TutorAlert.AlertType.REPEATED_MISTAKE, TutorAlert.Severity.CRITICAL,
-                "repeated-diagnostic:" + student.getId() + ":" + record.getSyllabusTopic().getId() + ":" + latest.getCategory() + ":" + latest.getId(),
-                "Repeated " + label(latest.getCategory()) + " in " + record.getSyllabusTopic().getName(),
+                "repeated-diagnostic:" + student.getId() + ":" + record.getSyllabusTopic().getId() + ":" + latest.getMistakeType() + ":" + latest.getId(),
+                "Repeated " + label(latest.getMistakeType()) + " in " + record.getSyllabusTopic().getName(),
                 "%d tutor-confirmed %s records were captured for this topic."
-                    .formatted(occurrences.size(), label(latest.getCategory()).toLowerCase()));
+                    .formatted(occurrences.size(), label(latest.getMistakeType()).toLowerCase()));
         }
     }
 
@@ -106,7 +106,20 @@ public class AlertGenerationService {
     }
 
     private static String percent(BigDecimal value) { return value.stripTrailingZeros().toPlainString() + "%"; }
-    private static String label(MasteryDiagnosticEvidence.Category category) { return switch (category) { case CONCEPT -> "concept weakness"; case KEYWORD -> "keyword omission"; case EXPRESSION -> "expression weakness"; case APPLICATION -> "application weakness"; }; }
+    private static String label(MasteryDiagnosticEvidence.MistakeType type) {
+        return switch (type) {
+            case CONCEPT_MISUNDERSTANDING -> "concept misunderstanding";
+            case CALCULATION_ERROR -> "calculation error";
+            case MISREAD_QUESTION -> "misread question";
+            case INCOMPLETE_WORKING -> "incomplete working";
+            case INCORRECT_FORMULA -> "incorrect formula";
+            case CARELESS_MISTAKE -> "careless mistake";
+            case WEAK_EXPLANATION -> "weak explanation";
+            case MISSING_KEY_POINT -> "missing key point";
+            case WRONG_UNITS -> "wrong units";
+            case ANSWER_FORMAT_ISSUE -> "answer format issue";
+        };
+    }
     private static void requirePositive(long value) { if (value <= 0) throw new IllegalArgumentException("Tutor id must be positive."); }
 
     public record AlertResponse(Long id, Long studentId, String studentName, TutorAlert.AlertType type,

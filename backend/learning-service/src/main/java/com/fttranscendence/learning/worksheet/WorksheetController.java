@@ -52,6 +52,16 @@ public class WorksheetController {
         return ResponseEntity.status(response.status() == WorksheetGenerationRequest.Status.SUCCEEDED ? HttpStatus.CREATED : HttpStatus.ACCEPTED).body(response);
     }
 
+    /** Evidence-backed generation still yields a draft; only the standard approve endpoint may assign it. */
+    @PostMapping(value = "/tutor/classes/{classId}/diagnostic-worksheet-generation-requests", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<WorksheetRequests.GenerationRequestResponse> generateDiagnostic(
+            @AuthenticationPrincipal AuthenticatedUser user, @PathVariable @Positive long classId,
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @Valid @RequestBody WorksheetRequests.GenerateDiagnosticWorksheetRequest request) {
+        WorksheetRequests.GenerationRequestResponse response = diagnostics.generate(user.userId(), classId, idempotencyKey, request);
+        return ResponseEntity.status(response.status() == WorksheetGenerationRequest.Status.SUCCEEDED ? HttpStatus.CREATED : HttpStatus.ACCEPTED).body(response);
+    }
+
     @GetMapping("/tutor/classes/{classId}/worksheet-generation-requests/{requestId}")
     public WorksheetRequests.GenerationRequestResponse generationRequest(@AuthenticationPrincipal AuthenticatedUser user,
             @PathVariable @Positive long classId, @PathVariable @Positive long requestId) {

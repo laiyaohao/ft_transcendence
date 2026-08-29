@@ -2,6 +2,7 @@ import type { QuestionType } from "./questions";
 
 export type WorksheetTargetMode = "CLASS" | "STUDENTS";
 export type WorksheetStatus = "DRAFT" | "APPROVED" | "ARCHIVED";
+export type WorksheetType = "STANDARD" | "DIAGNOSTIC";
 
 export interface WorksheetQuestion {
   id: number;
@@ -9,6 +10,8 @@ export interface WorksheetQuestion {
   prompt: string;
   totalMarks: number;
   questionType: QuestionType;
+  /** Present for API-loaded drafts; optional only for legacy in-memory test fixtures. */
+  topicId?: number;
   topicName: string;
 }
 
@@ -26,6 +29,8 @@ export interface TutorWorksheet {
   code: string;
   title: string;
   instructions: string | null;
+  subject?: string | null;
+  worksheetType?: WorksheetType;
   targetMode: WorksheetTargetMode;
   status: WorksheetStatus;
   generationRequestId: number | null;
@@ -51,6 +56,26 @@ export interface GenerateWorksheetRequest {
   dueAt?: string;
   title?: string;
   instructions?: string;
+}
+
+export interface GenerateDiagnosticWorksheetRequest extends GenerateWorksheetRequest {
+  topicIds: number[];
+}
+
+export type DiagnosticReason = "LOW_MASTERY" | "CONSOLIDATE" | "NEW_TOPIC";
+export interface DiagnosticRecommendation {
+  studentId: number | null;
+  studentName: string | null;
+  topicId: number;
+  topicName: string;
+  masteryPercent: number | null;
+  attemptCount: number;
+  reason: DiagnosticReason;
+}
+export interface DiagnosticRecommendations {
+  status: "READY" | "INSUFFICIENT_EVIDENCE";
+  message: string;
+  recommendations: DiagnosticRecommendation[];
 }
 
 export interface UpdateWorksheetRequest {
@@ -151,12 +176,20 @@ function nonNegativeNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
 function isQuestionType(value: unknown): value is QuestionType {
   return typeof value === "string" && questionTypes.includes(value as QuestionType);
 }
 
 function isWorksheetStatus(value: unknown): value is WorksheetStatus {
   return value === "DRAFT" || value === "APPROVED" || value === "ARCHIVED";
+}
+
+function isWorksheetType(value: unknown): value is WorksheetType {
+  return value === "STANDARD" || value === "DIAGNOSTIC";
 }
 
 function isStudentWorksheetStatus(value: unknown): value is StudentWorksheetStatus {
@@ -179,10 +212,10 @@ async function json(response: Response): Promise<unknown> {
 function parseQuestion(payload: unknown): WorksheetQuestion {
   if (!isRecord(payload) || !positiveId(payload.id) || !nonEmpty(payload.code) || !nonEmpty(payload.prompt)
     || typeof payload.totalMarks !== "number" || !Number.isFinite(payload.totalMarks) || payload.totalMarks <= 0
-    || !isQuestionType(payload.questionType) || !nonEmpty(payload.syllabusTopicName)) {
+    || !isQuestionType(payload.questionType) || !positiveId(payload.syllabusTopicId) || !nonEmpty(payload.syllabusTopicName)) {
     throw new Error("The learning service returned an invalid worksheet question.");
   }
-  return { id: payload.id, code: payload.code, prompt: payload.prompt, totalMarks: payload.totalMarks, questionType: payload.questionType, topicName: payload.syllabusTopicName };
+  return { id: payload.id, code: payload.code, prompt: payload.prompt, totalMarks: payload.totalMarks, questionType: payload.questionType, topicId: payload.syllabusTopicId, topicName: payload.syllabusTopicName };
 }
 
 function parseAssignment(payload: unknown): WorksheetAssignment {
@@ -243,7 +276,9 @@ export function parseStudentWorksheet(payload: unknown): StudentWorksheet {
 /** Validates and normalises the owner-scoped worksheet detail response. */
 export function parseTutorWorksheet(payload: unknown): TutorWorksheet {
   if (!isRecord(payload) || !positiveId(payload.id) || !nonEmpty(payload.code) || !nonEmpty(payload.title)
-    || !stringOrNull(payload.instructions) || (payload.audienceType !== "CLASS" && payload.audienceType !== "STUDENT")
+    || !stringOrNull(payload.instructions) || !(payload.subject === undefined || stringOrNull(payload.subject))
+    || !(payload.worksheetType === undefined || isWorksheetType(payload.worksheetType))
+    || (payload.audienceType !== "CLASS" && payload.audienceType !== "STUDENT")
     || !isWorksheetStatus(payload.status) || !(payload.generationRequestId === null || positiveId(payload.generationRequestId))
     || !Array.isArray(payload.questions) || !Array.isArray(payload.assignments)) {
     throw new Error("The learning service returned an invalid worksheet. Please try again.");
@@ -254,6 +289,8 @@ export function parseTutorWorksheet(payload: unknown): TutorWorksheet {
     code: payload.code,
     title: payload.title,
     instructions: payload.instructions,
+    subject: payload.subject === undefined ? null : payload.subject,
+    worksheetType: payload.worksheetType === undefined ? "STANDARD" : payload.worksheetType,
     targetMode: payload.audienceType === "CLASS" ? "CLASS" : "STUDENTS",
     status: payload.status,
     generationRequestId: payload.generationRequestId,
@@ -261,6 +298,28 @@ export function parseTutorWorksheet(payload: unknown): TutorWorksheet {
     questions: payload.questions.map(parseQuestion),
     assignments,
   };
+}
+
+function parseDiagnosticRecommendation(payload: unknown): DiagnosticRecommendation {
+  if (!isRecord(payload)) {
+    throw new Error("The learning service returned an invalid diagnostic recommendation. Please try again.");
+  }
+  const { studentId, studentName, topicId, topicName, masteryPercent, attemptCount, reason } = payload;
+  if (!positiveId(topicId) || !nonEmpty(topicName) || !(studentId === null || positiveId(studentId))
+    || !(studentName === null || nonEmpty(studentName)) || !(masteryPercent === null || nonNegativeNumber(masteryPercent))
+    || !isNonNegativeInteger(attemptCount)
+    || (reason !== "LOW_MASTERY" && reason !== "CONSOLIDATE" && reason !== "NEW_TOPIC")) {
+    throw new Error("The learning service returned an invalid diagnostic recommendation. Please try again.");
+  }
+  return { studentId, studentName, topicId, topicName, masteryPercent, attemptCount, reason };
+}
+
+export function parseDiagnosticRecommendations(payload: unknown): DiagnosticRecommendations {
+  if (!isRecord(payload) || (payload.status !== "READY" && payload.status !== "INSUFFICIENT_EVIDENCE")
+    || !nonEmpty(payload.message) || !Array.isArray(payload.recommendations)) {
+    throw new Error("The learning service returned an invalid diagnostic recommendation. Please try again.");
+  }
+  return { status: payload.status, message: payload.message, recommendations: payload.recommendations.map(parseDiagnosticRecommendation) };
 }
 
 function parseGenerationRequest(payload: unknown): WorksheetGenerationRequest {
@@ -290,6 +349,26 @@ export async function generateWorksheet(classId: number, request: GenerateWorksh
     throw new WorksheetApiError("Worksheet configuration is invalid.", 400);
   }
   const payload = await json(await fetch(`${base}/api/learning/tutor/classes/${classId}/worksheet-generation-requests`, {
+    method: "POST", headers: { ...headers(), "Idempotency-Key": idempotencyKey }, body: JSON.stringify(request),
+  }));
+  return parseGenerationRequest(payload);
+}
+
+/** Fetches evidence-only diagnostic suggestions; it does not create or assign anything. */
+export async function fetchDiagnosticRecommendations(classId: number): Promise<DiagnosticRecommendations> {
+  requireId(classId, "Class reference is invalid.");
+  return parseDiagnosticRecommendations(await json(await fetch(`${base}/api/learning/tutor/classes/${classId}/worksheet-recommendations`, { headers: headers() })));
+}
+
+export async function generateDiagnosticWorksheet(classId: number, request: GenerateDiagnosticWorksheetRequest,
+  idempotencyKey: string): Promise<WorksheetGenerationRequest> {
+  requireId(classId, "Class reference is invalid.");
+  if (!Array.isArray(request.topicIds) || request.topicIds.length === 0 || !request.topicIds.every(positiveId)
+    || !Number.isSafeInteger(request.questionCount) || request.questionCount < 1 || request.questionCount > 100
+    || (request.targetMode !== "CLASS" && request.targetMode !== "STUDENTS") || !nonEmpty(idempotencyKey)) {
+    throw new WorksheetApiError("Diagnostic worksheet configuration is invalid.", 400);
+  }
+  const payload = await json(await fetch(`${base}/api/learning/tutor/classes/${classId}/diagnostic-worksheet-generation-requests`, {
     method: "POST", headers: { ...headers(), "Idempotency-Key": idempotencyKey }, body: JSON.stringify(request),
   }));
   return parseGenerationRequest(payload);

@@ -277,6 +277,9 @@ public class Submission {
             previousFeedback,
             normalizedReason
         ));
+        if (previousStatus == ReviewStatus.APPROVED) {
+            clearApprovedDiagnosticEvidence();
+        }
     }
 
     public void resetToAiSuggestion(Long reviewerUserId) {
@@ -305,6 +308,9 @@ public class Submission {
             previousFeedback,
             aiSuggestedFeedback
         ));
+        if (previousStatus == ReviewStatus.APPROVED) {
+            clearApprovedDiagnosticEvidence();
+        }
     }
 
     /**
@@ -316,18 +322,39 @@ public class Submission {
         if (reviewStatus != ReviewStatus.APPROVED) {
             throw new IllegalStateException("Diagnostic evidence requires tutor approval");
         }
-        approvedDiagnosticEvidence.clear();
-        if (inputs == null) return;
-        int position = 0;
+        if (inputs == null || inputs.isEmpty()) {
+            clearApprovedDiagnosticEvidence();
+            return;
+        }
+        Set<MistakeType> uniqueTypes = new LinkedHashSet<>();
         for (DiagnosticEvidenceInput input : inputs) {
             if (input == null) throw new IllegalArgumentException("Diagnostic evidence entry is required");
             if (!Objects.equals(syllabusTopicId, input.syllabusTopicId())) {
                 throw new IllegalArgumentException("Diagnostic evidence must use the question syllabus topic");
             }
+            if (input.mistakeType() == null) {
+                throw new IllegalArgumentException("Diagnostic evidence requires a mistake type");
+            }
+            if (!uniqueTypes.add(input.mistakeType())) {
+                throw new IllegalArgumentException("A mistake type may be recorded once per answer");
+            }
+        }
+        clearApprovedDiagnosticEvidence();
+        int position = 0;
+        for (DiagnosticEvidenceInput input : inputs) {
             approvedDiagnosticEvidence.add(ApprovedDiagnosticEvidence.create(
-                this, position++, input.syllabusTopicId(), input.category(), input.description(), input.missingKeywords()
+                this, position++, input.syllabusTopicId(), input.mistakeType(), input.description(), input.missingKeywords()
+            ));
+            mistakes.add(MistakeRecord.create(
+                this, input.mistakeType(), syllabusTopicId, syllabusTopicCode, input.description()
             ));
         }
+    }
+
+    /** Removes the live diagnostic projection whenever approval is retracted. */
+    private void clearApprovedDiagnosticEvidence() {
+        approvedDiagnosticEvidence.clear();
+        mistakes.clear();
     }
 
     /** Advances the source revision used by Learning's idempotent projection. */
@@ -686,7 +713,7 @@ public class Submission {
 
     public record DiagnosticEvidenceInput(
         Long syllabusTopicId,
-        DiagnosticCategory category,
+        MistakeType mistakeType,
         String description,
         List<String> missingKeywords
     ) { }

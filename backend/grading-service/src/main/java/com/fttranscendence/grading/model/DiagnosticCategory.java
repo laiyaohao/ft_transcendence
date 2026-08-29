@@ -1,11 +1,11 @@
 package com.fttranscendence.grading.model;
 
 /**
- * Tutor-confirmed diagnostic categories that may be shared with Learning.
+ * Derived compatibility groupings that may be shared with Learning.
  *
  * <p>These values deliberately do not mirror the free-form advisory category
- * returned by an AI provider.  A tutor must explicitly select one of these
- * bounded categories before it becomes learning evidence.</p>
+ * returned by an AI provider. A tutor selects a canonical {@link MistakeType};
+ * the server derives this bounded grouping before it becomes learning evidence.</p>
  */
 public enum DiagnosticCategory {
     CONCEPT,

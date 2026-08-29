@@ -102,6 +102,61 @@ class QuestionListIntegrationTest {
     }
 
     @Test
+    void searchesCodePromptAndKeywordsCaseAndAccentInsensitivelyAlongsideFilters() throws Exception {
+        long water = topicId("SCI_P5_CYCLES_MATTER_WATER_WATER");
+        long energy = topicId("SCI_P6_ENERGY_CONVERSION");
+        long codeMatch = insertQuestion("SCI-CAFÉ-001", water, "SUBTOPIC", "MULTIPLE_CHOICE", "ACTIVE", "Choose the correct state change.");
+        insertQuestion("SCI-PROMPT-001", water, "SUBTOPIC", "OPEN_ENDED", "ACTIVE", "Explain condensación in a sealed container.");
+        long keywordMatch = insertQuestion("SCI-KEYWORD-001", energy, "TOPIC", "OPEN_ENDED", "ACTIVE", "Describe the process.");
+        jdbcTemplate.update("INSERT INTO question_keywords (question_id, position, keyword) VALUES (?, ?, ?)", keywordMatch, 0, "évaporation");
+        insertQuestion("SCI-CAFÉ-ARCHIVED", water, "SUBTOPIC", "MULTIPLE_CHOICE", "ARCHIVED", "Archived match.");
+
+        mockMvc.perform(get("/api/learning/tutor/questions").param("search", "CAFE")
+                .header("Authorization", bearer("TUTOR", TUTOR_ID)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].id").value(codeMatch));
+
+        mockMvc.perform(get("/api/learning/tutor/questions").param("search", "condensacion")
+                .header("Authorization", bearer("TUTOR", TUTOR_ID)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].code").value("SCI-PROMPT-001"));
+
+        mockMvc.perform(get("/api/learning/tutor/questions").param("search", "EVAPORATION")
+                .header("Authorization", bearer("TUTOR", TUTOR_ID)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].id").value(keywordMatch));
+
+        mockMvc.perform(get("/api/learning/tutor/questions")
+                .param("search", "cafe").param("topicId", String.valueOf(water))
+                .param("questionType", "MULTIPLE_CHOICE").param("archiveState", "ACTIVE")
+                .header("Authorization", bearer("TUTOR", TUTOR_ID)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].id").value(codeMatch));
+    }
+
+    @Test
+    void treatsSearchWildcardsLiterallyAndRejectsOversizedSearches() throws Exception {
+        long water = topicId("SCI_P5_CYCLES_MATTER_WATER_WATER");
+        insertQuestion("SCI_100%_MATCH", water, "SUBTOPIC", "OPEN_ENDED", "ACTIVE", "Exact literal code.");
+        insertQuestion("SCI-100-OTHER", water, "SUBTOPIC", "OPEN_ENDED", "ACTIVE", "Should not be a wildcard match.");
+
+        mockMvc.perform(get("/api/learning/tutor/questions").param("search", "SCI_100%")
+                .header("Authorization", bearer("TUTOR", TUTOR_ID)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].code").value("SCI_100%_MATCH"));
+
+        mockMvc.perform(get("/api/learning/tutor/questions").param("search", "x".repeat(121))
+                .header("Authorization", bearer("TUTOR", TUTOR_ID)))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+    }
+
+    @Test
     void rejectsInvalidQueriesAndEnforcesTutorRole() throws Exception {
         mockMvc.perform(get("/api/learning/tutor/questions"))
             .andExpect(status().isUnauthorized());
@@ -125,9 +180,10 @@ class QuestionListIntegrationTest {
         return jdbcTemplate.queryForObject("SELECT id FROM syllabus_topics WHERE code = ?", Long.class, code);
     }
 
-    private void insertQuestion(String code, long topicId, String nodeType, String questionType, String state, String prompt) {
+    private long insertQuestion(String code, long topicId, String nodeType, String questionType, String state, String prompt) {
         jdbcTemplate.update("INSERT INTO questions (code, syllabus_topic_id, syllabus_topic_type, question_type, prompt, total_marks, model_answer, archive_state) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             code, topicId, nodeType, questionType, prompt, new BigDecimal("2.00"), "A complete model answer.", state);
+        return jdbcTemplate.queryForObject("SELECT id FROM questions WHERE code = ?", Long.class, code);
     }
 
     private String bearer(String role, long userId) {

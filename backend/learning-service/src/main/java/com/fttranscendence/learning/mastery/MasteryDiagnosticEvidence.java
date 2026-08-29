@@ -29,6 +29,41 @@ public class MasteryDiagnosticEvidence {
 
     public enum Category { CONCEPT, KEYWORD, EXPRESSION, APPLICATION }
 
+    /**
+     * The controlled diagnostic vocabulary shared with grading.  Category is
+     * retained in storage only as a backwards-compatible, derived grouping;
+     * consumers must use this type for recurrence and analytics.
+     */
+    public enum MistakeType {
+        CONCEPT_MISUNDERSTANDING(Category.CONCEPT),
+        CALCULATION_ERROR(Category.APPLICATION),
+        MISREAD_QUESTION(Category.APPLICATION),
+        INCOMPLETE_WORKING(Category.APPLICATION),
+        INCORRECT_FORMULA(Category.APPLICATION),
+        CARELESS_MISTAKE(Category.APPLICATION),
+        WEAK_EXPLANATION(Category.EXPRESSION),
+        MISSING_KEY_POINT(Category.KEYWORD),
+        WRONG_UNITS(Category.EXPRESSION),
+        ANSWER_FORMAT_ISSUE(Category.EXPRESSION);
+
+        private final Category category;
+
+        MistakeType(Category category) { this.category = category; }
+
+        public Category category() { return category; }
+
+        /** Deterministic compatibility fallback for pre-canonical events. */
+        public static MistakeType legacyDefault(Category category) {
+            if (category == null) throw new IllegalArgumentException("Diagnostic category is required");
+            return switch (category) {
+                case CONCEPT -> CONCEPT_MISUNDERSTANDING;
+                case KEYWORD -> MISSING_KEY_POINT;
+                case EXPRESSION -> WEAK_EXPLANATION;
+                case APPLICATION -> INCOMPLETE_WORKING;
+            };
+        }
+    }
+
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
@@ -50,6 +85,10 @@ public class MasteryDiagnosticEvidence {
     @Column(name = "diagnostic_category", nullable = false, length = 16)
     private Category category;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "mistake_type", nullable = false, length = 40)
+    private MistakeType mistakeType;
+
     @Column(name = "tutor_rationale", nullable = false, length = 500)
     private String tutorRationale;
 
@@ -67,11 +106,19 @@ public class MasteryDiagnosticEvidence {
     public MasteryDiagnosticEvidence(MasteryRecord masteryRecord, StudentProfile studentProfile, long tutorId,
                                      long sourceSubmissionId, Category category, String tutorRationale,
                                      List<String> missingKeywords) {
+        this(masteryRecord, studentProfile, tutorId, sourceSubmissionId, MistakeType.legacyDefault(category), category,
+            tutorRationale, missingKeywords);
+    }
+
+    public MasteryDiagnosticEvidence(MasteryRecord masteryRecord, StudentProfile studentProfile, long tutorId,
+                                     long sourceSubmissionId, MistakeType mistakeType, Category category,
+                                     String tutorRationale, List<String> missingKeywords) {
         this.masteryRecord = require(masteryRecord, "Mastery record");
         this.studentProfile = require(studentProfile, "Student profile");
         this.tutorId = positive(tutorId, "Tutor id");
         this.sourceSubmissionId = positive(sourceSubmissionId, "Source submission id");
-        this.category = require(category, "Diagnostic category");
+        this.mistakeType = require(mistakeType, "Mistake type");
+        this.category = category == null ? mistakeType.category() : category;
         this.tutorRationale = text(tutorRationale, "Tutor rationale");
         this.missingKeywords = keywords(missingKeywords);
         validate();
@@ -87,7 +134,12 @@ public class MasteryDiagnosticEvidence {
             throw new IllegalStateException("Diagnostic evidence tutor must own the student profile");
         }
         positive(tutorId, "Tutor id"); positive(sourceSubmissionId, "Source submission id");
-        require(category, "Diagnostic category"); text(tutorRationale, "Tutor rationale");
+        mistakeType = require(mistakeType, "Mistake type");
+        if (category == null) category = mistakeType.category();
+        if (category != mistakeType.category()) {
+            throw new IllegalArgumentException("Diagnostic category must match the canonical mistake type");
+        }
+        text(tutorRationale, "Tutor rationale");
         missingKeywords = keywords(missingKeywords);
     }
 
@@ -107,6 +159,7 @@ public class MasteryDiagnosticEvidence {
     public Long getTutorId() { return tutorId; }
     public Long getSourceSubmissionId() { return sourceSubmissionId; }
     public Category getCategory() { return category; }
+    public MistakeType getMistakeType() { return mistakeType; }
     public String getTutorRationale() { return tutorRationale; }
     public List<String> getMissingKeywords() { return List.copyOf(missingKeywords); }
     public LocalDateTime getCreatedAt() { return createdAt; }

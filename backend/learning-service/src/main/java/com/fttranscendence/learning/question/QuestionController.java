@@ -5,6 +5,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -42,10 +43,11 @@ public class QuestionController {
         @RequestParam(required = false) @Positive Long topicId,
         @RequestParam(required = false) Question.QuestionType questionType,
         @RequestParam(defaultValue = "ACTIVE") Question.ArchiveState archiveState,
+        @RequestParam(required = false) @Size(max = 120) String search,
         @RequestParam(defaultValue = "0") @Min(0) int page,
         @RequestParam(defaultValue = "25") @Min(1) @Max(100) int size
     ) {
-        return questionService.list(new QuestionService.QuestionQuery(topicId, questionType, archiveState, page, size));
+        return questionService.list(new QuestionService.QuestionQuery(topicId, questionType, archiveState, search, page, size));
     }
 
     @GetMapping("/{questionId}")

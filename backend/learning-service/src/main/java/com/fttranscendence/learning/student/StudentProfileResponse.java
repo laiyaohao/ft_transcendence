@@ -87,7 +87,8 @@ public record StudentProfileResponse(
 
     public record TutorOnly(
         List<AlertSummary> activeAlerts,
-        List<ReportMetadata> reports
+        List<ReportMetadata> reports,
+        long approvedWorksheetCount
     ) {}
 
     public record AlertSummary(

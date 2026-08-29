@@ -8,8 +8,10 @@ import {
   fetchTutorNotes,
   fetchTutorStudents,
   fetchTutorStudentProfile,
+  fetchStudentSelfProfile,
   parseTutorStudent,
   parseTutorStudentProfile,
+  parseStudentSelfProfile,
   parseTutorStudents,
   parseTutorNote,
   parseTutorNotes,
@@ -51,6 +53,7 @@ const profile = {
   tutorOnly: {
     activeAlerts: [{ id: 3, type: "MASTERY", severity: "MEDIUM", status: "OPEN", title: "Adaptation needs practice", createdAt: "2026-09-02T10:00:00" }],
     reports: [{ id: 6, reportCode: "P5-SEP", status: "DRAFT", periodStart: "2026-09-01", periodEnd: "2026-09-30", generatedAt: null, finalizedAt: null }],
+    approvedWorksheetCount: 1,
   },
 };
 
@@ -159,6 +162,25 @@ describe("tutor student service", () => {
   it("preserves missing and cross-owner profile errors", async () => {
     vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ message: "Student profile was not found" }), { status: 404 }));
     await expect(fetchTutorStudentProfile(31)).rejects.toMatchObject({ status: 404, message: "Student profile was not found" });
+  });
+
+  it("loads only the authenticated student's profile and rejects tutor-only response data", async () => {
+    localStorage.setItem("jwt_token", "student-token");
+    const selfProfile = { ...profile, tutorOnly: null };
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify(selfProfile), { status: 200 }));
+
+    await expect(fetchStudentSelfProfile()).resolves.toEqual(selfProfile);
+    expect(fetch).toHaveBeenCalledWith(
+      "http://localhost:8083/api/learning/student/profile",
+      expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer student-token" }) }),
+    );
+    expect(parseStudentSelfProfile(selfProfile)).toEqual(selfProfile);
+    expect(() => parseStudentSelfProfile(profile)).toThrow("invalid student profile");
+  });
+
+  it("preserves an unlinked student profile response", async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ message: "Student profile was not found" }), { status: 404 }));
+    await expect(fetchStudentSelfProfile()).rejects.toMatchObject({ status: 404, message: "Student profile was not found" });
   });
 
   it("lists and mutates tutor-only notes through owner-scoped endpoints", async () => {

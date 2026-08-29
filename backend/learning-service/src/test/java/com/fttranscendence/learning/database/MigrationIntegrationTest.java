@@ -84,15 +84,20 @@ class MigrationIntegrationTest {
         assertEquals(1, tableCount("class_insight_ranking_overrides"));
         assertEquals(1, tableCount("class_insight_refresh_queue"));
         assertEquals(1, tableCount("tutor_notes"));
-        assertEquals("16", flyway.info().current().getVersion().getVersion());
-        assertEquals(16, versionedMigrationCount());
+        assertEquals("19", flyway.info().current().getVersion().getVersion());
+        assertEquals(19, versionedMigrationCount());
+        assertEquals(1, jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'PUBLIC' "
+                + "AND LOWER(TABLE_NAME) = 'mastery_diagnostic_evidence' AND LOWER(COLUMN_NAME) = 'mistake_type'",
+            Integer.class
+        ));
 
         long appliedBefore = versionedMigrationCount();
         flyway.migrate();
 
         assertEquals(appliedBefore, versionedMigrationCount());
         assertEquals(1, tableCount("tutor_classes"));
-        assertEquals(24, jdbcTemplate.queryForObject(
+        assertEquals(28, jdbcTemplate.queryForObject(
             "SELECT COUNT(*) FROM syllabus_topics",
             Integer.class
         ));

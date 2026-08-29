@@ -24,6 +24,7 @@ export default function TutorWorksheetsPage() {
     try { setWorksheets(await fetchTutorWorksheets(validClassId ? classId : undefined)); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "Worksheets could not be loaded. Please try again."); }
   }, [classId, validClassId]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- the async load owns its loading state.
   React.useEffect(() => { void load(); }, [load]);
   return <Box sx={{ minHeight: "100vh", bgcolor: "#F7F4EF", px: { xs: 2.5, sm: 3.75 }, py: 3.75, color: "#2A2622" }}><Box sx={{ maxWidth: 1120, mx: "auto" }}>
     <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "flex-end", justifyContent: "space-between", gap: 2, mb: 3 }}><Box><Typography sx={{ color: "#A09488", fontSize: 10.5, fontWeight: 600, letterSpacing: ".13em", mb: .75 }}>WORKSHEET MANAGEMENT</Typography><Typography component="h1" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: { xs: 32, sm: 38 }, fontWeight: 500 }}>Worksheets</Typography><Typography sx={{ color: "#6F675E", fontSize: 14, mt: .75 }}>{validClassId ? `Showing worksheets assigned to class #${classId}.` : "Review and manage your generated worksheets."}</Typography></Box><Button component={Link} href={validClassId ? `/tutor/worksheets/new?classId=${classId}` : "/classes"} sx={{ minHeight: 42, borderRadius: "10px", bgcolor: "#E08A72", color: "#1B1917", textTransform: "none", fontWeight: 600, px: 2.25 }}>{validClassId ? "Generate Worksheet" : "Choose a class to generate"}</Button></Box>

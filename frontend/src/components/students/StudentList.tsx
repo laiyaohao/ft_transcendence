@@ -85,6 +85,7 @@ export default function StudentList({ classId, loadStudents = fetchTutorStudents
     return () => { current = false; };
   }, [classId, loadStudents]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- the selected filter follows the route parameter.
   React.useEffect(() => { setClassFilter(classId ? String(classId) : "ALL"); }, [classId]);
 
   const availableClasses = React.useMemo(() => {

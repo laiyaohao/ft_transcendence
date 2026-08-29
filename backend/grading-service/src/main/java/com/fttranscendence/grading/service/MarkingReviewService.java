@@ -3,6 +3,7 @@ package com.fttranscendence.grading.service;
 import com.fttranscendence.grading.model.AnswerReview;
 import com.fttranscendence.grading.model.DiagnosticCategory;
 import com.fttranscendence.grading.model.MasterySyncOutbox;
+import com.fttranscendence.grading.model.MistakeType;
 import com.fttranscendence.grading.model.Submission;
 import com.fttranscendence.grading.model.SubmissionDocument;
 import com.fttranscendence.grading.ocr.OcrExtraction;
@@ -78,7 +79,9 @@ public class MarkingReviewService {
         Submission submission = Submission.createAnswer(document, request.worksheetQuestionId(), request.questionBankId(),
             answer, question.modelAnswer(), question.totalMarks(), question.syllabusTopicId(), question.syllabusTopicCode());
         AiGradingService.AiMarkingResult suggestion = ai.evaluateMarking(question.prompt(), question.modelAnswer(),
-            question.markingCriteria(), question.keywords(), answer, question.totalMarks());
+            question.markingCriteria(), question.markingComponents().stream()
+                .map(LearningAuthorizationClient.MarkingComponentContext::toRuleComponent).toList(),
+            question.keywords(), answer, question.totalMarks());
         submission.recordAiSuggestion(suggestion.suggestedMarks(), suggestion.correctness(), suggestion.errorCategory(),
             suggestion.missingKeywords(), suggestion.feedback());
         submission.nextMasterySyncRevision();
@@ -97,34 +100,96 @@ public class MarkingReviewService {
         String bearer,
         ManualResultRequest request
     ) {
+        List<MarkingReview> created = createManualResults(user, bearer, new ManualResultBatchRequest(
+            request.worksheetId(), request.studentId(), List.of(new ManualResultEntry(
+                request.questionBankId(), request.answer(), request.marks(), request.feedback()
+            ))
+        ));
+        return created.get(0);
+    }
+
+    /**
+     * Records a selected student's manually entered worksheet marks as one
+     * all-or-nothing approval operation. Context, bounds and duplicates are
+     * checked for every row before a manual document or submission is written.
+     */
+    @Transactional
+    public List<MarkingReview> createManualResults(
+        AuthenticatedUser user,
+        String bearer,
+        ManualResultBatchRequest request
+    ) {
         requirePositiveManual(request.worksheetId(), "Worksheet id");
         requirePositiveManual(request.studentId(), "Student id");
-        requirePositiveManual(request.questionBankId(), "Question bank id");
-        String answer = requireText(request.answer(), "Student answer");
-        String feedback = requireText(request.feedback(), "Tutor feedback");
-        LearningAuthorizationClient.QuestionContext question = learning.validateManualResultContext(
-            user, bearer, request.studentId(), request.worksheetId(), request.questionBankId());
-        validateManualScore(request.marks(), question.totalMarks());
+        if (request.entries() == null || request.entries().isEmpty()) {
+            throw new InvalidManualResultRequest("Enter at least one question result.");
+        }
+
+        var contexts = new java.util.LinkedHashMap<Long, LearningAuthorizationClient.QuestionContext>();
+        var normalized = new java.util.ArrayList<ManualResultEntry>();
+        for (ManualResultEntry entry : request.entries()) {
+            if (entry == null) {
+                throw new InvalidManualResultRequest("Each question result is required.");
+            }
+            requirePositiveManual(entry.questionBankId(), "Question id");
+            if (contexts.containsKey(entry.questionBankId())) {
+                throw new InvalidManualResultRequest("Each worksheet question may be entered only once.");
+            }
+            String answer = requireText(entry.answer(), "Student answer");
+            String feedback = requireText(entry.feedback(), "Tutor feedback");
+            LearningAuthorizationClient.QuestionContext question = learning.validateManualResultContext(
+                user, bearer, request.studentId(), request.worksheetId(), entry.questionBankId());
+            validateManualScore(entry.marks(), question.totalMarks());
+            contexts.put(entry.questionBankId(), question);
+            normalized.add(new ManualResultEntry(entry.questionBankId(), answer, entry.marks(), feedback));
+        }
 
         SubmissionDocument document = manualDocument(user.userId(), request.worksheetId(), request.studentId());
-        if (submissions.findBySubmissionDocumentIdAndWorksheetQuestionId(document.getId(), request.questionBankId()).isPresent()) {
-            throw new ManualResultAlreadyExists();
+        for (ManualResultEntry entry : normalized) {
+            if (submissions.findBySubmissionDocumentIdAndWorksheetQuestionId(document.getId(), entry.questionBankId()).isPresent()) {
+                throw new ManualResultAlreadyExists();
+            }
         }
         try {
-            // Learning currently exposes question-bank IDs in worksheet detail.
-            // Store that same authoritative ID in worksheetQuestionId until its
-            // cross-service question-instance identifier is exposed.
-            Submission submission = Submission.createAnswer(document, request.questionBankId(), request.questionBankId(),
-                answer, question.modelAnswer(), question.totalMarks(), question.syllabusTopicId(), question.syllabusTopicCode());
-            submission.approve(user.userId(), request.marks(), feedback);
-            submission.nextMasterySyncRevision();
-            Submission saved = submissions.saveAndFlush(submission);
-            enqueueMasterySync(saved, user.userId(), "APPROVED");
-            enqueueReviewState(saved, user.userId(), "RESOLVED");
-            return MarkingReview.from(saved, null);
+            List<Submission> saved = new java.util.ArrayList<>();
+            for (ManualResultEntry entry : normalized) {
+                LearningAuthorizationClient.QuestionContext question = contexts.get(entry.questionBankId());
+                // The Learning worksheet response currently identifies its
+                // question instance by question-bank ID. Persist that stable
+                // ID on both sides until it exposes a distinct instance ID.
+                Submission submission = Submission.createAnswer(document, entry.questionBankId(), entry.questionBankId(),
+                    entry.answer(), question.modelAnswer(), question.totalMarks(), question.syllabusTopicId(), question.syllabusTopicCode());
+                submission.approve(user.userId(), entry.marks(), entry.feedback());
+                submission.nextMasterySyncRevision();
+                saved.add(submission);
+            }
+            List<Submission> persisted = submissions.saveAllAndFlush(saved);
+            for (Submission submission : persisted) {
+                enqueueMasterySync(submission, user.userId(), "APPROVED");
+                enqueueReviewState(submission, user.userId(), "RESOLVED");
+            }
+            return persisted.stream().map(submission -> MarkingReview.from(submission, null)).toList();
         } catch (DataIntegrityViolationException exception) {
             throw new ManualResultAlreadyExists();
         }
+    }
+
+    @Transactional
+    public ManualResultsResponse listManualResults(AuthenticatedUser user, String bearer, long worksheetId) {
+        requirePositiveManual(worksheetId, "Worksheet id");
+        learning.assertCanManageManualResults(user, bearer, worksheetId);
+        List<Submission> records = submissions
+            .findByWorksheetIdAndSubmissionDocumentOwnerUserIdAndSubmissionDocumentOwnerRoleAndSubmissionDocumentSourceTypeOrderByCreatedAtAsc(
+                worksheetId, user.userId(), SubmissionDocument.OwnerRole.TUTOR, SubmissionDocument.SourceType.MANUAL
+            );
+        java.util.Map<Long, List<MarkingReview>> byStudent = new java.util.LinkedHashMap<>();
+        for (Submission record : records) {
+            byStudent.computeIfAbsent(record.getStudentId(), ignored -> new java.util.ArrayList<>())
+                .add(MarkingReview.from(record, null));
+        }
+        return new ManualResultsResponse(worksheetId, byStudent.entrySet().stream()
+            .map(entry -> new ManualResultStudentProgress(entry.getKey(), entry.getValue().size(), List.copyOf(entry.getValue())))
+            .toList());
     }
 
     @Transactional
@@ -268,12 +333,15 @@ public class MarkingReviewService {
     ) {
         if (evidence == null) {
             return submission.getApprovedDiagnosticEvidence().stream().map(item -> new Submission.DiagnosticEvidenceInput(
-                item.getSyllabusTopicId(), item.getCategory(), item.getDescription(), item.getMissingKeywords()
+                item.getSyllabusTopicId(), item.getMistakeType(), item.getDescription(), item.getMissingKeywords()
             )).toList();
         }
         return evidence.stream().map(item -> {
-            if (item == null || item.category() == null || item.description() == null || item.description().isBlank()) {
-                throw new InvalidReviewRequest("Each diagnostic evidence item requires a category and description.");
+            if (item == null || item.mistakeType() == null || item.description() == null || item.description().isBlank()) {
+                throw new InvalidReviewRequest("Each diagnostic evidence item requires a mistake type and description.");
+            }
+            if (item.category() != null && item.category() != item.mistakeType().getDiagnosticCategory()) {
+                throw new InvalidReviewRequest("Diagnostic category does not match the selected mistake type.");
             }
             if (item.missingKeywords() != null && item.missingKeywords().stream().anyMatch(
                 keyword -> keyword == null || keyword.isBlank()
@@ -281,7 +349,7 @@ public class MarkingReviewService {
                 throw new InvalidReviewRequest("Diagnostic keywords cannot be blank.");
             }
             return new Submission.DiagnosticEvidenceInput(
-                submission.getSyllabusTopicId(), item.category(), item.description(), item.missingKeywords()
+                submission.getSyllabusTopicId(), item.mistakeType(), item.description(), item.missingKeywords()
             );
         }).toList();
     }
@@ -293,7 +361,7 @@ public class MarkingReviewService {
             var stored = existing.get(index);
             var incoming = requested.get(index);
             if (!stored.getSyllabusTopicId().equals(incoming.syllabusTopicId())
-                || stored.getCategory() != incoming.category()
+                || stored.getMistakeType() != incoming.mistakeType()
                 || !stored.getDescription().equals(incoming.description().trim())
                 || !stored.getMissingKeywords().equals(normalizeKeywords(incoming.missingKeywords()))) return false;
         }
@@ -312,12 +380,15 @@ public class MarkingReviewService {
         }
         long revision = submission.getMasterySyncRevision();
         String eventKey = "mastery:submission:" + submission.getId() + ":" + revision;
+        MasteryProjectionSnapshot snapshot = masteryProjectionSnapshot(submission, state);
         ApprovedMarkingSyncPayload payload = new ApprovedMarkingSyncPayload(
             eventKey, state, revision, submission.getId(), submission.getStudentId(), tutorUserId,
             submission.getWorksheetId(), submission.getWorksheetQuestionId(), submission.getQuestionBankId(),
-            submission.getSyllabusTopicId(), submission.getSyllabusTopicCode(), submission.getApprovedMarks(),
-            submission.getMaxMarks(), submission.getReviewedAt() == null ? null : submission.getReviewedAt().toString(),
-            submission.getApprovedDiagnosticEvidence().stream().map(ApprovedMarkingSyncPayload.DiagnosticEvidence::from).toList()
+            submission.getSyllabusTopicId(), submission.getSyllabusTopicCode(), snapshot.approvedMarks(),
+            submission.getMaxMarks(), snapshot.approvedAt().toString(),
+            "APPROVED".equals(state)
+                ? submission.getApprovedDiagnosticEvidence().stream().map(ApprovedMarkingSyncPayload.DiagnosticEvidence::from).toList()
+                : List.of()
         );
         try {
             masteryOutbox.saveAndFlush(new MasterySyncOutbox(
@@ -326,6 +397,31 @@ public class MarkingReviewService {
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("Could not serialize mastery synchronization event", exception);
         }
+    }
+
+    /**
+     * Retraction happens after the live approved fields have intentionally
+     * been cleared.  Its durable event must nevertheless retain the prior
+     * Tutor-approved score snapshot so Learning can create or update an
+     * inactive projection and suppress a delayed older approval.
+     */
+    private MasteryProjectionSnapshot masteryProjectionSnapshot(Submission submission, String state) {
+        if ("APPROVED".equals(state)) {
+            if (submission.getApprovedMarks() == null || submission.getReviewedAt() == null) {
+                throw new InvalidReviewRequest("Approved marking is missing its authoritative score snapshot.");
+            }
+            return new MasteryProjectionSnapshot(submission.getApprovedMarks(), submission.getReviewedAt());
+        }
+        if (!"RETRACTED".equals(state)) {
+            throw new InvalidReviewRequest("Mastery synchronization state is invalid.");
+        }
+        return submission.getReviews().stream()
+            .filter(review -> review.getNewStatus() == Submission.ReviewStatus.APPROVED
+                && review.getNewMarks() != null && review.getCreatedAt() != null)
+            .max(java.util.Comparator.comparing(AnswerReview::getCreatedAt).thenComparing(AnswerReview::getId,
+                java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())))
+            .map(review -> new MasteryProjectionSnapshot(review.getNewMarks(), review.getCreatedAt()))
+            .orElseThrow(() -> new InvalidReviewRequest("Retraction is missing its prior approved score snapshot."));
     }
 
     private void enqueueReviewState(Submission submission, long tutorUserId, String reviewState) {
@@ -353,10 +449,15 @@ public class MarkingReviewService {
         BigDecimal marks,
         String feedback
     ) { }
+    public record ManualResultEntry(Long questionBankId, String answer, BigDecimal marks, String feedback) { }
+    public record ManualResultBatchRequest(Long worksheetId, Long studentId, List<ManualResultEntry> entries) { }
+    public record ManualResultStudentProgress(Long studentId, int completedQuestions, List<MarkingReview> results) { }
+    public record ManualResultsResponse(Long worksheetId, List<ManualResultStudentProgress> students) { }
     public record ApprovalRequest(BigDecimal marks, String feedback, List<DiagnosticEvidenceRequest> diagnosticEvidence) {
         public ApprovalRequest(BigDecimal marks, String feedback) { this(marks, feedback, null); }
     }
     public record DiagnosticEvidenceRequest(
+        MistakeType mistakeType,
         DiagnosticCategory category,
         String description,
         List<String> missingKeywords
@@ -365,6 +466,7 @@ public class MarkingReviewService {
         String eventKey, long revision, long submissionId, long tutorUserId, long studentId,
         long worksheetId, String reviewState, String occurredAt
     ) { }
+    private record MasteryProjectionSnapshot(BigDecimal approvedMarks, java.time.LocalDateTime approvedAt) { }
     public record FlagRequest(String reason) { }
 
     public record MarkingReview(

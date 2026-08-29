@@ -61,6 +61,17 @@ public class MasteryApprovedResult {
         this.approvedMarks = marks.setScale(2); this.availableMarks = total.setScale(2); this.repeatedMistakeCount = nonNegative(repeated);
         this.revision = positiveInt(nextRevision, "Revision"); this.active = nextActive; this.reviewedAt = required(at, "Reviewed at"); return true;
     }
+
+    /**
+     * A retraction retains the immutable approved-mark snapshot for audit and
+     * out-of-order event protection, but removes it from mastery derivation.
+     */
+    public boolean retract(int nextRevision) {
+        if (nextRevision < revision || (nextRevision == revision && !active)) return false;
+        revision = positiveInt(nextRevision, "Revision");
+        active = false;
+        return true;
+    }
     @PrePersist @PreUpdate void validate() {
         positive(sourceSubmissionId, "Source submission id"); positive(tutorId, "Tutor id"); required(studentProfile, "Student profile");
         if (studentProfile.getTutorId() == null || !studentProfile.getTutorId().equals(tutorId)) throw new IllegalStateException("Approved result tutor must own the student profile");

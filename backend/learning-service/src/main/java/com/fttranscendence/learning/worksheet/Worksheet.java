@@ -53,6 +53,16 @@ public class Worksheet {
         ARCHIVED
     }
 
+    /**
+     * STANDARD worksheets are Tutor-curated practice.  DIAGNOSTIC worksheets
+     * are generated from persisted learning evidence; both remain drafts until
+     * a Tutor approves them.
+     */
+    public enum WorksheetType {
+        STANDARD,
+        DIAGNOSTIC
+    }
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -75,6 +85,16 @@ public class Worksheet {
     @Size(max = 2000)
     @Column(length = 2000)
     private String instructions;
+
+    /** Snapshot of the source class subject when one is available. */
+    @Size(max = 80)
+    @Column(length = 80)
+    private String subject;
+
+    @NotNull
+    @Enumerated(EnumType.STRING)
+    @Column(name = "worksheet_type", nullable = false, length = 16)
+    private WorksheetType worksheetType = WorksheetType.STANDARD;
 
     @NotNull
     @Enumerated(EnumType.STRING)
@@ -130,6 +150,9 @@ public class Worksheet {
         if (status == null) {
             status = Status.DRAFT;
         }
+        if (worksheetType == null) {
+            worksheetType = WorksheetType.STANDARD;
+        }
         LocalDateTime now = LocalDateTime.now();
         createdAt = now;
         updatedAt = now;
@@ -152,6 +175,12 @@ public class Worksheet {
             instructions = instructions.trim();
             if (instructions.isEmpty()) {
                 instructions = null;
+            }
+        }
+        if (subject != null) {
+            subject = subject.trim();
+            if (subject.isEmpty()) {
+                subject = null;
             }
         }
         renumberQuestions();
@@ -351,6 +380,22 @@ public class Worksheet {
 
     public void setInstructions(String instructions) {
         this.instructions = instructions;
+    }
+
+    public String getSubject() {
+        return subject;
+    }
+
+    public void setSubject(String subject) {
+        this.subject = subject;
+    }
+
+    public WorksheetType getWorksheetType() {
+        return worksheetType;
+    }
+
+    public void setWorksheetType(WorksheetType worksheetType) {
+        this.worksheetType = worksheetType;
     }
 
     public AudienceType getAudienceType() {

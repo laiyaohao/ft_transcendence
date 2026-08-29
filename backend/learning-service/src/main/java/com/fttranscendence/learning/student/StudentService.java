@@ -5,6 +5,7 @@ import com.fttranscendence.learning.classroom.TutorClassRepository;
 import com.fttranscendence.learning.alert.TutorAlert;
 import com.fttranscendence.learning.alert.TutorAlertRepository;
 import com.fttranscendence.learning.mastery.MasteryHistory;
+import com.fttranscendence.learning.mastery.MasteryApprovedResultRepository;
 import com.fttranscendence.learning.mastery.MasteryRecord;
 import com.fttranscendence.learning.mastery.MasteryRecordRepository;
 import com.fttranscendence.learning.report.ProgressReport;
@@ -36,6 +37,7 @@ public class StudentService {
     private final TutorClassRepository classes;
     private final EntityManager entityManager;
     private final MasteryRecordRepository masteryRecords;
+    private final MasteryApprovedResultRepository approvedResults;
     private final WorksheetRepository worksheets;
     private final TutorAlertRepository alerts;
     private final ProgressReportRepository reports;
@@ -45,6 +47,7 @@ public class StudentService {
         TutorClassRepository classes,
         EntityManager entityManager,
         MasteryRecordRepository masteryRecords,
+        MasteryApprovedResultRepository approvedResults,
         WorksheetRepository worksheets,
         TutorAlertRepository alerts,
         ProgressReportRepository reports
@@ -53,6 +56,7 @@ public class StudentService {
         this.classes = classes;
         this.entityManager = entityManager;
         this.masteryRecords = masteryRecords;
+        this.approvedResults = approvedResults;
         this.worksheets = worksheets;
         this.alerts = alerts;
         this.reports = reports;
@@ -306,7 +310,9 @@ public class StudentService {
             .filter(report -> student.getTutorId().equals(report.getTutorId()))
             .map(this::reportMetadata)
             .toList();
-        return new StudentProfileResponse.TutorOnly(activeAlerts, reportMetadata);
+        long approvedWorksheetCount = approvedResults.countDistinctActiveWorksheetIdsByTutorAndStudent(
+            student.getTutorId(), student.getId());
+        return new StudentProfileResponse.TutorOnly(activeAlerts, reportMetadata, approvedWorksheetCount);
     }
 
     private StudentProfileResponse.TopicSummary topicSummary(MasteryRecord record) {

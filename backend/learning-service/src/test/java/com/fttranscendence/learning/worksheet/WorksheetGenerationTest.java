@@ -54,6 +54,25 @@ class WorksheetGenerationTest {
         assertEquals(1, jdbc.queryForObject("select count(*) from worksheet_assignments where worksheet_id = ?", Integer.class, approved.id()));
     }
 
+    @Test
+    void balancesDeterministicSelectionAcrossEveryRequestedTopicAndSnapshotsClassSubject() {
+        TutorClass tutorClass = tutorClass();
+        long water = topics.findByCode("SCI_P5_CYCLES_MATTER_WATER_WATER").orElseThrow().getId();
+        long reproduction = topics.findByCode("SCI_P5_CYCLES_PLANTS_ANIMALS_REPRODUCTION").orElseThrow().getId();
+        insertQuestion("SCI-BAL-01", water, "Water one."); insertQuestion("SCI-BAL-02", water, "Water two.");
+        insertQuestion("SCI-BAL-03", reproduction, "Reproduction one."); insertQuestion("SCI-BAL-04", reproduction, "Reproduction two.");
+
+        WorksheetRequests.GenerationRequestResponse response = service.generate(TUTOR_ID, tutorClass.getId(), "worksheet-balanced-key",
+            new WorksheetRequests.GenerateWorksheetRequest(WorksheetGenerationRequest.TargetMode.CLASS, List.of(reproduction, water),
+                4, Question.QuestionType.OPEN_ENDED, null, null, null, null));
+
+        assertEquals(WorksheetGenerationRequest.Status.SUCCEEDED, response.status());
+        assertEquals("Science", response.worksheet().subject());
+        assertEquals(Worksheet.WorksheetType.STANDARD, response.worksheet().worksheetType());
+        assertEquals(2, response.worksheet().questions().stream().filter(question -> question.syllabusTopicId().equals(water)).count());
+        assertEquals(2, response.worksheet().questions().stream().filter(question -> question.syllabusTopicId().equals(reproduction)).count());
+    }
+
     private TutorClass tutorClass() {
         TutorClass tutorClass = new TutorClass();
         tutorClass.setTutorId(TUTOR_ID); tutorClass.setClassName("Generated science"); tutorClass.setSubject("Science"); tutorClass.setLevel("P5");

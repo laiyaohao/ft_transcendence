@@ -29,6 +29,20 @@ class MistakeRecordRepositoryTest {
     private EntityManager entityManager;
 
     @Test
+    void canonicalMistakeTypesHaveTheDocumentedCompatibilityMappings() {
+        assertEquals(DiagnosticCategory.CONCEPT, MistakeType.CONCEPT_MISUNDERSTANDING.getDiagnosticCategory());
+        assertEquals(DiagnosticCategory.KEYWORD, MistakeType.MISSING_KEY_POINT.getDiagnosticCategory());
+        assertEquals(DiagnosticCategory.EXPRESSION, MistakeType.WEAK_EXPLANATION.getDiagnosticCategory());
+        assertEquals(DiagnosticCategory.EXPRESSION, MistakeType.WRONG_UNITS.getDiagnosticCategory());
+        assertEquals(DiagnosticCategory.EXPRESSION, MistakeType.ANSWER_FORMAT_ISSUE.getDiagnosticCategory());
+        assertEquals(DiagnosticCategory.APPLICATION, MistakeType.CALCULATION_ERROR.getDiagnosticCategory());
+        assertEquals(DiagnosticCategory.APPLICATION, MistakeType.MISREAD_QUESTION.getDiagnosticCategory());
+        assertEquals(DiagnosticCategory.APPLICATION, MistakeType.INCOMPLETE_WORKING.getDiagnosticCategory());
+        assertEquals(DiagnosticCategory.APPLICATION, MistakeType.INCORRECT_FORMULA.getDiagnosticCategory());
+        assertEquals(DiagnosticCategory.APPLICATION, MistakeType.CARELESS_MISTAKE.getDiagnosticCategory());
+    }
+
+    @Test
     void supportsEveryControlledMistakeTypeAndMultipleTypesPerAnswer() {
         Submission answer = answer(301L, 401L, "all-types.pdf", "a");
         for (int index = 0; index < MistakeType.values().length; index++) {

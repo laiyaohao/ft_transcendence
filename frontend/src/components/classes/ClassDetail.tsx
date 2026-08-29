@@ -71,6 +71,23 @@ function WorksheetRow({ worksheet }: { worksheet: ClassWorksheet }) {
   </Box>;
 }
 
+function scheduleDay(dayOfWeek: TutorClassDetail["schedules"][number]["dayOfWeek"]) {
+  return `${dayOfWeek[0]}${dayOfWeek.slice(1).toLowerCase()}`;
+}
+
+function ClassSchedule({ schedules }: { schedules: TutorClassDetail["schedules"] }) {
+  return <Card component="section" aria-labelledby="class-schedule-heading" variant="outlined" sx={{ ...card, p: { xs: 2, sm: 2.25 } }}>
+    <Typography id="class-schedule-heading" component="h2" sx={{ fontFamily: serif, fontSize: 21, fontWeight: 500, mb: 0.5 }}>Class schedule</Typography>
+    <Typography sx={{ color: "#8B837A", fontSize: 12.5, lineHeight: 1.55, mb: 1.5 }}>Regular teaching times for this class.</Typography>
+    {schedules.length === 0 ? <EmptySection title="No regular schedule yet">Add teaching times when the class timetable is confirmed.</EmptySection> : <Box component="ul" sx={{ listStyle: "none", m: 0, p: 0, display: "grid", gap: 1 }}>
+      {schedules.map((schedule) => <Box component="li" key={`${schedule.dayOfWeek}-${schedule.startTime}-${schedule.endTime}`} sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1.25, border: "1px solid #EBE4D9", borderRadius: "10px", bgcolor: "#FFFDFA", px: 1.5, py: 1.25 }}>
+        <Typography sx={{ color: "#4A443D", fontSize: 13, fontWeight: 600 }}>{scheduleDay(schedule.dayOfWeek)}</Typography>
+        <Typography sx={{ color: "#6F675E", fontSize: 12.5, fontWeight: 500, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{schedule.startTime}–{schedule.endTime}</Typography>
+      </Box>)}
+    </Box>}
+  </Card>;
+}
+
 const insightStatus = {
   FRESH: { label: "CURRENT", bg: "#22301F", color: "#9FC0A2" },
   STALE: { label: "STALE", bg: "#3A2119", color: "#E0A692" },
@@ -190,6 +207,7 @@ export default function ClassDetail({ classId, loadClass = fetchTutorClassDetail
             <Card component="section" aria-labelledby="weak-areas-heading" variant="outlined" sx={{ ...card, p: { xs: 2, sm: 2.5 } }}><Typography id="weak-areas-heading" component="h2" sx={{ fontFamily: serif, fontSize: 21, fontWeight: 500, mb: 1.5 }}>Weak areas</Typography>{detail.weakAreas.length === 0 ? <EmptySection title="No weak areas identified">Mastery results will surface focus topics when enough class data is available.</EmptySection> : <Box sx={{ display: "grid", gap: 1.25 }}>{detail.weakAreas.map((area) => <Box key={area.topicId} sx={{ border: "1px solid #F0DCD4", bgcolor: "#FDF6F3", borderRadius: "10px", p: "13px 16px", display: "flex", alignItems: "center", gap: 1.75 }}><Typography sx={{ width: 44, flex: "0 0 auto", color: "#9E3A24", fontSize: 14, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{percent(area.averageScore)}</Typography><Box sx={{ flex: 1, minWidth: 0 }}><Typography sx={{ fontSize: 13, fontWeight: 500 }}>{area.topicName}</Typography><LinearProgress aria-label={`${area.topicName} average mastery ${percent(area.averageScore)}`} variant="determinate" value={area.averageScore} sx={{ height: 5, borderRadius: 20, bgcolor: "#F0EAE0", mt: 0.9, ".MuiLinearProgress-bar": { bgcolor: barColor(area.averageScore), borderRadius: 20 } }} /></Box><Chip label={`${area.affectedStudentCount} AFFECTED`} size="small" sx={{ height: 22, bgcolor: "#F1D9D1", color: "#9E3A24", fontSize: 9.5, fontWeight: 700, letterSpacing: ".05em" }} /></Box>)}</Box>}</Card>
           </Box>
           <Box sx={{ flex: "0 1 330px", minWidth: 0, display: "grid", gap: 2.5 }}>
+            <ClassSchedule schedules={detail.schedules} />
             <ClassInsightPanel availability={detail.insight} insight={insight} loading={insightLoading} error={insightError} onRetry={() => void refreshInsights()} />
             <Card component="section" aria-labelledby="worksheets-heading" variant="outlined" sx={{ ...card, p: { xs: 2, sm: 2.25 } }}><Typography id="worksheets-heading" component="h2" sx={{ fontFamily: serif, fontSize: 21, fontWeight: 500, mb: 1.5 }}>Worksheets</Typography>{detail.worksheets.length === 0 ? <EmptySection title="No worksheets assigned">Approved worksheets for this class will appear here.</EmptySection> : <Box sx={{ display: "grid", gap: 1.25 }}>{detail.worksheets.map((worksheet) => <WorksheetRow key={worksheet.id} worksheet={worksheet} />)}</Box>}<Box sx={{ mt: 1.5 }}><Button component={Link} href={`/tutor/worksheets/new?classId=${detail.id}`} startIcon={<AutoAwesomeIcon />} sx={{ minHeight: 40, borderRadius: "10px", bgcolor: "#E08A72", color: "#1B1917", textTransform: "none", fontWeight: 600, px: 1.75, "&:hover": { bgcolor: "#D2795F" } }}>Generate Worksheet</Button><Typography sx={{ color: "#8B837A", fontSize: 11.5, lineHeight: 1.55, mt: 0.8 }}>Choose covered topics and review the generated draft before it is assigned.</Typography></Box></Card>
           </Box>

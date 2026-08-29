@@ -100,4 +100,38 @@ class RuleBasedAnswerCheckerTest {
         assertEquals(new BigDecimal("1.00"), result.awardedMarks());
         assertEquals(0, result.awardedMarks().compareTo(result.maximumMarks()));
     }
+
+    @Test
+    void evaluatesWeightedComponentsBeforeKeywordFallbackAndReturnsPerComponentEvidence() {
+        RuleCheckResult result = checker.checkWeighted(
+            "The heat conduction moves energy through the metal.",
+            List.of(
+                new RuleBasedAnswerChecker.WeightedMarkingComponent(0, "Explains heat conduction", new BigDecimal("2.00")),
+                new RuleBasedAnswerChecker.WeightedMarkingComponent(1, "States energy transfer", new BigDecimal("1.00"))
+            ),
+            new BigDecimal("3.00")
+        );
+
+        assertEquals(new BigDecimal("2.00"), result.awardedMarks());
+        assertEquals(List.of("Explains heat conduction"), result.matchedKeywords());
+        assertEquals(List.of("States energy transfer"), result.missingKeywords());
+        assertEquals(2, result.componentResults().size());
+        assertEquals(true, result.componentResults().get(0).matched());
+        assertEquals(false, result.componentResults().get(1).matched());
+        assertEquals("No deterministic component target was found.", result.componentResults().get(1).feedback());
+    }
+
+    @Test
+    void rejectsComponentMarksThatDoNotExactlyAndSafelyAllocateQuestionTotal() {
+        assertThrows(IllegalArgumentException.class, () -> checker.checkWeighted("answer", List.of(
+            new RuleBasedAnswerChecker.WeightedMarkingComponent(0, "Explains answer", new BigDecimal("2.00"))
+        ), new BigDecimal("1.00")));
+        assertThrows(IllegalArgumentException.class, () -> checker.checkWeighted("answer", List.of(
+            new RuleBasedAnswerChecker.WeightedMarkingComponent(0, "Explains answer", new BigDecimal("1.00"))
+        ), new BigDecimal("2.00")));
+        assertThrows(IllegalArgumentException.class, () -> checker.checkWeighted("answer", List.of(
+            new RuleBasedAnswerChecker.WeightedMarkingComponent(0, "A", new BigDecimal("1.00")),
+            new RuleBasedAnswerChecker.WeightedMarkingComponent(0, "B", new BigDecimal("1.00"))
+        ), new BigDecimal("2.00")));
+    }
 }

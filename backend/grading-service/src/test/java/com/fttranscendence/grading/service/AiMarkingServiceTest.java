@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 class AiMarkingServiceTest {
@@ -26,7 +27,7 @@ class AiMarkingServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new AiGradingService(restTemplate, new ObjectMapper());
+        service = new AiGradingService(restTemplate, new ObjectMapper(), new RuleBasedAnswerChecker());
         ReflectionTestUtils.setField(service, "apiUrl", "http://localhost/ai-test");
         ReflectionTestUtils.setField(service, "apiModel", "test-model");
         ReflectionTestUtils.setField(service, "apiKey", "test-api-key");
@@ -67,6 +68,22 @@ class AiMarkingServiceTest {
         assertEquals(new BigDecimal("0.00"), result.suggestedMarks());
         assertEquals("AI_UNAVAILABLE", result.errorCategory());
         assertEquals(List.of("conductor"), result.missingKeywords());
+    }
+
+    @Test
+    void calculatesAndSuppliesDeterministicComponentEvidenceBeforeCallingProvider() {
+        when(restTemplate.postForObject(eq("http://localhost/ai-test"), any(HttpEntity.class), eq(AiGradingService.ApiResponse.class)))
+            .thenReturn(response("{\"suggested_marks\":2.0,\"correctness\":\"Correct\",\"feedback\":\"Good.\"}"));
+
+        AiGradingService.AiMarkingResult result = service.evaluateMarking(
+            "Why does metal feel hot?", "Metal conducts heat.", List.of("Explains heat conduction"),
+            List.of(new RuleBasedAnswerChecker.WeightedMarkingComponent(0, "Explains heat conduction", new BigDecimal("2.00"))),
+            List.of("conductor"), "It uses heat conduction.", new BigDecimal("2.00")
+        );
+
+        assertEquals(new BigDecimal("2.00"), result.deterministicEvidence().awardedMarks());
+        assertEquals(1, result.deterministicEvidence().componentResults().size());
+        verify(restTemplate).postForObject(eq("http://localhost/ai-test"), any(HttpEntity.class), eq(AiGradingService.ApiResponse.class));
     }
 
     private AiGradingService.AiMarkingResult mark(String answer) {

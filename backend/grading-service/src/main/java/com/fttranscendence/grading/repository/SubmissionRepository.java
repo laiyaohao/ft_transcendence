@@ -1,6 +1,7 @@
 package com.fttranscendence.grading.repository;
 
 import com.fttranscendence.grading.model.Submission;
+import com.fttranscendence.grading.model.SubmissionDocument;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
@@ -31,5 +32,18 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
     Optional<Submission> findBySubmissionDocumentIdAndWorksheetQuestionId(
         Long submissionDocumentId,
         Long worksheetQuestionId
+    );
+
+    /**
+     * Manual marks are deliberately scoped through their Tutor-owned document.
+     * This prevents a worksheet identifier alone from exposing another Tutor's
+     * result history.
+     */
+    @EntityGraph(attributePaths = {"missingKeywords", "reviews", "submissionDocument"})
+    List<Submission> findByWorksheetIdAndSubmissionDocumentOwnerUserIdAndSubmissionDocumentOwnerRoleAndSubmissionDocumentSourceTypeOrderByCreatedAtAsc(
+        Long worksheetId,
+        Long ownerUserId,
+        SubmissionDocument.OwnerRole ownerRole,
+        SubmissionDocument.SourceType sourceType
     );
 }

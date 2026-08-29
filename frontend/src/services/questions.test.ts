@@ -40,9 +40,9 @@ describe("question bank service", () => {
     localStorage.setItem("jwt_token", "stored-token");
     vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify(response), { status: 200 }));
 
-    await expect(fetchTutorQuestions({ topicId: 14, questionType: "OPEN_ENDED", archiveState: "ARCHIVED", page: 1, size: 12 })).resolves.toEqual(response);
+    await expect(fetchTutorQuestions({ topicId: 14, questionType: "OPEN_ENDED", archiveState: "ARCHIVED", search: "  Evaporation & state  ", page: 1, size: 12 })).resolves.toEqual(response);
     expect(fetch).toHaveBeenCalledWith(
-      "http://localhost:8083/api/learning/tutor/questions?page=1&size=12&topicId=14&questionType=OPEN_ENDED&archiveState=ARCHIVED",
+      "http://localhost:8083/api/learning/tutor/questions?page=1&size=12&topicId=14&questionType=OPEN_ENDED&archiveState=ARCHIVED&search=Evaporation+%26+state",
       expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer stored-token", Accept: "application/json" }) }),
     );
   });
@@ -57,6 +57,7 @@ describe("question bank service", () => {
     await expect(fetchTutorQuestions({ topicId: 0 })).rejects.toMatchObject({ name: "QuestionApiError", status: 400 } satisfies Partial<QuestionApiError>);
     await expect(fetchTutorQuestions({ size: 101 })).rejects.toMatchObject({ status: 400 });
     await expect(fetchTutorQuestions({ questionType: "INVALID" as never })).rejects.toMatchObject({ status: 400 });
+    await expect(fetchTutorQuestions({ search: "x".repeat(121) })).rejects.toMatchObject({ status: 400 });
     expect(fetch).not.toHaveBeenCalled();
   });
 

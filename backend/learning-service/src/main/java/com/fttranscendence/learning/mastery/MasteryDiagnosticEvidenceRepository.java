@@ -13,5 +13,6 @@ public interface MasteryDiagnosticEvidenceRepository extends JpaRepository<Maste
     @EntityGraph(attributePaths = {"masteryRecord", "studentProfile", "missingKeywords"})
     List<MasteryDiagnosticEvidence> findByStudentProfileIdOrderByCreatedAtDescIdDesc(Long studentProfileId);
 
-    long countByMasteryRecordIdAndCategory(Long masteryRecordId, MasteryDiagnosticEvidence.Category category);
+    @EntityGraph(attributePaths = {"masteryRecord"})
+    List<MasteryDiagnosticEvidence> findByMasteryRecordId(Long masteryRecordId);
 }

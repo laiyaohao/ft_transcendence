@@ -14,10 +14,38 @@ public record RuleCheckResult(
     BigDecimal maximumMarks,
     List<String> matchedKeywords,
     List<String> missingKeywords,
-    String explanation
+    String explanation,
+    List<ComponentResult> componentResults
 ) {
     public RuleCheckResult {
+        if (awardedMarks == null || maximumMarks == null) {
+            throw new IllegalArgumentException("Awarded and maximum marks are required.");
+        }
+        if (awardedMarks.signum() < 0 || awardedMarks.compareTo(maximumMarks) > 0) {
+            throw new IllegalArgumentException("Awarded marks must be between zero and the maximum.");
+        }
         matchedKeywords = List.copyOf(matchedKeywords);
         missingKeywords = List.copyOf(missingKeywords);
+        componentResults = List.copyOf(componentResults);
+    }
+
+    /**
+     * Evidence for one weighted marking component.  It is returned even when
+     * no component is matched so a Tutor can see exactly why the deterministic
+     * suggestion did not allocate the component's marks.
+     */
+    public record ComponentResult(
+        int position,
+        String description,
+        BigDecimal maximumMarks,
+        boolean matched,
+        List<String> matchedTargets,
+        List<String> missingTargets,
+        String feedback
+    ) {
+        public ComponentResult {
+            matchedTargets = List.copyOf(matchedTargets);
+            missingTargets = List.copyOf(missingTargets);
+        }
     }
 }

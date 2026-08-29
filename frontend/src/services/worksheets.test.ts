@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchStudentWorksheets, fetchTutorWorksheet, fetchTutorWorksheets, generateWorksheet, parseStudentWorksheet, parseTutorWorksheet, WorksheetApiError } from "./worksheets";
+import { fetchDiagnosticRecommendations, fetchStudentWorksheets, fetchTutorWorksheet, fetchTutorWorksheets, generateDiagnosticWorksheet, generateWorksheet, parseStudentWorksheet, parseTutorWorksheet, WorksheetApiError } from "./worksheets";
 
 const worksheet = {
   id: 9, code: "GEN-9", title: "Water drill", instructions: null, audienceType: "CLASS", status: "DRAFT", generationRequestId: 3,
@@ -41,6 +41,16 @@ describe("worksheet service", () => {
     vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify([worksheet]), { status: 200 }));
     await expect(fetchTutorWorksheets(2)).resolves.toHaveLength(1);
     expect(fetch).toHaveBeenLastCalledWith(expect.stringContaining("/api/learning/tutor/worksheets?classId=2"), expect.anything());
+  });
+
+  it("loads evidence-only diagnostic recommendations and sends an idempotent diagnostic draft request", async () => {
+    const recommendations = { status: "READY", message: "Evidence is ready.", recommendations: [{ studentId: 7, studentName: "Ari Tan", topicId: 3, topicName: "Water", masteryPercent: 42, attemptCount: 2, reason: "LOW_MASTERY" }] };
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify(recommendations), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 2, classId: 2, status: "SUCCEEDED", failureMessage: null, worksheet }), { status: 201 }));
+    await expect(fetchDiagnosticRecommendations(2)).resolves.toEqual(recommendations);
+    await expect(generateDiagnosticWorksheet(2, { targetMode: "STUDENTS", studentIds: [7], topicIds: [3], questionCount: 5 }, "diagnostic-key")).resolves.toMatchObject({ id: 2, status: "SUCCEEDED" });
+    expect(fetch).toHaveBeenLastCalledWith(expect.stringContaining("/classes/2/diagnostic-worksheet-generation-requests"), expect.objectContaining({ headers: expect.objectContaining({ "Idempotency-Key": "diagnostic-key" }) }));
   });
 
   it("loads only the student-scoped worksheet library with canonical filters and a bearer token", async () => {

@@ -87,6 +87,32 @@ class WorksheetDetailIntegrationTest {
     }
 
     @Test
+    void returnsDraftProvenanceSubjectTypeAndImmutableQuestionSnapshots() throws Exception {
+        long worksheetId = worksheet(OWNER_ID, "WS-DETAIL-SNAPSHOT", "DRAFT");
+        jdbcTemplate.update("UPDATE worksheets SET subject = ?, worksheet_type = ? WHERE id = ?", "Science", "DIAGNOSTIC", worksheetId);
+        addQuestion(worksheetId, "DETAIL-SNAPSHOT-LIVE", "The current bank prompt.", 0);
+        jdbcTemplate.update("UPDATE worksheet_questions SET question_code_snapshot = ?, prompt_snapshot = ?, question_type_snapshot = ?, total_marks_snapshot = ? WHERE worksheet_id = ?",
+            "DETAIL-SNAPSHOT-AT-GENERATION", "The prompt retained with this worksheet.", "SHORT_ANSWER", new BigDecimal("2.50"), worksheetId);
+
+        mockMvc.perform(get("/api/learning/tutor/worksheets/{worksheetId}", worksheetId)
+                .header(HttpHeaders.AUTHORIZATION, bearer("TUTOR", OWNER_ID)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("DRAFT"))
+            .andExpect(jsonPath("$.subject").value("Science"))
+            .andExpect(jsonPath("$.worksheetType").value("DIAGNOSTIC"))
+            .andExpect(jsonPath("$.generationRequestId").isEmpty())
+            .andExpect(jsonPath("$.assignments.length()").value(0))
+            .andExpect(jsonPath("$.questions[0].code").value("DETAIL-SNAPSHOT-AT-GENERATION"))
+            .andExpect(jsonPath("$.questions[0].prompt").value("The prompt retained with this worksheet."))
+            .andExpect(jsonPath("$.questions[0].questionType").value("SHORT_ANSWER"))
+            .andExpect(jsonPath("$.questions[0].totalMarks").value(2.5));
+
+        mockMvc.perform(get("/api/learning/tutor/worksheets/{worksheetId}", worksheetId)
+                .header(HttpHeaders.AUTHORIZATION, bearer("STUDENT", 700L)))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
     void listsOnlyTheOwnersWorksheetsAndHonoursAnOwnedClassFilter() throws Exception {
         long classId = tutorClass(OWNER_ID);
         long otherClassId = tutorClass(OWNER_ID, "Another class");

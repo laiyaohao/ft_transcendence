@@ -23,23 +23,34 @@ type Props = {
   downloadPdf?: typeof downloadWorksheetPdf;
 };
 
+const lightCard = { borderColor: "#EBE4D9", bgcolor: "#FFFDFA", borderRadius: "14px" };
+
 function assignmentLabel(worksheet: TutorWorksheet): string {
   if (worksheet.assignments.length === 0) return "Not assigned yet";
   if (worksheet.targetMode === "CLASS") return `Class #${worksheet.assignments[0].classId}`;
   return `${worksheet.assignments.length} selected student${worksheet.assignments.length === 1 ? "" : "s"}`;
 }
 
-function datetimeLocal(value: string | null): string {
-  return value ? value.slice(0, 16) : "";
+function datetimeLocal(value: string | null): string { return value ? value.slice(0, 16) : ""; }
+
+function formatDueDate(value: string | null): string {
+  if (!value) return "No due date";
+  const parsed = new Date(`${value}Z`);
+  return Number.isNaN(parsed.getTime()) ? "No due date" : `Due ${parsed.toLocaleString()}`;
 }
 
-/** Owner-only worksheet management, deliberately separate from Student results. */
-export default function TutorWorksheetDetail({
-  worksheet,
-  approve = approveWorksheet,
-  update = updateWorksheet,
-  downloadPdf = downloadWorksheetPdf,
-}: Props) {
+function statusPresentation(worksheet: TutorWorksheet): { label: string; sx: Record<string, string> } {
+  if (worksheet.status === "DRAFT") return { label: "GENERATED", sx: { bgcolor: "#F0EAE0", color: "#6F675E" } };
+  if (worksheet.status === "APPROVED") return { label: "ASSIGNED", sx: { bgcolor: "#F3EBDD", color: "#7A6238" } };
+  return { label: "ARCHIVED", sx: { bgcolor: "#F0EAE0", color: "#6F675E" } };
+}
+
+function questionTypeLabel(value: string): string {
+  return value.replaceAll("_", " ").toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+/** Owner-only worksheet management, deliberately separate from the Student result route. */
+export default function TutorWorksheetDetail({ worksheet, approve = approveWorksheet, update = updateWorksheet, downloadPdf = downloadWorksheetPdf }: Props) {
   const [current, setCurrent] = React.useState(worksheet);
   const [editing, setEditing] = React.useState(false);
   const [title, setTitle] = React.useState(worksheet.title);
@@ -49,24 +60,23 @@ export default function TutorWorksheetDetail({
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
 
+  const resetForm = React.useCallback((value: TutorWorksheet) => {
+    setTitle(value.title);
+    setInstructions(value.instructions ?? "");
+    setQuestionIds(value.questions.map((question) => question.id));
+    setDueAt(datetimeLocal(value.dueAt));
+  }, []);
   const run = async (operation: () => Promise<TutorWorksheet>) => {
-    setBusy(true);
-    setError(null);
+    setBusy(true); setError(null);
     try {
-      setCurrent(await operation());
-      setEditing(false);
+      const next = await operation();
+      setCurrent(next); resetForm(next); setEditing(false);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Worksheet could not be updated.");
-    } finally {
-      setBusy(false);
-    }
+    } finally { setBusy(false); }
   };
-
   const approveDraft = () => run(() => approve(current.id, dueAt || undefined));
-  const saveDraft = () => {
-    const request: UpdateWorksheetRequest = { title, instructions: instructions || null, questionIds };
-    return run(() => update(current.id, request));
-  };
+  const saveDraft = () => run(() => update(current.id, { title: title.trim(), instructions: instructions.trim() || null, questionIds } satisfies UpdateWorksheetRequest));
   const moveQuestion = (index: number, direction: -1 | 1) => {
     const destination = index + direction;
     if (destination < 0 || destination >= questionIds.length) return;
@@ -76,103 +86,71 @@ export default function TutorWorksheetDetail({
       return reordered;
     });
   };
-  const orderedQuestions = questionIds.map((id) => current.questions.find((question) => question.id === id)).filter(Boolean);
-
+  const orderedQuestions = questionIds.map((id) => current.questions.find((question) => question.id === id)).filter((question): question is TutorWorksheet["questions"][number] => Boolean(question));
+  const totalMarks = current.questions.reduce((sum, question) => sum + question.totalMarks, 0);
+  const topics = [...new Set(current.questions.map((question) => question.topicName))];
+  const status = statusPresentation(current);
+  const editable = current.status === "DRAFT";
+  const approved = current.status === "APPROVED";
   const exportPdf = async () => {
-    setBusy(true);
-    setError(null);
+    setBusy(true); setError(null);
     try {
       const blob = await downloadPdf(current.id);
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `${current.code || current.title}.pdf`;
-      anchor.click();
+      anchor.href = url; anchor.download = `${current.code || current.title}.pdf`; anchor.click();
       URL.revokeObjectURL(url);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Worksheet PDF could not be created.");
-    } finally {
-      setBusy(false);
-    }
+    } finally { setBusy(false); }
   };
 
-  return (
-    <Box sx={{ maxWidth: 1100, mx: "auto", py: { xs: 2, sm: 3 }, px: { xs: 1, sm: 0 } }}>
-      <Button component={Link} href="/tutor/worksheets/new" sx={{ textTransform: "none", color: "#6F675E" }}>
-        Build another worksheet
-      </Button>
-      <Box sx={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 2, my: 2 }}>
-        <Box>
-          <Typography component="h1" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: { xs: 30, sm: 38 } }}>
-            {current.title}
-          </Typography>
-          <Typography sx={{ color: "#6F675E" }}>
-            {current.status} · {current.questions.length} question{current.questions.length === 1 ? "" : "s"} · {assignmentLabel(current)}
-          </Typography>
-        </Box>
-        <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-          {current.status === "DRAFT" && (
-            <Button onClick={() => setEditing((value) => !value)} disabled={busy} sx={{ border: "1px solid #E4DCD0", color: "#2A2622", textTransform: "none" }}>
-              {editing ? "Cancel edit" : "Edit worksheet"}
-            </Button>
-          )}
-          {current.status === "DRAFT" ? (
-            <Button onClick={() => void approveDraft()} disabled={busy || !current.questions.length} sx={{ bgcolor: "#9E3A24", color: "#FFFDFA", textTransform: "none" }}>
-              Approve & assign worksheet
-            </Button>
-          ) : (
-            <>
-              <Button component={Link} href={`/tutor/worksheets/${current.id}/results/new`} sx={{ border: "1px solid #E4DCD0", color: "#2A2622", textTransform: "none" }}>
-                Enter result manually
-              </Button>
-              <Button component={Link} href={`/upload?worksheetId=${current.id}`} sx={{ border: "1px solid #E4DCD0", color: "#2A2622", textTransform: "none" }}>
-                Upload marked work
-              </Button>
-              <Button onClick={() => void exportPdf()} disabled={busy} sx={{ bgcolor: "#9E3A24", color: "#FFFDFA", textTransform: "none" }}>
-                Download PDF
-              </Button>
-            </>
-          )}
+  return <Box data-testid="tutor-worksheet-detail" sx={{ maxWidth: 1420, mx: "auto", py: { xs: 2, sm: 3 }, px: { xs: 1, sm: 0 } }}>
+    <Button component={Link} href="/tutor/worksheets" sx={{ textTransform: "none", color: "#6F675E", mb: 1 }}>Back to worksheets</Button>
+    <Box sx={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "start", gap: 2, mb: 2.5 }}>
+      <Box sx={{ minWidth: 0 }}>
+        <Stack direction="row" spacing={1} useFlexGap sx={{ mb: 1, flexWrap: "wrap" }}>
+          <Box component="span" sx={{ px: 1.1, py: 0.5, borderRadius: "20px", fontSize: 10, lineHeight: 1, fontWeight: 700, letterSpacing: ".05em", whiteSpace: "nowrap", ...status.sx }}>{status.label}</Box>
+          <Typography component="span" sx={{ fontSize: 12, color: "#8B837A", pt: 0.2 }}>{current.worksheetType ?? "STANDARD"} worksheet</Typography>
         </Stack>
+        <Typography component="h1" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: { xs: 30, sm: 38 }, lineHeight: 1.15 }}>{current.title}</Typography>
+        <Typography sx={{ color: "#6F675E", mt: 0.75 }}>{current.subject || "Subject not recorded"} · {current.questions.length} question{current.questions.length === 1 ? "" : "s"} · {totalMarks.toFixed(1)} marks</Typography>
       </Box>
-
-      {error && <Typography role="alert" sx={{ color: "#B4573F", mb: 2 }}>{error}</Typography>}
-
-      {editing && current.status === "DRAFT" && (
-        <Card component="section" variant="outlined" sx={{ p: { xs: 2, sm: 3 }, mb: 2, borderRadius: "14px", borderColor: "#EBE4D9", bgcolor: "#FFFDFA" }}>
-          <Typography component="h2" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 22, mb: 2 }}>Edit draft</Typography>
-          <Stack spacing={2}>
-            <TextField label="Title" value={title} required onChange={(event) => setTitle(event.target.value)} />
-            <TextField label="Instructions" value={instructions} multiline minRows={3} onChange={(event) => setInstructions(event.target.value)} />
-            <TextField label="Assignment due date" type="datetime-local" value={dueAt} onChange={(event) => setDueAt(event.target.value)} slotProps={{ inputLabel: { shrink: true } }} helperText="One deadline applies to every assigned student." />
-            <Button onClick={() => void saveDraft()} disabled={busy || !title.trim() || questionIds.length === 0} sx={{ alignSelf: "start", bgcolor: "#E08A72", color: "#1B1917", textTransform: "none" }}>
-              Save draft
-            </Button>
-          </Stack>
-        </Card>
-      )}
-
-      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "minmax(0, 2fr) minmax(240px, 1fr)" }, gap: 2 }}>
-        <Card component="section" variant="outlined" sx={{ p: { xs: 2, sm: 3 }, borderRadius: "14px", borderColor: "#EBE4D9", bgcolor: "#FFFDFA" }}>
-          <Typography component="h2" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 22 }}>Questions</Typography>
-          <Box component="ol" sx={{ pl: 3 }}>
-            {orderedQuestions.map((question, index) => question && (
-              <li key={question.id}>
-                <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 1, py: 1 }}>
-                  <Typography>{question.prompt} · {question.totalMarks.toFixed(1)} marks</Typography>
-                  {editing && <Stack direction="row" spacing={0.5}><Button size="small" onClick={() => moveQuestion(index, -1)} disabled={index === 0 || busy}>Up</Button><Button size="small" onClick={() => moveQuestion(index, 1)} disabled={index === orderedQuestions.length - 1 || busy}>Down</Button></Stack>}
-                </Box>
-              </li>
-            ))}
-          </Box>
-        </Card>
-        <Card component="aside" variant="outlined" sx={{ p: { xs: 2, sm: 3 }, borderRadius: "14px", borderColor: "#EBE4D9", bgcolor: "#FFFDFA" }}>
-          <Typography component="h2" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 22, mb: 1 }}>Assignment</Typography>
-          <Typography>{assignmentLabel(current)}</Typography>
-          <Typography sx={{ color: "#6F675E", mt: 1 }}>{current.dueAt ? `Due ${new Date(current.dueAt).toLocaleString()}` : "No due date"}</Typography>
-          {current.instructions && <><Typography component="h3" sx={{ fontWeight: 700, mt: 3 }}>Instructions</Typography><Typography>{current.instructions}</Typography></>}
-        </Card>
-      </Box>
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ flex: "0 0 auto" }}>
+        {editable && <>
+          <Button onClick={() => { setError(null); setEditing(true); }} disabled={busy || editing} sx={{ border: "1px solid #E4DCD0", color: "#2A2622", textTransform: "none", bgcolor: "#FFFDFA" }}>Edit worksheet</Button>
+          <Button onClick={() => void approveDraft()} disabled={busy || current.questions.length === 0} sx={{ bgcolor: "#9E3A24", color: "#FFFDFA", textTransform: "none", "&:hover": { bgcolor: "#8A3120" } }}>Approve & assign worksheet</Button>
+        </>}
+        {approved && <>
+          <Button component={Link} href={`/tutor/worksheets/${current.id}/results/new`} sx={{ border: "1px solid #E4DCD0", color: "#2A2622", textTransform: "none", bgcolor: "#FFFDFA" }}>Enter result manually</Button>
+          <Button component={Link} href={`/upload?worksheetId=${current.id}`} sx={{ border: "1px solid #E4DCD0", color: "#2A2622", textTransform: "none", bgcolor: "#FFFDFA" }}>Upload student work</Button>
+          <Button onClick={() => void exportPdf()} disabled={busy} sx={{ bgcolor: "#9E3A24", color: "#FFFDFA", textTransform: "none", "&:hover": { bgcolor: "#8A3120" } }}>Download PDF</Button>
+        </>}
+      </Stack>
     </Box>
-  );
+    {current.status === "ARCHIVED" && <Box role="status" sx={{ bgcolor: "#F6EFE6", borderLeft: "3px solid #B4573F", borderRadius: "0 10px 10px 0", p: 1.5, mb: 2.5, color: "#5A544C", fontSize: 13 }}>This worksheet is archived and remains available as a read-only record.</Box>}
+    {editable && current.questions.length === 0 && <Box role="status" sx={{ bgcolor: "#F6EFE6", borderLeft: "3px solid #B4573F", borderRadius: "0 10px 10px 0", p: 1.5, mb: 2.5, color: "#5A544C", fontSize: 13 }}>Add at least one question before approval can assign this worksheet.</Box>}
+    {error && <Box role="alert" sx={{ bgcolor: "#F6EFE6", borderLeft: "3px solid #B4573F", borderRadius: "0 10px 10px 0", p: 1.5, mb: 2.5, color: "#5A544C", fontSize: 13 }}>{error}</Box>}
+    {editing && editable && <Card component="section" variant="outlined" sx={{ ...lightCard, p: { xs: 2, sm: 3 }, mb: 2.5 }}>
+      <Typography component="h2" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 23, mb: 0.5 }}>Edit generated draft</Typography>
+      <Typography sx={{ color: "#6F675E", fontSize: 13, mb: 2 }}>Change the content and question order before the Tutor approves assignment.</Typography>
+      <Stack spacing={2}>
+        <TextField label="Title" value={title} required onChange={(event) => setTitle(event.target.value)} disabled={busy} />
+        <TextField label="Instructions" value={instructions} multiline minRows={3} onChange={(event) => setInstructions(event.target.value)} disabled={busy} />
+        <TextField label="Assignment due date" type="datetime-local" value={dueAt} onChange={(event) => setDueAt(event.target.value)} disabled={busy} slotProps={{ inputLabel: { shrink: true } }} helperText="One deadline applies to every assigned student." />
+        <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}><Button onClick={() => void saveDraft()} disabled={busy || !title.trim() || questionIds.length === 0} sx={{ bgcolor: "#9E3A24", color: "#FFFDFA", textTransform: "none", "&:hover": { bgcolor: "#8A3120" } }}>{busy ? "Saving draft…" : "Save worksheet draft"}</Button><Button onClick={() => { resetForm(current); setEditing(false); setError(null); }} disabled={busy} sx={{ border: "1px solid #E4DCD0", color: "#6F675E", textTransform: "none" }}>Cancel edit</Button></Stack>
+      </Stack>
+    </Card>}
+    <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2.5 }}>
+      <Box sx={{ flex: "1 1 460px", minWidth: 0 }}><Card component="section" variant="outlined" sx={{ ...lightCard, p: { xs: 2, sm: 3 } }}>
+        <Typography component="h2" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 23, mb: 0.5 }}>Questions</Typography>
+        <Typography sx={{ color: "#6F675E", fontSize: 13, mb: 2 }}>{topics.length ? `Topics: ${topics.join(" · ")}` : "Topics are unavailable for this legacy worksheet."}</Typography>
+        {orderedQuestions.length === 0 ? <Box sx={{ border: "1px dashed #DCCFBE", borderRadius: "12px", p: 2, color: "#6F675E", fontSize: 13 }}>No questions are attached to this worksheet yet.</Box> : <Box component="ol" sx={{ m: 0, pl: 3.5 }}>{orderedQuestions.map((question, index) => <Box component="li" key={question.id} sx={{ py: 1.5, borderBottom: index === orderedQuestions.length - 1 ? "none" : "1px solid #F0EAE0" }}><Box sx={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "start", gap: 1 }}><Box sx={{ minWidth: 0, flex: "1 1 300px" }}><Typography sx={{ fontSize: 13.5, fontWeight: 600, lineHeight: 1.45 }}>{question.prompt}</Typography><Typography sx={{ color: "#8B837A", fontSize: 11.5, mt: 0.5 }}>{question.code} · {question.topicName} · {questionTypeLabel(question.questionType)} · {question.totalMarks.toFixed(1)} marks</Typography></Box>{editing && <Stack direction="row" spacing={0.5}><Button size="small" onClick={() => moveQuestion(index, -1)} disabled={index === 0 || busy} sx={{ minWidth: 34, color: "#6F675E" }}>Up</Button><Button size="small" onClick={() => moveQuestion(index, 1)} disabled={index === orderedQuestions.length - 1 || busy} sx={{ minWidth: 34, color: "#6F675E" }}>Down</Button></Stack>}</Box></Box>)}</Box>}
+      </Card></Box>
+      <Box sx={{ flex: "0 1 320px", minWidth: 0 }}><Stack spacing={2.5}>
+        <Card component="aside" variant="outlined" sx={{ ...lightCard, p: { xs: 2, sm: 3 } }}><Typography component="h2" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 23, mb: 1 }}>Assignment</Typography><Typography sx={{ fontWeight: 600 }}>{assignmentLabel(current)}</Typography><Typography sx={{ color: "#6F675E", mt: 0.75, fontSize: 13 }}>{formatDueDate(current.dueAt)}</Typography><Typography sx={{ color: "#8B837A", mt: 1.5, fontSize: 12 }}>{approved ? "Approved and assigned by the Tutor." : editable ? "Awaiting Tutor approval before assignment." : "Archived after its approval lifecycle."}</Typography>{current.instructions && <><Typography component="h3" sx={{ fontWeight: 700, mt: 2.5, mb: 0.5, fontSize: 14 }}>Instructions</Typography><Typography sx={{ fontSize: 13, lineHeight: 1.55 }}>{current.instructions}</Typography></>}</Card>
+        <Box component="section" aria-label="Generation provenance" sx={{ bgcolor: "#1B1917", borderRadius: "12px", p: 2.25 }}><Typography sx={{ color: "#E08A72", fontSize: 10.5, fontWeight: 700, letterSpacing: ".1em" }}>GENERATION PROVENANCE</Typography><Typography sx={{ color: "#E8E2D9", fontWeight: 600, fontSize: 13.5, mt: 0.75 }}>{current.worksheetType === "DIAGNOSTIC" ? "Diagnostic evidence selection" : "Tutor-configured generation"}</Typography><Typography sx={{ color: "#B5ADA2", fontSize: 12.5, lineHeight: 1.55, mt: 0.75 }}>{current.generationRequestId ? `Generated from request #${current.generationRequestId}. Question snapshots preserve the selected prompt, type, and marks.` : "This legacy worksheet has no generation request. Its available question snapshots are shown above."}</Typography><Typography sx={{ color: "#7A7268", fontSize: 11, mt: 1 }}>Generation is a suggestion; Tutor approval is the authoritative assignment decision.</Typography></Box>
+      </Stack></Box>
+    </Box>
+  </Box>;
 }

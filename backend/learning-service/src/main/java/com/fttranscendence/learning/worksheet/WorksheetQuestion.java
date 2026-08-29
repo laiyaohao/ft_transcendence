@@ -3,6 +3,7 @@ package com.fttranscendence.learning.worksheet;
 import com.fttranscendence.learning.question.Question;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -11,16 +12,26 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+
+import java.math.BigDecimal;
 
 @Entity
 @Table(
     name = "worksheet_questions",
-    uniqueConstraints = @UniqueConstraint(
-        name = "uk_worksheet_questions_question",
-        columnNames = {"worksheet_id", "question_id"}
-    )
+    uniqueConstraints = {
+        @UniqueConstraint(
+            name = "uk_worksheet_questions_question",
+            columnNames = {"worksheet_id", "question_id"}
+        ),
+        @UniqueConstraint(
+            name = "uk_worksheet_questions_position",
+            columnNames = {"worksheet_id", "position"}
+        )
+    }
 )
 public class WorksheetQuestion {
 
@@ -42,6 +53,23 @@ public class WorksheetQuestion {
     @Column(nullable = false)
     private int position;
 
+    /** Immutable question-bank values captured when the question is added. */
+    @Size(max = 120)
+    @Column(name = "question_code_snapshot", length = 120)
+    private String questionCodeSnapshot;
+
+    @Size(max = 4000)
+    @Column(name = "prompt_snapshot", length = 4000)
+    private String promptSnapshot;
+
+    @Enumerated(jakarta.persistence.EnumType.STRING)
+    @Column(name = "question_type_snapshot", length = 32)
+    private Question.QuestionType questionTypeSnapshot;
+
+    @DecimalMin(value = "0.01")
+    @Column(name = "total_marks_snapshot", precision = 6, scale = 2)
+    private BigDecimal totalMarksSnapshot;
+
     protected WorksheetQuestion() {
     }
 
@@ -49,6 +77,14 @@ public class WorksheetQuestion {
         this.worksheet = worksheet;
         this.question = question;
         this.position = position;
+        snapshot(question);
+    }
+
+    private void snapshot(Question source) {
+        questionCodeSnapshot = source.getCode();
+        promptSnapshot = source.getPrompt();
+        questionTypeSnapshot = source.getQuestionType();
+        totalMarksSnapshot = source.getTotalMarks();
     }
 
     void attachTo(Worksheet worksheet) {
@@ -73,5 +109,21 @@ public class WorksheetQuestion {
 
     public int getPosition() {
         return position;
+    }
+
+    public String getQuestionCodeSnapshot() {
+        return questionCodeSnapshot;
+    }
+
+    public String getPromptSnapshot() {
+        return promptSnapshot;
+    }
+
+    public Question.QuestionType getQuestionTypeSnapshot() {
+        return questionTypeSnapshot;
+    }
+
+    public BigDecimal getTotalMarksSnapshot() {
+        return totalMarksSnapshot;
     }
 }

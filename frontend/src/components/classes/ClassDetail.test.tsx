@@ -57,6 +57,9 @@ describe("ClassDetail", () => {
     expect(screen.getByText("Tutor note: Prioritise before Friday.")).toBeVisible();
     expect(screen.getByText("Review keywords before the next worksheet.")).toBeVisible();
     expect(screen.getByText("P5 Science — Adaptation Mini Test")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Class schedule" })).toBeVisible();
+    expect(screen.getByText("Monday")).toBeVisible();
+    expect(screen.getByText("16:00–17:30")).toBeVisible();
     expect(screen.getByRole("link", { name: "Generate Worksheet" })).toHaveAttribute("href", "/tutor/worksheets/new?classId=12");
     expect(screen.getByRole("link", { name: "Edit class" })).toHaveAttribute("href", "/classes/12/edit");
     expect(screen.getByRole("link", { name: "View students" })).toHaveAttribute("href", "/students?classId=12");
@@ -65,10 +68,11 @@ describe("ClassDetail", () => {
   });
 
   it("shows actionable empty states for a class without learning data", async () => {
-    render(<ClassDetail classId={12} loadClass={async () => ({ ...detail, students: [], mastery: { averageScore: null, recordCount: 0, studentsWithMastery: 0 }, weakAreas: [], worksheets: [] })} loadInsights={async () => ({ ...insights, items: [] })} />);
+    render(<ClassDetail classId={12} loadClass={async () => ({ ...detail, schedules: [], students: [], mastery: { averageScore: null, recordCount: 0, studentsWithMastery: 0 }, weakAreas: [], worksheets: [] })} loadInsights={async () => ({ ...insights, items: [] })} />);
     expect(await screen.findByText("No students in this class")).toBeVisible();
     expect(screen.getByText("No weak areas identified")).toBeVisible();
     expect(screen.getByText("No worksheets assigned")).toBeVisible();
+    expect(screen.getByText("No regular schedule yet")).toBeVisible();
   });
 
   it("shows a retryable missing or wrong-owner error", async () => {

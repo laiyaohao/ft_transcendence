@@ -42,6 +42,10 @@ public class ApprovedDiagnosticEvidence {
     private Long syllabusTopicId;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "mistake_type", nullable = false, length = 40)
+    private MistakeType mistakeType;
+
+    @Enumerated(EnumType.STRING)
     @Column(name = "category", nullable = false, length = 24)
     private DiagnosticCategory category;
 
@@ -64,7 +68,7 @@ public class ApprovedDiagnosticEvidence {
         Submission submission,
         int position,
         Long syllabusTopicId,
-        DiagnosticCategory category,
+        MistakeType mistakeType,
         String description,
         List<String> missingKeywords
     ) {
@@ -73,14 +77,15 @@ public class ApprovedDiagnosticEvidence {
         }
         if (position < 0) throw new IllegalArgumentException("Diagnostic evidence position must be non-negative");
         if (syllabusTopicId == null || syllabusTopicId <= 0) throw new IllegalArgumentException("Syllabus topic id is required");
-        if (category == null) throw new IllegalArgumentException("Diagnostic category is required");
+        if (mistakeType == null) throw new IllegalArgumentException("Mistake type is required");
         if (description == null || description.isBlank() || description.trim().length() > 4000) {
             throw new IllegalArgumentException("Diagnostic description is required and must be at most 4000 characters");
         }
         this.submission = submission;
         this.position = position;
         this.syllabusTopicId = syllabusTopicId;
-        this.category = category;
+        this.mistakeType = mistakeType;
+        this.category = mistakeType.getDiagnosticCategory();
         this.description = description.trim();
         this.missingKeywords = normalizeKeywords(missingKeywords);
     }
@@ -89,11 +94,11 @@ public class ApprovedDiagnosticEvidence {
         Submission submission,
         int position,
         Long syllabusTopicId,
-        DiagnosticCategory category,
+        MistakeType mistakeType,
         String description,
         List<String> missingKeywords
     ) {
-        return new ApprovedDiagnosticEvidence(submission, position, syllabusTopicId, category, description, missingKeywords);
+        return new ApprovedDiagnosticEvidence(submission, position, syllabusTopicId, mistakeType, description, missingKeywords);
     }
 
     @PrePersist
@@ -117,6 +122,7 @@ public class ApprovedDiagnosticEvidence {
     public Long getId() { return id; }
     public int getPosition() { return position; }
     public Long getSyllabusTopicId() { return syllabusTopicId; }
+    public MistakeType getMistakeType() { return mistakeType; }
     public DiagnosticCategory getCategory() { return category; }
     public String getDescription() { return description; }
     public List<String> getMissingKeywords() { return List.copyOf(missingKeywords); }

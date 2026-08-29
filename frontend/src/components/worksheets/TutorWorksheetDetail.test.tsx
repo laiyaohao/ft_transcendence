@@ -4,44 +4,72 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import TutorWorksheetDetail from "./TutorWorksheetDetail";
 
 const draft = {
-  id: 1, code: "WS-1", title: "Water drill", instructions: null, targetMode: "CLASS" as const,
-  status: "DRAFT" as const, generationRequestId: 8, dueAt: null, assignments: [],
-  questions: [{ id: 2, code: "Q", prompt: "Explain evaporation.", totalMarks: 2, questionType: "OPEN_ENDED" as const, topicName: "Water" }],
+  id: 1, code: "WS-1", title: "Water drill", instructions: "Answer in complete sentences.", subject: "Science", worksheetType: "DIAGNOSTIC" as const,
+  targetMode: "CLASS" as const, status: "DRAFT" as const, generationRequestId: 8, dueAt: null, assignments: [],
+  questions: [{ id: 2, code: "Q", prompt: "Explain evaporation.", totalMarks: 2, questionType: "OPEN_ENDED" as const, topicId: 5, topicName: "Water" }],
 };
 
 describe("TutorWorksheetDetail", () => {
   afterEach(() => vi.unstubAllGlobals());
 
+  it("renders real worksheet provenance, question metadata, and Tutor-only draft actions", () => {
+    render(<TutorWorksheetDetail worksheet={draft} />);
+    expect(screen.getByText("GENERATED")).toBeVisible();
+    expect(screen.getByText("Science · 1 question · 2.0 marks")).toBeVisible();
+    expect(screen.getByText("Q · Water · Open Ended · 2.0 marks")).toBeVisible();
+    expect(screen.getByLabelText("Generation provenance")).toHaveTextContent("Generated from request #8");
+    expect(screen.getByRole("button", { name: "Approve & assign worksheet" })).toBeVisible();
+    expect(screen.queryByRole("link", { name: "Upload student work" })).not.toBeInTheDocument();
+  });
+
   it("keeps Tutor management distinct and approves a draft", async () => {
     const approve = vi.fn().mockResolvedValue({ ...draft, status: "APPROVED", assignments: [{ id: 4, assignmentType: "CLASS", classId: 3, studentProfileId: null, assignedAt: "2026-08-27T10:00:00", dueAt: null }] });
     render(<TutorWorksheetDetail worksheet={draft} approve={approve} />);
-
     await userEvent.setup().click(screen.getByRole("button", { name: "Approve & assign worksheet" }));
-
     expect(approve).toHaveBeenCalledWith(1, undefined);
-    expect(await screen.findByText("APPROVED · 1 question · Class #3")).toBeVisible();
-    expect(screen.getByRole("link", { name: "Upload marked work" })).toHaveAttribute("href", "/upload?worksheetId=1");
+    expect(await screen.findByText("ASSIGNED")).toBeVisible();
+    expect(screen.getByRole("link", { name: "Upload student work" })).toHaveAttribute("href", "/upload?worksheetId=1");
+    expect(screen.getByRole("link", { name: "Enter result manually" })).toHaveAttribute("href", "/tutor/worksheets/1/results/new");
   });
 
-  it("edits a draft and wires the approved PDF download", async () => {
+  it("edits a draft and wires approved PDF export", async () => {
     const update = vi.fn().mockResolvedValue(draft);
     const downloadPdf = vi.fn().mockResolvedValue(new Blob(["pdf"], { type: "application/pdf" }));
     const user = userEvent.setup();
     render(<TutorWorksheetDetail worksheet={draft} update={update} />);
     await user.click(screen.getByRole("button", { name: "Edit worksheet" }));
-    const titleInput = screen.getByLabelText(/title/i);
+    const titleInput = screen.getByRole("textbox", { name: /title/i });
     await user.clear(titleInput);
     await user.type(titleInput, "Updated water drill");
-    await user.click(screen.getByRole("button", { name: "Save draft" }));
+    await user.click(screen.getByRole("button", { name: "Save worksheet draft" }));
     expect(update).toHaveBeenCalledWith(1, expect.objectContaining({ title: "Updated water drill", questionIds: [2] }));
 
     const approved = { ...draft, status: "APPROVED" as const, assignments: [{ id: 4, assignmentType: "CLASS" as const, classId: 3, studentProfileId: null, assignedAt: null, dueAt: null }] };
     vi.stubGlobal("URL", { createObjectURL: vi.fn().mockReturnValue("blob:worksheet"), revokeObjectURL: vi.fn() });
     const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
     render(<TutorWorksheetDetail worksheet={approved} downloadPdf={downloadPdf} />);
-    await user.click(screen.getByRole("button", { name: "Download PDF" }));
+    await user.click(screen.getAllByRole("button", { name: "Download PDF" }).at(-1)!);
     expect(downloadPdf).toHaveBeenCalledWith(1);
     expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:worksheet");
     click.mockRestore();
+  });
+
+  it("renders legacy snapshot fallback and leaves archived worksheets read-only", () => {
+    render(<TutorWorksheetDetail worksheet={{ ...draft, subject: null, worksheetType: undefined, generationRequestId: null, status: "ARCHIVED" }} />);
+    expect(screen.getByText(/Subject not recorded/, { selector: "p" })).toBeVisible();
+    expect(screen.getByLabelText("Generation provenance")).toHaveTextContent("legacy worksheet has no generation request");
+    expect(screen.getByRole("status")).toHaveTextContent("read-only record");
+    expect(screen.queryByRole("button", { name: "Download PDF" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Approve & assign worksheet" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the work area and support rail fluid at a mobile viewport", () => {
+    const previousWidth = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 320 });
+    render(<TutorWorksheetDetail worksheet={draft} />);
+    expect(screen.getByTestId("tutor-worksheet-detail")).toBeVisible();
+    const styles = [...document.querySelectorAll("style")].map((style) => style.textContent ?? "").join("\n");
+    expect(styles).toMatch(/flex:1 1 460px/);
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: previousWidth });
   });
 });

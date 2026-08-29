@@ -61,27 +61,51 @@ function QuestionCard({ item, selected, onToggle }: { item: QuestionBankItem; se
 export default function QuestionList({ loadQuestions = fetchTutorQuestions, loadSyllabus }: QuestionListProps) {
   const [pageData, setPageData] = React.useState<QuestionBankPage | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [isLoading, setIsLoading] = React.useState(false);
   const [topicId, setTopicId] = React.useState<number | undefined>();
   const [questionType, setQuestionType] = React.useState<QuestionType | undefined>();
   const [archiveState, setArchiveState] = React.useState<QuestionArchiveState>("ACTIVE");
+  const [searchInput, setSearchInput] = React.useState("");
+  const [search, setSearch] = React.useState("");
   const [page, setPage] = React.useState(0);
   const [selectedIds, setSelectedIds] = React.useState<Set<number>>(() => new Set());
+  const latestRequest = React.useRef(0);
+  const initialSearchEffect = React.useRef(true);
 
-  const filters = React.useMemo<QuestionBankFilters>(() => ({ topicId, questionType, archiveState, page, size: 12 }), [archiveState, page, questionType, topicId]);
+  const filters = React.useMemo<QuestionBankFilters>(() => ({ topicId, questionType, archiveState, search: search || undefined, page, size: 12 }), [archiveState, page, questionType, search, topicId]);
   const load = React.useCallback(async () => {
-    setPageData(null); setError(null);
-    try { setPageData(await loadQuestions(filters)); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : "The question bank could not be loaded. Please try again."); }
+    const request = ++latestRequest.current;
+    setError(null); setIsLoading(true);
+    try {
+      const response = await loadQuestions(filters);
+      if (request === latestRequest.current) setPageData(response);
+    } catch (reason) {
+      if (request === latestRequest.current) setError(reason instanceof Error ? reason.message : "The question bank could not be loaded. Please try again.");
+    } finally {
+      if (request === latestRequest.current) setIsLoading(false);
+    }
   }, [filters, loadQuestions]);
 
   React.useEffect(() => { queueMicrotask(() => { void load(); }); }, [load]);
+  React.useEffect(() => {
+    if (initialSearchEffect.current) {
+      initialSearchEffect.current = false;
+      return;
+    }
+    const debounce = window.setTimeout(() => {
+      const nextSearch = searchInput.trim();
+      setSearch(nextSearch);
+      setPage(0);
+    }, 300);
+    return () => window.clearTimeout(debounce);
+  }, [searchInput]);
 
   const toggleSelection = (id: number) => setSelectedIds((current) => {
     const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next;
   });
   const clearFilters = () => {
-    const alreadyDefault = topicId === undefined && questionType === undefined && archiveState === "ACTIVE" && page === 0;
-    setTopicId(undefined); setQuestionType(undefined); setArchiveState("ACTIVE"); setPage(0);
+    const alreadyDefault = topicId === undefined && questionType === undefined && archiveState === "ACTIVE" && !searchInput && !search && page === 0;
+    setTopicId(undefined); setQuestionType(undefined); setArchiveState("ACTIVE"); setSearchInput(""); setSearch(""); setPage(0);
     if (alreadyDefault) void load();
   };
   const changeArchive = (value: QuestionArchiveState) => { setArchiveState(value); setPage(0); };
@@ -91,11 +115,13 @@ export default function QuestionList({ loadQuestions = fetchTutorQuestions, load
   if (error) return <Card component="section" role="alert" variant="outlined" sx={{ maxWidth: 600, p: 3, borderRadius: "14px", borderColor: "#EBE4D9", borderLeft: "3px solid #B4573F", bgcolor: "#FFFDFA", boxShadow: "none" }}><Typography component="h2" sx={{ fontFamily: serif, fontSize: 22, fontWeight: 500, mb: .75 }}>Question bank could not be loaded</Typography><Typography sx={{ color: "#5A544C", fontSize: 13.5, lineHeight: 1.6, mb: 2 }}>{error}</Typography><Button onClick={() => void load()} sx={{ minHeight: 40, border: "1px solid #E4DCD0", borderRadius: "10px", color: "#2A2622", textTransform: "none", fontWeight: 500 }}>Retry loading questions</Button></Card>;
   if (!pageData) return null;
 
-  return <Box component="section" aria-labelledby="question-list-title"><Typography id="question-list-title" sx={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>Question bank list</Typography>
+  return <Box component="section" aria-labelledby="question-list-title" aria-busy={isLoading}><Typography id="question-list-title" sx={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>Question bank list</Typography>
     <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1, mb: 1.25 }}><Button onClick={() => changeArchive("ACTIVE")} aria-pressed={archiveState === "ACTIVE"} sx={chipStyle(archiveState === "ACTIVE")}>Active</Button><Button onClick={() => changeArchive("ARCHIVED")} aria-pressed={archiveState === "ARCHIVED"} sx={chipStyle(archiveState === "ARCHIVED")}>Archived</Button><Box sx={{ flex: 1, minWidth: { xs: "100%", sm: 120 } }} /><Typography aria-live="polite" sx={{ color: "#6F675E", fontSize: 12.5 }}>{selectedIds.size} selected</Typography><Button component={Link} href="/questions/new" sx={{ minHeight: 36, border: "1px solid #E0B9AC", borderRadius: "9px", bgcolor: "#FDF6F3", color: "#9E3A24", textTransform: "none", fontWeight: 500 }}>Add question</Button></Box>
-    <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "flex-end", gap: 1, mb: 2 }}><Box sx={{ flex: "1 1 420px", minWidth: 0 }}><SyllabusPicker value={topicId ?? null} onChange={(nextTopicId) => { setTopicId(nextTopicId ?? undefined); setPage(0); }} label="Syllabus filter" helperText="Filter questions by a topic or subtopic." loadSyllabus={loadSyllabus} /></Box>
+    <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "flex-end", gap: 1, mb: 2 }}><Box sx={{ flex: "1 1 100%", minWidth: 0 }}><TextField fullWidth label="Search questions" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Search code, prompt, or keyword" slotProps={{ htmlInput: { maxLength: 120, type: "search" } }} helperText="Search matches code, prompt, and keywords." sx={{ "& .MuiOutlinedInput-root": { bgcolor: "#FFFDFA", borderRadius: "20px", "& fieldset": { borderColor: "#EBE4D9" }, "&:hover fieldset": { borderColor: "#DCCFBE" }, "&.Mui-focused fieldset": { borderColor: "#E08A72" } }, "& .MuiInputLabel-root": { color: "#6F675E", fontSize: 13 }, "& .MuiFormHelperText-root": { color: "#8B837A", fontSize: 11.5 } }} /></Box>
+      <Box sx={{ flex: "1 1 420px", minWidth: 0 }}><SyllabusPicker value={topicId ?? null} onChange={(nextTopicId) => { setTopicId(nextTopicId ?? undefined); setPage(0); }} label="Syllabus filter" helperText="Filter questions by a topic or subtopic." loadSyllabus={loadSyllabus} /></Box>
       <Box sx={{ display: "flex", flexWrap: "wrap", gap: .65, flex: "2 1 370px" }}><Button onClick={() => changeType(undefined)} aria-pressed={!questionType} sx={chipStyle(!questionType)}>All types</Button>{questionTypes.map((type) => <Button key={type.value} onClick={() => changeType(type.value)} aria-pressed={questionType === type.value} sx={chipStyle(questionType === type.value)}>{type.label}</Button>)}</Box>
     </Box>
     {pageData.items.length === 0 ? <Card variant="outlined" sx={{ minHeight: 260, display: "grid", placeItems: "center", textAlign: "center", p: 3, borderRadius: "14px", borderStyle: "dashed", borderColor: "#DCCFBE", bgcolor: "#FFFDFA", boxShadow: "none" }}><Box sx={{ maxWidth: 430 }}><Typography component="h2" sx={{ fontFamily: serif, fontSize: 22, fontWeight: 500, mb: .75 }}>No questions match these filters</Typography><Typography sx={{ color: "#8B837A", fontSize: 13, lineHeight: 1.6, mb: 1.75 }}>Try another topic, question type, or archive state.</Typography><Button onClick={clearFilters} sx={{ minHeight: 40, border: "1px solid #E4DCD0", borderRadius: "10px", color: "#2A2622", textTransform: "none", fontWeight: 500 }}>Clear filters</Button></Box></Card> : <><Box sx={{ display: "grid", gap: 1.25 }}>{pageData.items.map((item) => <QuestionCard key={item.id} item={item} selected={selectedIds.has(item.id)} onToggle={() => toggleSelection(item.id)} />)}</Box><Box sx={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 1.25, mt: 2 }}><Typography sx={{ color: "#8B837A", fontSize: 12.5 }}>Page {pageData.page + 1} of {Math.max(pageData.totalPages, 1)} · {pageData.totalElements} questions</Typography><Box sx={{ display: "flex", gap: .75 }}><Button onClick={() => setPage((current) => Math.max(0, current - 1))} disabled={pageData.page === 0} sx={{ minHeight: 38, border: "1px solid #E4DCD0", borderRadius: "9px", color: "#2A2622", textTransform: "none", "&.Mui-disabled": { bgcolor: "#EDE6DB", color: "#B5AA9C" } }}>Previous</Button><Button onClick={() => setPage((current) => current + 1)} disabled={!pageData.hasNext} sx={{ minHeight: 38, border: "1px solid #E4DCD0", borderRadius: "9px", color: "#2A2622", textTransform: "none", "&.Mui-disabled": { bgcolor: "#EDE6DB", color: "#B5AA9C" } }}>Next</Button></Box></Box></>}
+    {isLoading && pageData ? <Typography role="status" sx={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>Updating question results</Typography> : null}
   </Box>;
 }
