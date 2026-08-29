@@ -32,6 +32,8 @@ public class SecurityConfig {
                 // Every domain API is explicitly role-scoped.  Do not fall back to
                 // "authenticated" here: new endpoints must opt into a policy.
                 .requestMatchers("/api/grading/tutor/**").hasRole("TUTOR")
+                .requestMatchers(HttpMethod.GET, "/api/grading/student/worksheets/*/results")
+                    .hasRole("STUDENT")
                 .requestMatchers(HttpMethod.GET, "/api/grading/mistakes/**")
                     .hasAnyRole("TUTOR", "STUDENT")
                 .requestMatchers(HttpMethod.PATCH, "/api/grading/ocr-extractions/**")

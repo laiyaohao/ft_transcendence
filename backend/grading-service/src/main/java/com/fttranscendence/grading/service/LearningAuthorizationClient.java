@@ -119,6 +119,37 @@ public class LearningAuthorizationClient {
         throw new Forbidden();
     }
 
+    /**
+     * Resolves the authenticated learner and verifies that their filtered
+     * worksheet library contains the requested worksheet.  Learning returns
+     * the same absent result for a foreign and a missing worksheet, so this
+     * grading boundary preserves that non-enumerating behaviour.
+     */
+    public long resolveStudentWorksheet(AuthenticatedUser user, String bearer, long worksheetId) {
+        if (user == null || !"STUDENT".equals(user.role()) || worksheetId <= 0) {
+            throw new Forbidden();
+        }
+        try {
+            Map<?, ?> profile = get(bearer, "/api/learning/student/profile").getBody();
+            Object profileId = profile == null ? null : profile.get("id");
+            if (!(profileId instanceof Number student) || student.longValue() <= 0) {
+                throw new StudentWorksheetNotFound();
+            }
+            List<?> worksheets = getList(bearer, "/api/learning/student/worksheets").getBody();
+            boolean assigned = worksheets != null && worksheets.stream()
+                .filter(Map.class::isInstance).map(Map.class::cast)
+                .anyMatch(worksheet -> sameId(worksheet, worksheetId));
+            if (!assigned) {
+                throw new StudentWorksheetNotFound();
+            }
+            return student.longValue();
+        } catch (StudentWorksheetNotFound exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new StudentWorksheetNotFound();
+        }
+    }
+
     /** Loads the question and its marking rubric through the existing owner-scoped learning API. */
     public QuestionContext loadQuestion(AuthenticatedUser user, String bearer, long questionBankId) {
         if (user == null || !"TUTOR".equals(user.role())) {
@@ -214,6 +245,12 @@ public class LearningAuthorizationClient {
         HttpHeaders headers = new HttpHeaders();
         headers.set(HttpHeaders.AUTHORIZATION, bearer);
         return rest.exchange(base + path, HttpMethod.GET, new HttpEntity<>(headers), Map.class);
+    }
+
+    private ResponseEntity<List> getList(String bearer, String path) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set(HttpHeaders.AUTHORIZATION, bearer);
+        return rest.exchange(base + path, HttpMethod.GET, new HttpEntity<>(headers), List.class);
     }
 
     /** Uses a backend-only integration key; public user JWTs are not trusted for this write. */
@@ -361,6 +398,7 @@ public class LearningAuthorizationClient {
     public static class QuestionNotFound extends RuntimeException { }
     public static class ManualResultContextNotFound extends RuntimeException { }
     public static class MistakeHistoryNotFound extends RuntimeException { }
+    public static class StudentWorksheetNotFound extends RuntimeException { }
     public static class LearningSyncUnavailable extends RuntimeException {
         public LearningSyncUnavailable(String message) { super(message); }
     }

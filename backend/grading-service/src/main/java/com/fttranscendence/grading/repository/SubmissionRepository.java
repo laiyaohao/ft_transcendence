@@ -18,6 +18,10 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
     @EntityGraph(attributePaths = {"missingKeywords", "reviews"})
     List<Submission> findByStudentIdOrderByCreatedAtDesc(Long studentId);
 
+    /** Newest submission per worksheet question is the learner's current result. */
+    @EntityGraph(attributePaths = {"missingKeywords", "reviews"})
+    List<Submission> findByStudentIdAndWorksheetIdOrderByCreatedAtDescIdDesc(Long studentId, Long worksheetId);
+
     @EntityGraph(attributePaths = {"missingKeywords", "reviews"})
     List<Submission> findBySubmissionDocumentOwnerUserIdOrderByCreatedAtDesc(
         Long ownerUserId

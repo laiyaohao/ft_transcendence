@@ -79,11 +79,30 @@ export type ManualResultsResponse = {
   students: ManualResultStudentProgress[];
 };
 
+/** A Student-visible marking result.  Final marks and feedback are supplied only after Tutor approval. */
+export type StudentWorksheetResultOutcome = "CORRECT" | "PARTIAL" | "INCORRECT" | "REVIEW_NEEDED";
+export type StudentWorksheetResult = {
+  submissionId: number;
+  worksheetQuestionId: number;
+  questionBankId: number;
+  answer: string;
+  modelAnswer: string | null;
+  maximumMarks: number;
+  reviewStatus: MarkingReviewStatus;
+  outcome: StudentWorksheetResultOutcome;
+  awardedMarks: number | null;
+  explanation: string | null;
+  reviewedAt: string | null;
+};
+export type StudentWorksheetResultsResponse = { worksheetId: number; results: StudentWorksheetResult[] };
+
 const reviewStatuses = new Set<MarkingReviewStatus>(["PENDING_REVIEW", "FLAGGED", "APPROVED"]);
+const studentResultOutcomes = new Set<StudentWorksheetResultOutcome>(["CORRECT", "PARTIAL", "INCORRECT", "REVIEW_NEEDED"]);
 const diagnosticCategories = new Set<DiagnosticCategory>(["CONCEPT", "KEYWORD", "EXPRESSION", "APPLICATION"]);
 const mistakeTypes = new Set<MistakeType>(["CONCEPT_MISUNDERSTANDING", "CALCULATION_ERROR", "MISREAD_QUESTION", "INCOMPLETE_WORKING", "INCORRECT_FORMULA", "CARELESS_MISTAKE", "WEAK_EXPLANATION", "MISSING_KEY_POINT", "WRONG_UNITS", "ANSWER_FORMAT_ISSUE"]);
 const numberValue = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? value : null;
 const stringValue = (value: unknown) => typeof value === "string" ? value : null;
+const nonNegativeNumber = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0;
 export function parseMarkingReview(value: unknown): MarkingReview {
   if (!value || typeof value !== "object") throw new SubmissionApiError("The marking review response is invalid.");
   const raw = value as Record<string, unknown>;
@@ -133,6 +152,51 @@ export function parseManualResultsResponse(value: unknown): ManualResultsRespons
   });
   return { worksheetId: raw.worksheetId as number, students };
 }
+export function parseStudentWorksheetResultsResponse(value: unknown): StudentWorksheetResultsResponse {
+  if (!value || typeof value !== "object") throw new SubmissionApiError("The student worksheet results response is invalid.");
+  const raw = value as Record<string, unknown>;
+  if (!Number.isSafeInteger(raw.worksheetId) || (raw.worksheetId as number) <= 0 || !Array.isArray(raw.results)) {
+    throw new SubmissionApiError("The student worksheet results response is invalid.");
+  }
+  const seenSubmissionIds = new Set<number>();
+  const results = raw.results.map((entry): StudentWorksheetResult => {
+    if (!entry || typeof entry !== "object") throw new SubmissionApiError("The student worksheet results response is invalid.");
+    const result = entry as Record<string, unknown>;
+    const ids = [result.submissionId, result.worksheetQuestionId, result.questionBankId];
+    if (!ids.every((id) => Number.isSafeInteger(id) && (id as number) > 0)
+      || seenSubmissionIds.has(result.submissionId as number)
+      || typeof result.answer !== "string"
+      || (result.modelAnswer !== null && typeof result.modelAnswer !== "string")
+      || !nonNegativeNumber(result.maximumMarks)
+      || !reviewStatuses.has(result.reviewStatus as MarkingReviewStatus)
+      || !studentResultOutcomes.has(result.outcome as StudentWorksheetResultOutcome)
+      || (result.awardedMarks !== null && (!nonNegativeNumber(result.awardedMarks) || (result.awardedMarks as number) > (result.maximumMarks as number)))
+      || (result.explanation !== null && typeof result.explanation !== "string")
+      || (result.reviewedAt !== null && typeof result.reviewedAt !== "string")) {
+      throw new SubmissionApiError("The student worksheet results response is invalid.");
+    }
+    const approved = result.reviewStatus === "APPROVED";
+    if ((approved && (result.awardedMarks === null || result.explanation === null))
+      || (!approved && (result.awardedMarks !== null || result.explanation !== null || result.modelAnswer !== null))) {
+      throw new SubmissionApiError("The student worksheet results response is invalid.");
+    }
+    seenSubmissionIds.add(result.submissionId as number);
+    return {
+      submissionId: result.submissionId as number,
+      worksheetQuestionId: result.worksheetQuestionId as number,
+      questionBankId: result.questionBankId as number,
+      answer: result.answer,
+      modelAnswer: result.modelAnswer as string | null,
+      maximumMarks: result.maximumMarks as number,
+      reviewStatus: result.reviewStatus as MarkingReviewStatus,
+      outcome: result.outcome as StudentWorksheetResultOutcome,
+      awardedMarks: result.awardedMarks as number | null,
+      explanation: result.explanation as string | null,
+      reviewedAt: result.reviewedAt as string | null,
+    };
+  });
+  return { worksheetId: raw.worksheetId as number, results };
+}
 async function reviewRequest(path: string, init?: RequestInit): Promise<MarkingReview> { const response = await fetch(`${gradingUrl}/api/grading/tutor/reviews${path}`, { ...init, headers: { ...headers(), "Content-Type": "application/json", ...(init?.headers || {}) } }); if (!response.ok) { const body = await response.json().catch(() => null) as { error?: string } | null; throw new SubmissionApiError(body?.error || "The marking review could not be updated.", response.status); } return parseMarkingReview(await response.json()); }
 export function createMarkingReview(input: { submissionDocumentId: number; worksheetQuestionId: number; questionBankId: number }): Promise<MarkingReview> { if (![input.submissionDocumentId, input.worksheetQuestionId, input.questionBankId].every((id) => Number.isSafeInteger(id) && id > 0)) return Promise.reject(new SubmissionApiError("The submission review context is invalid.", 400)); return reviewRequest("", { method: "POST", body: JSON.stringify(input) }); }
 /** Creates a Tutor-approved fallback result without pretending that OCR source pages exist. */
@@ -174,6 +238,18 @@ export async function fetchManualResults(worksheetId: number): Promise<ManualRes
     throw new SubmissionApiError(body?.error || "The manual results could not be loaded.", response.status);
   }
   return parseManualResultsResponse(await response.json());
+}
+/** Loads the authenticated Student's worksheet results; no student id is ever accepted from the browser. */
+export async function fetchStudentWorksheetResults(worksheetId: number): Promise<StudentWorksheetResultsResponse> {
+  if (!Number.isSafeInteger(worksheetId) || worksheetId <= 0) {
+    throw new SubmissionApiError("The worksheet id is invalid.", 400);
+  }
+  const response = await fetch(`${gradingUrl}/api/grading/student/worksheets/${worksheetId}/results`, { headers: headers() });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { error?: string } | null;
+    throw new SubmissionApiError(body?.error || "The worksheet results could not be loaded.", response.status);
+  }
+  return parseStudentWorksheetResultsResponse(await response.json());
 }
 export function fetchMarkingReview(submissionId: number): Promise<MarkingReview> { if (!Number.isSafeInteger(submissionId) || submissionId <= 0) return Promise.reject(new SubmissionApiError("The submission id is invalid.", 400)); return reviewRequest(`/${submissionId}`); }
 export function approveMarkingReview(submissionId: number, marks: number, feedback: string, diagnosticEvidence: DiagnosticEvidenceInput[] = []): Promise<MarkingReview> {

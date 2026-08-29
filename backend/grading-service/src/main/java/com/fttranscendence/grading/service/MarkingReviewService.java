@@ -198,6 +198,23 @@ public class MarkingReviewService {
         return MarkingReview.from(submission, null);
     }
 
+    /**
+     * Returns a learner-safe, worksheet-scoped view of the latest answer for
+     * each worksheet question.  Provisional marking never crosses this
+     * boundary: only Tutor approval makes score and feedback final.
+     */
+    @Transactional
+    public StudentResultsResponse studentResults(AuthenticatedUser user, String bearer, long worksheetId) {
+        long studentId = learning.resolveStudentWorksheet(user, bearer, worksheetId);
+        java.util.Map<Long, StudentResult> latestByQuestion = new java.util.LinkedHashMap<>();
+        for (Submission submission : submissions.findByStudentIdAndWorksheetIdOrderByCreatedAtDescIdDesc(studentId, worksheetId)) {
+            // The repository is newest-first, so the first row is canonical
+            // when a learner resubmits a worksheet question.
+            latestByQuestion.putIfAbsent(submission.getWorksheetQuestionId(), StudentResult.from(submission));
+        }
+        return new StudentResultsResponse(worksheetId, List.copyOf(latestByQuestion.values()));
+    }
+
     @Transactional
     public MarkingReview approve(AuthenticatedUser user, String bearer, long submissionId, ApprovalRequest request) {
         Submission submission = ownedSubmission(user, bearer, submissionId);
@@ -453,6 +470,37 @@ public class MarkingReviewService {
     public record ManualResultBatchRequest(Long worksheetId, Long studentId, List<ManualResultEntry> entries) { }
     public record ManualResultStudentProgress(Long studentId, int completedQuestions, List<MarkingReview> results) { }
     public record ManualResultsResponse(Long worksheetId, List<ManualResultStudentProgress> students) { }
+    public record StudentResultsResponse(Long worksheetId, List<StudentResult> results) { }
+    public record StudentResult(
+        Long submissionId,
+        Long worksheetQuestionId,
+        Long questionBankId,
+        String answer,
+        String modelAnswer,
+        BigDecimal maximumMarks,
+        Submission.ReviewStatus reviewStatus,
+        StudentResultOutcome outcome,
+        BigDecimal awardedMarks,
+        String explanation,
+        java.time.LocalDateTime reviewedAt
+    ) {
+        static StudentResult from(Submission submission) {
+            if (submission.getReviewStatus() != Submission.ReviewStatus.APPROVED) {
+                return new StudentResult(submission.getId(), submission.getWorksheetQuestionId(), submission.getQuestionBankId(),
+                    submission.getExtractedAnswer(), null, submission.getMaxMarks(), submission.getReviewStatus(),
+                    StudentResultOutcome.REVIEW_NEEDED, null, null, null);
+            }
+            BigDecimal awarded = submission.getApprovedMarks();
+            BigDecimal maximum = submission.getMaxMarks();
+            StudentResultOutcome outcome = awarded.compareTo(maximum) == 0
+                ? StudentResultOutcome.CORRECT
+                : awarded.signum() == 0 ? StudentResultOutcome.INCORRECT : StudentResultOutcome.PARTIAL;
+            return new StudentResult(submission.getId(), submission.getWorksheetQuestionId(), submission.getQuestionBankId(),
+                submission.getExtractedAnswer(), submission.getModelAnswerSnapshot(), maximum, submission.getReviewStatus(), outcome,
+                awarded, submission.getApprovedFeedback(), submission.getReviewedAt());
+        }
+    }
+    public enum StudentResultOutcome { CORRECT, PARTIAL, INCORRECT, REVIEW_NEEDED }
     public record ApprovalRequest(BigDecimal marks, String feedback, List<DiagnosticEvidenceRequest> diagnosticEvidence) {
         public ApprovalRequest(BigDecimal marks, String feedback) { this(marks, feedback, null); }
     }

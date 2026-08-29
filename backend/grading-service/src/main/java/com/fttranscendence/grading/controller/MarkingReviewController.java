@@ -19,7 +19,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/grading/tutor/reviews")
+@RequestMapping("/api/grading")
 public class MarkingReviewController {
     private final MarkingReviewService reviews;
 
@@ -27,7 +27,7 @@ public class MarkingReviewController {
         this.reviews = reviews;
     }
 
-    @PostMapping
+    @PostMapping("/tutor/reviews")
     public ResponseEntity<MarkingReviewService.MarkingReview> create(
         @AuthenticationPrincipal AuthenticatedUser user,
         @RequestHeader("Authorization") String bearer,
@@ -36,7 +36,7 @@ public class MarkingReviewController {
         return ResponseEntity.status(HttpStatus.CREATED).body(reviews.createAdvisoryReview(user, bearer, request));
     }
 
-    @PostMapping("/manual")
+    @PostMapping("/tutor/reviews/manual")
     public ResponseEntity<MarkingReviewService.MarkingReview> createManualResult(
         @AuthenticationPrincipal AuthenticatedUser user,
         @RequestHeader("Authorization") String bearer,
@@ -45,7 +45,7 @@ public class MarkingReviewController {
         return ResponseEntity.status(HttpStatus.CREATED).body(reviews.createManualResult(user, bearer, request));
     }
 
-    @PostMapping("/manual/batch")
+    @PostMapping("/tutor/reviews/manual/batch")
     public ResponseEntity<java.util.List<MarkingReviewService.MarkingReview>> createManualResults(
         @AuthenticationPrincipal AuthenticatedUser user,
         @RequestHeader("Authorization") String bearer,
@@ -54,7 +54,7 @@ public class MarkingReviewController {
         return ResponseEntity.status(HttpStatus.CREATED).body(reviews.createManualResults(user, bearer, request));
     }
 
-    @GetMapping("/manual/worksheets/{worksheetId}")
+    @GetMapping("/tutor/reviews/manual/worksheets/{worksheetId}")
     public MarkingReviewService.ManualResultsResponse listManualResults(
         @AuthenticationPrincipal AuthenticatedUser user,
         @RequestHeader("Authorization") String bearer,
@@ -63,7 +63,7 @@ public class MarkingReviewController {
         return reviews.listManualResults(user, bearer, worksheetId);
     }
 
-    @GetMapping("/{submissionId}")
+    @GetMapping("/tutor/reviews/{submissionId}")
     public MarkingReviewService.MarkingReview get(
         @AuthenticationPrincipal AuthenticatedUser user,
         @RequestHeader("Authorization") String bearer,
@@ -72,7 +72,7 @@ public class MarkingReviewController {
         return reviews.get(user, bearer, submissionId);
     }
 
-    @PostMapping("/{submissionId}/approve")
+    @PostMapping("/tutor/reviews/{submissionId}/approve")
     public MarkingReviewService.MarkingReview approve(
         @AuthenticationPrincipal AuthenticatedUser user,
         @RequestHeader("Authorization") String bearer,
@@ -82,7 +82,7 @@ public class MarkingReviewController {
         return reviews.approve(user, bearer, submissionId, request);
     }
 
-    @PostMapping("/{submissionId}/flag")
+    @PostMapping("/tutor/reviews/{submissionId}/flag")
     public MarkingReviewService.MarkingReview flag(
         @AuthenticationPrincipal AuthenticatedUser user,
         @RequestHeader("Authorization") String bearer,
@@ -92,13 +92,27 @@ public class MarkingReviewController {
         return reviews.flag(user, bearer, submissionId, request);
     }
 
-    @PostMapping("/{submissionId}/reset")
+    @PostMapping("/tutor/reviews/{submissionId}/reset")
     public MarkingReviewService.MarkingReview reset(
         @AuthenticationPrincipal AuthenticatedUser user,
         @RequestHeader("Authorization") String bearer,
         @PathVariable long submissionId
     ) {
         return reviews.reset(user, bearer, submissionId);
+    }
+
+    /**
+     * A learner receives only their own final, Tutor-approved result data.
+     * Pending and flagged answers deliberately remain visible as review-needed
+     * without exposing provisional AI feedback or suggested marks.
+     */
+    @GetMapping("/student/worksheets/{worksheetId}/results")
+    public MarkingReviewService.StudentResultsResponse studentResults(
+        @AuthenticationPrincipal AuthenticatedUser user,
+        @RequestHeader("Authorization") String bearer,
+        @PathVariable long worksheetId
+    ) {
+        return reviews.studentResults(user, bearer, worksheetId);
     }
 
     @ExceptionHandler(MarkingReviewService.ReviewNotFound.class)
@@ -119,6 +133,11 @@ public class MarkingReviewController {
     @ExceptionHandler(LearningAuthorizationClient.ManualResultContextNotFound.class)
     ResponseEntity<Map<String, String>> manualContextNotFound() {
         return error(HttpStatus.NOT_FOUND, "MANUAL_RESULT_CONTEXT_NOT_FOUND", "Worksheet result context was not found.");
+    }
+
+    @ExceptionHandler(LearningAuthorizationClient.StudentWorksheetNotFound.class)
+    ResponseEntity<Map<String, String>> studentWorksheetNotFound() {
+        return error(HttpStatus.NOT_FOUND, "STUDENT_WORKSHEET_NOT_FOUND", "Worksheet results were not found.");
     }
 
     @ExceptionHandler(MarkingReviewService.ManualResultAlreadyExists.class)
