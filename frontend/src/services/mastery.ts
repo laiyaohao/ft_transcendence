@@ -21,6 +21,19 @@ export interface MasteryMapData {
   nodes: MasteryNode[];
 }
 
+/**
+ * Display-only totals calculated from the canonical mastery-map response.
+ * A syllabus container (subject, level, or theme) is never treated as a
+ * learnable topic or as an attempt in its own right.
+ */
+export interface MasteryMetrics {
+  totalTopics: number;
+  attemptedTopics: number;
+  approvedAttempts: number;
+  masteredTopics: number;
+  needsRevisionTopics: number;
+}
+
 export interface MasteryHistoryItem {
   previousScore: number;
   newScore: number;
@@ -101,6 +114,17 @@ export function parseMasteryMap(value: unknown): MasteryMapData {
     throw new Error("The mastery response is invalid.");
   }
   return { studentId: map.studentId, overallScore: map.overallScore, nodes: map.nodes.map(parseMasteryNode) };
+}
+
+export function deriveMasteryMetrics(data: MasteryMapData): MasteryMetrics {
+  const topics = data.nodes.filter((node) => node.nodeType === "TOPIC" || node.nodeType === "SUBTOPIC");
+  return {
+    totalTopics: topics.length,
+    attemptedTopics: topics.filter((node) => node.attemptCount > 0).length,
+    approvedAttempts: topics.reduce((total, node) => total + node.attemptCount, 0),
+    masteredTopics: topics.filter((node) => node.status === "MASTERED").length,
+    needsRevisionTopics: topics.filter((node) => node.status === "NEEDS_REVISION").length,
+  };
 }
 
 export function parseMasteryTopicDetail(value: unknown): MasteryTopicDetail {

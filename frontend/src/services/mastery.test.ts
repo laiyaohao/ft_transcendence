@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { fetchMasteryMap, fetchMasteryTopic, MasteryApiError, parseMasteryMap, parseMasteryTopicDetail } from "./mastery";
+import { deriveMasteryMetrics, fetchMasteryMap, fetchMasteryTopic, MasteryApiError, parseMasteryMap, parseMasteryTopicDetail, type MasteryMapData } from "./mastery";
 
-const map = {
+const map: MasteryMapData = {
   studentId: 31,
   overallScore: 68,
   nodes: [{
@@ -56,5 +56,19 @@ describe("mastery client", () => {
     expect(() => parseMasteryMap({ ...map, nodes: [{ ...map.nodes[0], score: 101 }] })).toThrow("mastery response is invalid");
     expect(() => parseMasteryMap({ ...map, nodes: [{ ...map.nodes[0], status: "LOCKED" }] })).toThrow("mastery response is invalid");
     expect(() => parseMasteryTopicDetail({ studentId: 31, node: map.nodes[0], history: [{ previousScore: null }] })).toThrow("mastery response is invalid");
+  });
+
+  it("derives display metrics from learnable canonical nodes only", () => {
+    const metrics = deriveMasteryMetrics({
+      ...map,
+      nodes: [
+        { ...map.nodes[0], topicId: 1, nodeType: "SUBJECT", topicName: "Science", attemptCount: 99, status: "MASTERED" },
+        map.nodes[0],
+        { ...map.nodes[0], topicId: 42, nodeType: "SUBTOPIC", topicName: "Plant adaptation", attemptCount: 0, status: "NOT_STARTED" },
+        { ...map.nodes[0], topicId: 43, topicName: "Energy", attemptCount: 3, status: "MASTERED" },
+        { ...map.nodes[0], topicId: 44, topicName: "Forces", attemptCount: 2, status: "NEEDS_REVISION" },
+      ],
+    });
+    expect(metrics).toEqual({ totalTopics: 4, attemptedTopics: 3, approvedAttempts: 9, masteredTopics: 1, needsRevisionTopics: 1 });
   });
 });

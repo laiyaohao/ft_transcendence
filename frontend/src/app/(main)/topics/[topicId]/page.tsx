@@ -30,24 +30,22 @@ export default function TopicDetailPage() {
   const studentId = validId(search.get("studentId"));
   const [detail, setDetail] = React.useState<MasteryTopicDetail | null>(null);
   const [error, setError] = React.useState<string | null>(topicId ? null : "This topic reference is invalid.");
+  const [loading, setLoading] = React.useState(Boolean(topicId));
   const load = React.useCallback(async () => {
     if (!topicId) return;
     setError(null);
+    setLoading(true);
     try { setDetail(await fetchMasteryTopic(topicId, studentId ?? undefined)); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : "Topic mastery could not be loaded."); }
+    catch (reason) { setDetail(null); setError(reason instanceof Error ? reason.message : "Topic mastery could not be loaded."); }
+    finally { setLoading(false); }
   }, [studentId, topicId]);
   React.useEffect(() => {
     if (!topicId) return;
     let current = true;
-    const request = async () => {
-      try {
-        const loaded = await fetchMasteryTopic(topicId, studentId ?? undefined);
-        if (current) setDetail(loaded);
-      } catch (reason) {
-        if (current) setError(reason instanceof Error ? reason.message : "Topic mastery could not be loaded.");
-      }
-    };
-    void request();
+    void fetchMasteryTopic(topicId, studentId ?? undefined).then(
+      (loaded) => { if (current) { setDetail(loaded); setLoading(false); } },
+      (reason: unknown) => { if (current) { setDetail(null); setError(reason instanceof Error ? reason.message : "Topic mastery could not be loaded."); setLoading(false); } },
+    );
     return () => { current = false; };
   }, [studentId, topicId]);
 
@@ -55,7 +53,7 @@ export default function TopicDetailPage() {
   return <Box sx={{ minHeight: "100vh", bgcolor: "#F7F4EF", px: { xs: 2.5, sm: 3.75 }, py: 3.75, color: "#2A2622" }}>
     <Box sx={{ maxWidth: 980, mx: "auto" }}>
       <Button component={Link} href={backHref} startIcon={<ArrowBackOutlinedIcon aria-hidden="true" />} sx={{ mb: 1.5, color: "#6F675E", textTransform: "none", fontWeight: 600 }}>Back to {studentId ? "student" : "topics"}</Button>
-      {!detail && !error ? <Card aria-label="Loading topic mastery" variant="outlined" sx={{ borderColor: "#EBE4D9", bgcolor: "#FFFDFA", p: 2.5 }}><Skeleton height={42} width="48%" /><Skeleton height={12} sx={{ mt: 2 }} /></Card> : null}
+      {loading ? <Card aria-label="Loading topic mastery" variant="outlined" sx={{ borderColor: "#EBE4D9", bgcolor: "#FFFDFA", p: 2.5 }}><Skeleton height={42} width="48%" /><Skeleton height={12} sx={{ mt: 2 }} /></Card> : null}
       {error ? <Card component="section" role="alert" variant="outlined" sx={{ borderColor: "#F0DCD4", bgcolor: "#FDF6F3", p: 2.5 }}><Typography component="h1" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 26, mb: .75 }}>Topic could not be loaded</Typography><Typography sx={{ color: "#6F675E", fontSize: 13.5, mb: 1.5 }}>{error}</Typography><Button onClick={() => void load()} variant="outlined" sx={{ borderColor: "#E4DCD0", color: "#2A2622", textTransform: "none" }}>Try again</Button></Card> : null}
       {detail ? <Box sx={{ display: "grid", gap: 2 }}>
         <Card component="section" variant="outlined" sx={{ borderColor: "#EBE4D9", bgcolor: "#FFFDFA", borderRadius: "14px", p: { xs: 2, sm: 3 } }}>

@@ -81,6 +81,10 @@ public class MasteryController {
         Map<Long, SyllabusTopic> activeTopicsById = activeTopics.stream().collect(Collectors.toMap(SyllabusTopic::getId, Function.identity()));
         List<MasteryRecord> profileRecords = records.findProfileRecordsByStudentProfileIdWithTopicAndHistory(student.getId()).stream()
             .filter(record -> activeTopicsById.containsKey(record.getSyllabusTopic().getId()))
+            // A retraction leaves the aggregate row in place so future revisions
+            // can be replayed deterministically, but a zero-attempt row contains
+            // no currently approved learning evidence.
+            .filter(record -> record.getAttemptCount() > 0)
             .toList();
         Map<Long, MasteryRecord> recordsByTopicId = profileRecords.stream().collect(Collectors.toMap(
             record -> record.getSyllabusTopic().getId(), Function.identity(), (first, ignored) -> first
