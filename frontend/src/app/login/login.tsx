@@ -8,6 +8,7 @@ import strings from "../../locales/en.json";
 import { apiRequest, getErrorMessage } from '@/lib/api';
 import { useRouter } from 'next/navigation';
 import { getRoleHome, saveAuthSession, type AuthResponsePayload } from '@/lib/auth';
+import { isValidEmail, isValidLoginPassword } from '@/lib/validation';
 
 export default function Login() {
   const router = useRouter();
@@ -71,7 +72,7 @@ export default function Login() {
 
     let isValid = true;
 
-    if (!email?.value || email.value.length > 254 || !/\S+@\S+\.\S+/.test(email.value)) {
+    if (!email || !isValidEmail(email.value)) {
       setEmailError(true);
       setEmailErrorMessage(strings.auth.validation.emailInvalid);
       isValid = false;
@@ -80,7 +81,7 @@ export default function Login() {
       setEmailErrorMessage('');
     }
 
-    if (!password?.value || password.value.length > 128) {
+    if (!password || !isValidLoginPassword(password.value)) {
       setPasswordError(true);
       setPasswordErrorMessage(strings.auth.validation.passwordMinLength);
       isValid = false;

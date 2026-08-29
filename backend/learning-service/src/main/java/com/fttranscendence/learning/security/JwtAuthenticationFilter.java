@@ -18,6 +18,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 @Component
@@ -28,8 +29,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final StudentProfileProvisioningService profiles;
 
     public JwtAuthenticationFilter(@Value("${jwt.secret}") String secret, StudentProfileProvisioningService profiles) {
-        if (secret == null || secret.getBytes(StandardCharsets.UTF_8).length < 32) {
-            throw new IllegalArgumentException("JWT_SECRET must contain at least 32 bytes");
+        if (secret == null || secret.getBytes(StandardCharsets.UTF_8).length < 32
+                || secret.toLowerCase(Locale.ROOT).contains("change-me")) {
+            throw new IllegalArgumentException("JWT_SECRET must contain at least 32 non-placeholder bytes");
         }
         this.signingKey = secret.getBytes(StandardCharsets.UTF_8);
         this.profiles = profiles;

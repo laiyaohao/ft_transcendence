@@ -11,6 +11,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class JwtServiceTest {
 
@@ -107,5 +108,15 @@ class JwtServiceTest {
         user.setId(99L);
 
         assertFalse(jwtService.isTokenValid(token, user));
+    }
+
+    @Test
+    void rejectsPlaceholderAndTooShortSigningSecrets() {
+        assertFalse(JwtService.isUsableSecret("change-me-to-a-long-enough-example-secret-value"));
+        assertFalse(JwtService.isUsableSecret("too-short"));
+        assertTrue(JwtService.isUsableSecret("a-real-secret-that-is-at-least-thirty-two-bytes"));
+
+        ReflectionTestUtils.setField(jwtService, "secretKey", "change-me-to-a-long-enough-example-secret-value");
+        assertThrows(IllegalArgumentException.class, jwtService::validateConfiguration);
     }
 }

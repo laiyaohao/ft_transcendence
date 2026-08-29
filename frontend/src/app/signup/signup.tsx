@@ -9,6 +9,7 @@ import Content from '@/components/content';
 import { apiRequest, getErrorMessage } from '@/lib/api';
 import { useRouter } from 'next/navigation';
 import { getRoleHome, saveAuthSession, type AuthResponsePayload } from '@/lib/auth';
+import { isValidEmail, isValidFullName, isValidRegistrationPassword } from '@/lib/validation';
 
 export default function Signup() {
   const router = useRouter();
@@ -68,7 +69,7 @@ export default function Signup() {
 
     let isValid = true;
 
-    if (!name?.value || name.value.length < 2 || name.value.length > 100) {
+    if (!name || !isValidFullName(name.value)) {
       setNameError(true);
       setNameErrorMessage(strings.auth.validation.nameInvalid);
       isValid = false;
@@ -77,7 +78,7 @@ export default function Signup() {
       setNameErrorMessage('');
     }
 
-    if (!email?.value || email.value.length > 254 || !/\S+@\S+\.\S+/.test(email.value)) {
+    if (!email || !isValidEmail(email.value)) {
       setEmailError(true);
       setEmailErrorMessage(strings.auth.validation.emailInvalid);
       isValid = false;
@@ -86,12 +87,7 @@ export default function Signup() {
       setEmailErrorMessage('');
     }
 
-    if (
-      !password?.value
-      || password.value.length < 12
-      || password.value.length > 128
-      || !/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9])/.test(password.value)
-    ) {
+    if (!password || !isValidRegistrationPassword(password.value)) {
       setPasswordError(true);
       setPasswordErrorMessage(strings.auth.validation.passwordMinLength);
       isValid = false;

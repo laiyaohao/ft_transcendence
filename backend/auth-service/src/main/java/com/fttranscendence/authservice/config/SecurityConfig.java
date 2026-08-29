@@ -22,6 +22,10 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
+
+import java.util.Arrays;
 import java.util.List;
 
 @Configuration
@@ -31,11 +35,12 @@ public class SecurityConfig {
   private final JwtAuthenticationFilter jwtAuthFilter;
   private final UserDetailsService userDetailsService;
   private final AuthenticationEntryPoint authenticationEntryPoint;
+  private final SecurityHeadersConfig securityHeadersConfig;
 
   @Bean
   public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
     http
-        .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+        .cors(cors -> {})
         .csrf(AbstractHttpConfigurer::disable)
         .authorizeHttpRequests(auth -> auth
             .requestMatchers("/api/auth/**").permitAll() // Public auth endpoints
@@ -49,6 +54,7 @@ public class SecurityConfig {
         .authenticationProvider(authenticationProvider())
         .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
+    securityHeadersConfig.configure(http);
     return http.build();
   }
 
@@ -70,24 +76,29 @@ public class SecurityConfig {
   }
 
   @Bean
-  public CorsConfigurationSource corsConfigurationSource() {
+  public CorsConfigurationSource corsConfigurationSource(
+      @Value("${security.cors.allowed-origins:http://localhost:3000}") String configuredOrigins) {
     CorsConfiguration configuration = new CorsConfiguration();
-    
-    // Allow the exact origin of your frontend
-    configuration.setAllowedOrigins(List.of("http://localhost:3000")); 
-    
-    // Allow common HTTP methods
-    configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-    
-    // Allow standard headers (like Authorization or Content-Type)
-    configuration.setAllowedHeaders(List.of("*"));
-    
-    // Allow cookies or auth headers to be sent
-    configuration.setAllowCredentials(true); 
+
+    List<String> allowedOrigins = Arrays.stream(configuredOrigins.split(","))
+        .map(String::trim)
+        .filter(origin -> !origin.isEmpty())
+        .distinct()
+        .toList();
+    if (allowedOrigins.isEmpty()) {
+      throw new IllegalStateException("security.cors.allowed-origins must contain at least one origin");
+    }
+
+    configuration.setAllowedOrigins(allowedOrigins);
+    configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+    configuration.setAllowedHeaders(List.of(
+        HttpHeaders.AUTHORIZATION, HttpHeaders.CONTENT_TYPE, HttpHeaders.ACCEPT, "X-Requested-With", "Idempotency-Key"));
+    // Tokens are sent in Authorization headers; cross-origin cookies are not used.
+    configuration.setAllowCredentials(false);
+    configuration.setMaxAge(3600L);
 
     UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-    // Apply this configuration to all paths in the application
-    source.registerCorsConfiguration("/**", configuration); 
+    source.registerCorsConfiguration("/**", configuration);
     return source;
   }
 }

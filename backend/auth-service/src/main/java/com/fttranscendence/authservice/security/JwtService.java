@@ -8,6 +8,7 @@ import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
@@ -17,6 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Locale;
 import java.util.function.Function;
 
 @Service
@@ -26,6 +28,16 @@ public class JwtService {
 
   @Value("${jwt.expiration}")
   private Long jwtExpiration;
+
+  @PostConstruct
+  void validateConfiguration() {
+    if (!isUsableSecret(secretKey)) {
+      throw new IllegalArgumentException("JWT_SECRET must contain at least 32 non-placeholder bytes");
+    }
+    if (jwtExpiration == null || jwtExpiration <= 0) {
+      throw new IllegalArgumentException("JWT_EXPIRATION_MS must be positive");
+    }
+  }
 
   public String extractEmail(String token) {
     return extractClaim(token, Claims::getSubject);
@@ -111,5 +123,11 @@ public class JwtService {
   private Key getSigningKey() {
     byte[] keyBytes = secretKey.getBytes(StandardCharsets.UTF_8);
     return Keys.hmacShaKeyFor(keyBytes);
+  }
+
+  static boolean isUsableSecret(String secret) {
+    return secret != null
+        && secret.getBytes(StandardCharsets.UTF_8).length >= 32
+        && !secret.toLowerCase(Locale.ROOT).contains("change-me");
   }
 }
