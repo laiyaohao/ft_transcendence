@@ -366,6 +366,9 @@ public class WorksheetService {
     private NormalizedGeneration normalize(WorksheetRequests.GenerateWorksheetRequest input) {
         List<Long> topicIds = input.topicIds().stream().distinct().sorted().toList();
         if (topicIds.size() != input.topicIds().size()) throw new InvalidWorksheetRequestException("topicIds must be unique.");
+        if (input.questionCount() < topicIds.size()) {
+            throw new InvalidWorksheetRequestException("questionCount must be at least the number of selected topics.");
+        }
         Set<Long> studentIds = input.studentIds() == null ? Set.of() : new LinkedHashSet<>(input.studentIds());
         if (input.studentIds() != null && studentIds.size() != input.studentIds().size()) throw new InvalidWorksheetRequestException("studentIds must be unique.");
         Worksheet.WorksheetType worksheetType = input.worksheetType() == null

@@ -144,7 +144,7 @@ class StudentWorksheetLibraryIntegrationTest {
         mvc.perform(get("/api/learning/student/worksheets").param("assignedFrom", "not-a-date").header("Authorization", bearer("STUDENT", LEARNER_LOGIN)))
             .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_STUDENT_WORKSHEET_FILTER"));
         mvc.perform(get("/api/learning/student/worksheets").header("Authorization", bearer("STUDENT", 9999L)))
-            .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("WORKSHEET_RESOURCE_NOT_FOUND"));
+            .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
         mvc.perform(get("/api/learning/student/worksheets")).andExpect(status().isUnauthorized());
         mvc.perform(get("/api/learning/student/worksheets").header("Authorization", bearer("TUTOR", OWNER))).andExpect(status().isForbidden());
     }

@@ -73,12 +73,10 @@ public class RuleBasedAnswerChecker {
      * must exactly equal the question maximum, so no suggestion can silently
      * award more than the question permits.
      *
-     * <p>The current question-bank contract stores a component description
-     * rather than a free-form AI rule. We therefore perform only exact,
-     * normalized phrase matching against that description and its stable
-     * action-verb-free form (for example, "Explains heat conduction" also
-     * accepts "heat conduction"). This remains reproducible and deliberately
-     * avoids fuzzy or generative interpretation.</p>
+     * <p>Only the Tutor-approved keywords on a component are candidate answer
+     * evidence. A criterion description is prose guidance, never a fallback
+     * matcher; legacy components without keywords therefore receive no marks
+     * until a Tutor supplies explicit evidence terms.</p>
      */
     public RuleCheckResult checkWeighted(
         String answer,
@@ -94,7 +92,7 @@ public class RuleBasedAnswerChecker {
         List<String> missing = new ArrayList<>();
 
         for (WeightedMarkingComponent component : validated) {
-            List<String> targets = componentTargets(component.description());
+            List<String> targets = component.keywords();
             boolean componentMatched = targets.stream().anyMatch(target -> containsPhrase(normalizedAnswer, target));
             if (componentMatched) {
                 awarded = awarded.add(component.marks());
@@ -105,7 +103,10 @@ public class RuleBasedAnswerChecker {
             results.add(new RuleCheckResult.ComponentResult(
                 component.position(), component.description(), component.marks(), componentMatched,
                 componentMatched ? targets : List.of(), componentMatched ? List.of() : targets,
-                componentMatched ? "Matched deterministic component target." : "No deterministic component target was found."
+                componentMatched ? "Matched an approved component keyword."
+                    : targets.isEmpty()
+                        ? "This legacy component has no approved keywords yet."
+                        : "No approved component keyword was found."
             ));
         }
         awarded = awarded.setScale(2, RoundingMode.HALF_UP).min(maximumMarks).max(BigDecimal.ZERO);
@@ -134,7 +135,8 @@ public class RuleBasedAnswerChecker {
                 throw new IllegalArgumentException("Weighted marking component marks may have at most two decimal places.");
             }
             allocated = allocated.add(component.marks());
-            normalized.add(new WeightedMarkingComponent(component.position(), component.description().trim(), component.marks()));
+            List<String> keywords = normalizeComponentKeywords(component.keywords());
+            normalized.add(new WeightedMarkingComponent(component.position(), component.description().trim(), component.marks(), keywords));
         }
         if (allocated.compareTo(maximumMarks) > 0) {
             throw new IllegalArgumentException("Weighted marking component marks cannot exceed the question total.");
@@ -145,14 +147,19 @@ public class RuleBasedAnswerChecker {
         return normalized.stream().sorted(java.util.Comparator.comparingInt(WeightedMarkingComponent::position)).toList();
     }
 
-    private List<String> componentTargets(String description) {
-        String normalized = normalize(description);
-        if (normalized.isEmpty()) return List.of();
-        String withoutLeadingVerb = normalized.replaceFirst(
-            "^(explains|explain|states|state|identifies|identify|calculates|calculate|uses|use|shows|show|describes|describe|mentions|mention) ", ""
-        );
-        if (withoutLeadingVerb.equals(normalized)) return List.of(normalized);
-        return List.of(normalized, withoutLeadingVerb);
+    private List<String> normalizeComponentKeywords(List<String> keywords) {
+        if (keywords == null || keywords.isEmpty()) return List.of();
+        Map<String, String> unique = new LinkedHashMap<>();
+        for (String keyword : keywords) {
+            String normalized = normalize(keyword);
+            if (normalized.isEmpty()) {
+                throw new IllegalArgumentException("Component keywords must not be blank.");
+            }
+            if (unique.putIfAbsent(normalized, keyword.trim()) != null) {
+                throw new IllegalArgumentException("Component keywords must be unique.");
+            }
+        }
+        return List.copyOf(unique.keySet());
     }
 
     private List<RubricTarget> validateAndNormalizeRubric(
@@ -245,5 +252,10 @@ public class RuleBasedAnswerChecker {
     }
 
     /** A server-supplied mark allocation, never trusted from a browser request. */
-    public record WeightedMarkingComponent(int position, String description, BigDecimal marks) { }
+    public record WeightedMarkingComponent(int position, String description, BigDecimal marks, List<String> keywords) {
+        /** Legacy components must not infer targets from their descriptions. */
+        public WeightedMarkingComponent(int position, String description, BigDecimal marks) {
+            this(position, description, marks, List.of());
+        }
+    }
 }

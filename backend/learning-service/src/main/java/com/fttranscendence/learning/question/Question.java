@@ -217,12 +217,17 @@ public class Question {
             && totalMarks.compareTo(componentTotal) == 0;
     }
 
-    public MarkingComponent addMarkingComponent(String description, BigDecimal marks) {
-        MarkingComponent component = new MarkingComponent(description, marks);
+    public MarkingComponent addMarkingComponent(String description, BigDecimal marks, List<String> keywords) {
+        MarkingComponent component = new MarkingComponent(description, marks, keywords);
         component.attachTo(this);
         component.setPosition(markingComponents.size());
         markingComponents.add(component);
         return component;
+    }
+
+    /** Retained for legacy callers; an empty keyword list intentionally cannot score an answer. */
+    public MarkingComponent addMarkingComponent(String description, BigDecimal marks) {
+        return addMarkingComponent(description, marks, List.of());
     }
 
     public void removeMarkingComponent(MarkingComponent component) {
@@ -258,6 +263,7 @@ public class Question {
             MarkingComponent replacement = replacements.get(index);
             existing.setDescription(replacement.getDescription());
             existing.setMarks(replacement.getMarks());
+            existing.setKeywords(replacement.getKeywords());
             existing.attachTo(this);
             existing.setPosition(index);
         }

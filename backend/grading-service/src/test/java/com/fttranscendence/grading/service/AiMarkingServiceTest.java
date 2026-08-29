@@ -77,7 +77,7 @@ class AiMarkingServiceTest {
 
         AiGradingService.AiMarkingResult result = service.evaluateMarking(
             "Why does metal feel hot?", "Metal conducts heat.", List.of("Explains heat conduction"),
-            List.of(new RuleBasedAnswerChecker.WeightedMarkingComponent(0, "Explains heat conduction", new BigDecimal("2.00"))),
+            List.of(new RuleBasedAnswerChecker.WeightedMarkingComponent(0, "Explains heat conduction", new BigDecimal("2.00"), List.of("heat conduction"))),
             List.of("conductor"), "It uses heat conduction.", new BigDecimal("2.00")
         );
 

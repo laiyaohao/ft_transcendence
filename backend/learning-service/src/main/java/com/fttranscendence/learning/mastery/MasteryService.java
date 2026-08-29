@@ -75,6 +75,10 @@ public class MasteryService {
         }
 
         evidence.deleteBySourceSubmissionId(input.submissionId());
+        // The evidence table has a uniqueness invariant per submission and
+        // mistake type. Force deletes out before a higher revision recreates
+        // the same type, rather than relying on provider-specific flush order.
+        evidence.flush();
         if (active) {
             List<DiagnosticEvidence> diagnostics = input.diagnostics() == null ? List.of() : input.diagnostics();
             for (DiagnosticEvidence diagnostic : diagnostics) {

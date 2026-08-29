@@ -132,7 +132,7 @@ class StudentProfileIntegrationTest {
     }
 
     @Test
-    void hidesMissingForeignAndUnlinkedProfilesAndEnforcesRoles() throws Exception {
+    void hidesMissingAndForeignProfilesWhileProvisioningTheAuthenticatedStudent() throws Exception {
         long foreignStudent = insertStudent(202L, 9002L, "Other Student");
         String ownerToken = token("TUTOR", OWNER_ID);
 
@@ -146,8 +146,11 @@ class StudentProfileIntegrationTest {
             .andExpect(jsonPath("$.code").value("STUDENT_PROFILE_NOT_FOUND"));
         mockMvc.perform(get("/api/learning/student/profile")
                 .header("Authorization", "Bearer " + token("STUDENT", 9003L)))
-            .andExpect(status().isNotFound())
-            .andExpect(jsonPath("$.code").value("STUDENT_PROFILE_NOT_FOUND"));
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.fullName").value("person@example.com"))
+            .andExpect(jsonPath("$.classes").isEmpty());
+        org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM student_profiles WHERE login_user_id = ? AND tutor_id IS NULL", Integer.class, 9003L));
         mockMvc.perform(get("/api/learning/tutor/students/{studentId}/profile", foreignStudent))
             .andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/learning/student/profile")

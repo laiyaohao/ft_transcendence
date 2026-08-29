@@ -54,6 +54,31 @@ describe("TutorWorksheetDetail", () => {
     click.mockRestore();
   });
 
+  it("lets a Tutor remove, replace, and add active question-bank items before saving a draft", async () => {
+    const secondQuestion = { id: 7, code: "Q-7", prompt: "Describe condensation.", totalMarks: 3, questionType: "OPEN_ENDED" as const, topicId: 5, topicName: "Water" };
+    const replacement = { id: 8, code: "Q-8", prompt: "Name a stage of the water cycle.", totalMarks: 1, questionType: "SHORT_ANSWER" as const, syllabusTopic: { id: 5, code: "SCI-WATER", name: "Water", nodeType: "TOPIC" as const }, archiveState: "ACTIVE" as const };
+    const addition = { id: 9, code: "Q-9", prompt: "Why does rain fall?", totalMarks: 2, questionType: "OPEN_ENDED" as const, syllabusTopic: { id: 5, code: "SCI-WATER", name: "Water", nodeType: "TOPIC" as const }, archiveState: "ACTIVE" as const };
+    const twoQuestionDraft = { ...draft, questions: [draft.questions[0], secondQuestion] };
+    const update = vi.fn().mockResolvedValue({ ...twoQuestionDraft, questions: [
+      { ...replacement, topicId: 5, topicName: "Water" }, { ...addition, topicId: 5, topicName: "Water" },
+    ] });
+    const loadQuestions = vi.fn().mockResolvedValue({ items: [replacement, addition], page: 0, size: 100, totalElements: 2, totalPages: 1, hasNext: false });
+    const user = userEvent.setup();
+    render(<TutorWorksheetDetail worksheet={twoQuestionDraft} update={update} loadQuestions={loadQuestions} />);
+
+    await user.click(screen.getByRole("button", { name: "Edit worksheet" }));
+    await user.click(screen.getByRole("button", { name: "Load active question bank" }));
+    expect(loadQuestions).toHaveBeenCalledWith({ topicId: 5, archiveState: "ACTIVE", size: 100 });
+
+    await user.click(screen.getByRole("button", { name: "Replace question 1" }));
+    await user.click(screen.getByRole("button", { name: "Replace with Q-8" }));
+    await user.click(screen.getByRole("button", { name: "Add Q-9" }));
+    await user.click(screen.getByRole("button", { name: "Remove question 2" }));
+    await user.click(screen.getByRole("button", { name: "Save worksheet draft" }));
+
+    expect(update).toHaveBeenCalledWith(1, expect.objectContaining({ questionIds: [8, 9] }));
+  });
+
   it("renders legacy snapshot fallback and leaves archived worksheets read-only", () => {
     render(<TutorWorksheetDetail worksheet={{ ...draft, subject: null, worksheetType: undefined, generationRequestId: null, status: "ARCHIVED" }} />);
     expect(screen.getByText(/Subject not recorded/, { selector: "p" })).toBeVisible();

@@ -144,7 +144,7 @@ class DataAccessAuthorizationIntegrationTest {
             .andRespond(withSuccess("""
                 {"id":601,"prompt":"Why?","modelAnswer":"Heat conducts.","totalMarks":2,
                  "keywords":["conductor"],"syllabusTopic":{"id":44,"code":"SCI-44"},
-                 "markingComponents":[{"position":0,"description":"Explains heat conduction","marks":2}]}
+                 "markingComponents":[{"position":0,"description":"Explains heat conduction","marks":2,"keywords":["heat conduction"]}]}
                 """, MediaType.APPLICATION_JSON));
         mockMvc.perform(post("/api/grading/tutor/questions/601/rule-check")
                 .header(HttpHeaders.AUTHORIZATION, bearer("TUTOR", UNRELATED_TUTOR_USER_ID))

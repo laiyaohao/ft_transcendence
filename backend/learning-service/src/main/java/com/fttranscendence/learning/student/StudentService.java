@@ -107,9 +107,13 @@ public class StudentService {
         requireTutor(tutorId);
         validateRequest(request);
         Map<Long, TutorClass> requestedClasses = resolveRequestedClasses(tutorId, request.classIds());
-        ensureLoginIdentityAvailable(request.loginUserId(), null);
-
-        StudentProfile student = new StudentProfile();
+        StudentProfile student = request.loginUserId() == null ? null : students.findByLoginUserId(request.loginUserId())
+            .filter(existing -> existing.getTutorId() == null)
+            .orElse(null);
+        if (student == null) {
+            ensureLoginIdentityAvailable(request.loginUserId(), null);
+            student = new StudentProfile();
+        }
         student.setTutorId(tutorId);
         apply(student, request, requestedClasses);
         try {
@@ -187,7 +191,10 @@ public class StudentService {
             ));
     }
 
-    private Map<Long, TutorClass> ownedClassMap(long tutorId) {
+    private Map<Long, TutorClass> ownedClassMap(Long tutorId) {
+        if (tutorId == null || tutorId <= 0) {
+            return Map.of();
+        }
         Map<Long, TutorClass> result = new HashMap<>();
         for (TutorClass tutorClass : classes.findAllByTutorIdOrderByClassNameAsc(tutorId)) {
             result.put(tutorClass.getId(), tutorClass);

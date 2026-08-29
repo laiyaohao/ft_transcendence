@@ -11,7 +11,7 @@ const syllabus: SyllabusTree = { items: [{ id: 1, code: "SCI", name: "Science", 
 const savedQuestion: TutorQuestion = {
   id: 7, code: "SCI-WATER-001", syllabusTopic: { id: 14, code: "SCI-WATER", name: "Water", nodeType: "SUBTOPIC" },
   questionType: "OPEN_ENDED", prompt: "Explain evaporation.", totalMarks: 2, modelAnswer: "Energy gain.", archiveState: "ACTIVE",
-  markingComponents: [{ position: 0, description: "Explains energy", marks: 2 }], keywords: ["evaporation"],
+  markingComponents: [{ position: 0, description: "Explains energy", marks: 2, keywords: ["energy"] }], keywords: ["evaporation"],
   createdAt: "2026-08-27T08:00:00", updatedAt: "2026-08-27T08:00:00",
 };
 
@@ -31,6 +31,7 @@ async function fillValidForm(user: ReturnType<typeof userEvent.setup>) {
   fireEvent.change(screen.getByLabelText("Model answer"), { target: { value: "Cooling turns gas into liquid." } });
   fireEvent.change(screen.getByLabelText("Criterion 1"), { target: { value: "Explains cooling" } });
   fireEvent.change(screen.getByLabelText("Criterion 1 marks"), { target: { value: "2" } });
+  fireEvent.change(screen.getByLabelText("Criterion 1 answer keywords"), { target: { value: "cooling" } });
 }
 
 describe("QuestionForm", () => {
@@ -43,7 +44,7 @@ describe("QuestionForm", () => {
     await user.click(screen.getByRole("button", { name: "Create question" }));
     await waitFor(() => expect(submitQuestion).toHaveBeenCalledWith(expect.objectContaining({
       code: "sci-water-002", syllabusTopicId: 14, totalMarks: 2,
-      markingComponents: [{ description: "Explains cooling", marks: 2 }],
+      markingComponents: [{ description: "Explains cooling", marks: 2, keywords: ["cooling"] }],
     } satisfies Partial<QuestionMutationRequest>)));
     expect(onComplete).toHaveBeenCalledWith(savedQuestion);
   }, 15_000);
@@ -90,7 +91,7 @@ describe("QuestionForm", () => {
   }, 15_000);
 
   it("prepopulates an editable multi-component question", () => {
-    render(<QuestionForm mode="edit" initialQuestion={{ ...savedQuestion, markingComponents: [...savedQuestion.markingComponents, { position: 1, description: "Uses scientific vocabulary", marks: 1 }], totalMarks: 3 }} submitQuestion={vi.fn()} onComplete={vi.fn()} loadSyllabus={async () => syllabus} />);
+    render(<QuestionForm mode="edit" initialQuestion={{ ...savedQuestion, markingComponents: [...savedQuestion.markingComponents, { position: 1, description: "Uses scientific vocabulary", marks: 1, keywords: ["vocabulary"] }], totalMarks: 3 }} submitQuestion={vi.fn()} onComplete={vi.fn()} loadSyllabus={async () => syllabus} />);
     expect(screen.getByLabelText("Question code")).toHaveValue("SCI-WATER-001");
     expect(screen.getByLabelText("Criterion 2")).toHaveValue("Uses scientific vocabulary");
     expect(screen.getByRole("button", { name: "Save changes" })).toBeVisible();

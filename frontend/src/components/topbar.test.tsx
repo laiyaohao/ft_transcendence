@@ -78,7 +78,7 @@ describe('Topbar', () => {
 
     expect(await screen.findByRole('menu', { name: 'Account options' })).toBeVisible();
     expect(screen.getByText('tutor@example.com')).toBeVisible();
-    expect(screen.getByRole('menuitem', { name: 'Profile' })).toBeVisible();
+    expect(screen.queryByRole('menuitem', { name: 'Profile' })).not.toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: 'Logout' })).toBeVisible();
   });
 

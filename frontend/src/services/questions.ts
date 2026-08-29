@@ -35,6 +35,8 @@ export interface QuestionMarkingComponent {
   position: number;
   description: string;
   marks: number;
+  /** Explicit answer evidence for this component; descriptions are never scored. */
+  keywords: string[];
 }
 
 /** Complete Tutor-only shape used for question creation and editing. */
@@ -54,7 +56,7 @@ export interface QuestionMutationRequest {
   totalMarks: number;
   modelAnswer: string;
   archiveState: QuestionArchiveState;
-  markingComponents: Array<{ description: string; marks: number }>;
+  markingComponents: Array<{ description: string; marks: number; keywords: string[] }>;
   keywords: string[];
 }
 
@@ -71,6 +73,7 @@ export class QuestionApiError extends Error {
 }
 
 const LEARNING_API_URL = process.env.NEXT_PUBLIC_LEARNING_API_URL || "http://localhost:8083";
+const GRADING_API_URL = process.env.NEXT_PUBLIC_GRADING_API_URL || "http://localhost:8082";
 const QUESTION_BANK_PATH = "/api/learning/tutor/questions";
 const QUESTION_TYPES: readonly QuestionType[] = ["MULTIPLE_CHOICE", "TRUE_FALSE", "FILL_IN_THE_BLANK", "SHORT_ANSWER", "OPEN_ENDED", "CALCULATION", "DIAGRAM"];
 const WORKSHEET_DRAFT_QUESTION_IDS_KEY = "worksheet_draft_question_ids";
@@ -121,7 +124,9 @@ function isMarkingComponent(value: unknown): value is QuestionMarkingComponent {
   const candidate = value as Record<string, unknown>;
   return isNonNegativeInteger(candidate.position)
     && isNonEmptyString(candidate.description)
-    && typeof candidate.marks === "number" && Number.isFinite(candidate.marks) && candidate.marks > 0;
+    && typeof candidate.marks === "number" && Number.isFinite(candidate.marks) && candidate.marks > 0
+    // Empty is valid for a legacy question; the checker safely awards no marks.
+    && Array.isArray(candidate.keywords) && candidate.keywords.every(isNonEmptyString);
 }
 
 function isTutorQuestion(value: unknown): value is TutorQuestion {
@@ -213,7 +218,8 @@ function validateMutationRequest(request: QuestionMutationRequest) {
   if (!isPositiveId(request.syllabusTopicId) || !isQuestionType(request.questionType) || !isArchiveState(request.archiveState)
     || !isNonEmptyString(request.code) || !isNonEmptyString(request.prompt) || !isNonEmptyString(request.modelAnswer)
     || !Number.isFinite(request.totalMarks) || request.totalMarks <= 0 || !Array.isArray(request.markingComponents) || request.markingComponents.length === 0
-    || !request.markingComponents.every((component) => isNonEmptyString(component.description) && Number.isFinite(component.marks) && component.marks > 0)
+    || !request.markingComponents.every((component) => isNonEmptyString(component.description) && Number.isFinite(component.marks) && component.marks > 0
+      && Array.isArray(component.keywords) && component.keywords.length > 0 && component.keywords.every(isNonEmptyString))
     || !Array.isArray(request.keywords) || !request.keywords.every(isNonEmptyString)) {
     throw new QuestionApiError("Question details are invalid.", 400);
   }
@@ -233,6 +239,57 @@ export function createTutorQuestion(request: QuestionMutationRequest): Promise<T
 export function updateTutorQuestion(questionId: number, request: QuestionMutationRequest): Promise<TutorQuestion> {
   if (!isPositiveId(questionId)) return Promise.reject(new QuestionApiError("Question reference is invalid.", 400));
   return saveQuestion(`${QUESTION_BANK_PATH}/${questionId}`, "PUT", request);
+}
+
+export interface QuestionRuleCheckResult {
+  awardedMarks: number;
+  maximumMarks: number;
+  matchedKeywords: string[];
+  missingKeywords: string[];
+  explanation: string;
+  componentResults: Array<{
+    position: number;
+    description: string;
+    maximumMarks: number;
+    matched: boolean;
+    matchedTargets: string[];
+    missingTargets: string[];
+    feedback: string;
+  }>;
+}
+
+function isRuleCheckResult(value: unknown): value is QuestionRuleCheckResult {
+  if (typeof value !== "object" || value === null) return false;
+  const result = value as Record<string, unknown>;
+  const textList = (candidate: unknown) => Array.isArray(candidate) && candidate.every(isNonEmptyString);
+  const component = (candidate: unknown) => {
+    if (typeof candidate !== "object" || candidate === null) return false;
+    const item = candidate as Record<string, unknown>;
+    return isNonNegativeInteger(item.position) && isNonEmptyString(item.description)
+      && typeof item.maximumMarks === "number" && Number.isFinite(item.maximumMarks) && item.maximumMarks > 0
+      && typeof item.matched === "boolean" && textList(item.matchedTargets) && textList(item.missingTargets)
+      && isNonEmptyString(item.feedback);
+  };
+  return typeof result.awardedMarks === "number" && Number.isFinite(result.awardedMarks) && result.awardedMarks >= 0
+    && typeof result.maximumMarks === "number" && Number.isFinite(result.maximumMarks) && result.maximumMarks > 0
+    && textList(result.matchedKeywords) && textList(result.missingKeywords) && isNonEmptyString(result.explanation)
+    && Array.isArray(result.componentResults) && result.componentResults.every(component);
+}
+
+/** Runs the Tutor-only deterministic checker. It is a preview and never persists a score. */
+export async function checkTutorQuestionAnswer(questionId: number, answer: string): Promise<QuestionRuleCheckResult> {
+  if (!isPositiveId(questionId) || !isNonEmptyString(answer)) {
+    throw new QuestionApiError("Enter an answer to check.", 400);
+  }
+  const response = await fetch(`${GRADING_API_URL}/api/grading/tutor/questions/${questionId}/rule-check`, {
+    method: "POST", headers: mutationHeaders(), body: JSON.stringify({ answer: answer.trim() }),
+  });
+  if (!response.ok) throw await responseError(response, "check this answer");
+  const payload = await response.json() as unknown;
+  if (!isRuleCheckResult(payload)) {
+    throw new QuestionApiError("The grading service returned an invalid answer check. Please try again.", 502);
+  }
+  return payload;
 }
 
 /**

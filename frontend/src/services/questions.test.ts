@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { QuestionApiError, addQuestionToWorksheetDraft, createTutorQuestion, fetchTutorQuestion, fetchTutorQuestions, isQuestionInWorksheetDraft, parseQuestionBankPage, parseTutorQuestion, updateTutorQuestion } from "./questions";
+import { QuestionApiError, addQuestionToWorksheetDraft, checkTutorQuestionAnswer, createTutorQuestion, fetchTutorQuestion, fetchTutorQuestions, isQuestionInWorksheetDraft, parseQuestionBankPage, parseTutorQuestion, updateTutorQuestion } from "./questions";
 
 const response = {
   items: [{
@@ -22,7 +22,7 @@ const response = {
 const detailResponse = {
   ...response.items[0],
   modelAnswer: "Evaporation happens when water gains enough energy.",
-  markingComponents: [{ position: 0, description: "Explains energy gain", marks: 2 }],
+  markingComponents: [{ position: 0, description: "Explains energy gain", marks: 2, keywords: ["energy gain"] }],
   keywords: ["evaporation"],
   createdAt: "2026-08-27T08:00:00",
   updatedAt: "2026-08-27T08:00:00",
@@ -30,7 +30,7 @@ const detailResponse = {
 
 const mutation = {
   code: "SCI-WATER-001", syllabusTopicId: 14, questionType: "OPEN_ENDED" as const, prompt: "Explain evaporation.", totalMarks: 2,
-  modelAnswer: "Energy gain.", archiveState: "ACTIVE" as const, markingComponents: [{ description: "Explains energy", marks: 2 }], keywords: ["evaporation"],
+  modelAnswer: "Energy gain.", archiveState: "ACTIVE" as const, markingComponents: [{ description: "Explains energy", marks: 2, keywords: ["energy"] }], keywords: ["evaporation"],
 };
 
 describe("question bank service", () => {
@@ -92,6 +92,22 @@ describe("question bank service", () => {
     await expect(createTutorQuestion({ ...mutation, markingComponents: [] })).rejects.toMatchObject({ status: 400 });
     await expect(updateTutorQuestion(0, mutation)).rejects.toMatchObject({ status: 400 });
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("calls the Tutor-only rule-check endpoint without persisting a score", async () => {
+    localStorage.setItem("jwt_token", "stored-token");
+    const result = {
+      awardedMarks: 2, maximumMarks: 2, matchedKeywords: ["Explains energy gain"], missingKeywords: [],
+      explanation: "Matched 1 of 1 weighted marking components.",
+      componentResults: [{ position: 0, description: "Explains energy gain", maximumMarks: 2, matched: true,
+        matchedTargets: ["energy gain"], missingTargets: [], feedback: "Matched an approved component keyword." }],
+    };
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify(result), { status: 200 }));
+
+    await expect(checkTutorQuestionAnswer(7, "Water gains energy.")).resolves.toEqual(result);
+    expect(fetch).toHaveBeenCalledWith("http://localhost:8082/api/grading/tutor/questions/7/rule-check", expect.objectContaining({
+      method: "POST", headers: expect.objectContaining({ Authorization: "Bearer stored-token" }), body: JSON.stringify({ answer: "Water gains energy." }),
+    }));
   });
 
   it("keeps worksheet-draft question selections locally and de-duplicates retries", () => {

@@ -46,8 +46,8 @@ class QuestionRepositoryTest {
             "SCI_P5_CYCLES_MATTER_WATER_WATER",
             new BigDecimal("3.00")
         );
-        question.addMarkingComponent("States that heat supplies energy", new BigDecimal("1.00"));
-        question.addMarkingComponent("Explains faster evaporation", new BigDecimal("2.00"));
+        question.addMarkingComponent("States that heat supplies energy", new BigDecimal("1.00"), List.of("heat", "energy"));
+        question.addMarkingComponent("Explains faster evaporation", new BigDecimal("2.00"), List.of("evaporation"));
         question.addKeyword(" Heat ");
         question.addKeyword("Evaporation");
 
@@ -66,6 +66,7 @@ class QuestionRepositoryTest {
             List.of("States that heat supplies energy", "Explains faster evaporation"),
             loaded.getMarkingComponents().stream().map(MarkingComponent::getDescription).toList()
         );
+        assertEquals(List.of("heat", "energy"), loaded.getMarkingComponents().get(0).getKeywords());
         assertEquals(List.of("heat", "evaporation"), loaded.getKeywords());
         assertEquals(Question.ArchiveState.ACTIVE, loaded.getArchiveState());
     }

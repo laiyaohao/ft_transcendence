@@ -31,7 +31,7 @@ const questionTypes: readonly { value: QuestionType; label: string }[] = [
   { value: "DIAGRAM", label: "Diagram" },
 ];
 
-type MarkingCriterion = { description: string; marks: string };
+type MarkingCriterion = { description: string; marks: string; keywords: string };
 type FormValues = {
   code: string; syllabusTopicId: string; questionType: QuestionType; prompt: string; totalMarks: string;
   modelAnswer: string; archiveState: QuestionArchiveState; markingComponents: MarkingCriterion[]; keywords: string;
@@ -54,7 +54,7 @@ const fieldSx = {
 } as const;
 
 function blankValues(): FormValues {
-  return { code: "", syllabusTopicId: "", questionType: "OPEN_ENDED", prompt: "", totalMarks: "", modelAnswer: "", archiveState: "ACTIVE", markingComponents: [{ description: "", marks: "" }], keywords: "" };
+  return { code: "", syllabusTopicId: "", questionType: "OPEN_ENDED", prompt: "", totalMarks: "", modelAnswer: "", archiveState: "ACTIVE", markingComponents: [{ description: "", marks: "", keywords: "" }], keywords: "" };
 }
 
 function initialValues(question?: TutorQuestion): FormValues {
@@ -62,7 +62,7 @@ function initialValues(question?: TutorQuestion): FormValues {
   return {
     code: question.code, syllabusTopicId: String(question.syllabusTopic.id), questionType: question.questionType, prompt: question.prompt,
     totalMarks: String(question.totalMarks), modelAnswer: question.modelAnswer, archiveState: question.archiveState,
-    markingComponents: question.markingComponents.map((component) => ({ description: component.description, marks: String(component.marks) })),
+    markingComponents: question.markingComponents.map((component) => ({ description: component.description, marks: String(component.marks), keywords: component.keywords.join(", ") })),
     keywords: question.keywords.join(", "),
   };
 }
@@ -94,6 +94,11 @@ export function validateQuestionForm(values: FormValues): FieldErrors {
     const marks = preciseNumber(component.marks);
     if (marks === null || marks <= 0 || marks > 9999.99) errors[`markingComponents.${index}.marks`] = "Use a positive number with up to two decimal places.";
     else markedTotal += marks;
+    const componentKeywords = component.keywords.split(",").map((keyword) => keyword.trim()).filter(Boolean);
+    if (componentKeywords.length === 0) errors[`markingComponents.${index}.keywords`] = "Add at least one approved answer keyword.";
+    else if (componentKeywords.length > 100) errors[`markingComponents.${index}.keywords`] = "Use at most 100 keywords per criterion.";
+    else if (componentKeywords.some((keyword) => keyword.length > 80)) errors[`markingComponents.${index}.keywords`] = "Each keyword must be 80 characters or fewer.";
+    else if (new Set(componentKeywords.map((keyword) => keyword.toLowerCase())).size !== componentKeywords.length) errors[`markingComponents.${index}.keywords`] = "Keywords must be unique within this criterion.";
   });
   if (totalMarks !== null && Math.round(markedTotal * 100) !== Math.round(totalMarks * 100)) errors.markingComponents = "Criteria marks must exactly equal the total marks.";
   const keywords = values.keywords.split(",").map((item) => item.trim()).filter(Boolean);
@@ -107,7 +112,7 @@ function requestFor(values: FormValues): QuestionMutationRequest {
   return {
     code: values.code.trim(), syllabusTopicId: Number(values.syllabusTopicId), questionType: values.questionType,
     prompt: values.prompt.trim(), totalMarks: Number(values.totalMarks), modelAnswer: values.modelAnswer.trim(), archiveState: values.archiveState,
-    markingComponents: values.markingComponents.map((component) => ({ description: component.description.trim(), marks: Number(component.marks) })),
+    markingComponents: values.markingComponents.map((component) => ({ description: component.description.trim(), marks: Number(component.marks), keywords: component.keywords.split(",").map((keyword) => keyword.trim()).filter(Boolean) })),
     keywords: values.keywords.split(",").map((keyword) => keyword.trim()).filter(Boolean),
   };
 }
@@ -126,7 +131,7 @@ export default function QuestionForm({ mode, initialQuestion, submitQuestion, on
     setValues((current) => ({ ...current, markingComponents: current.markingComponents.map((criterion, criterionIndex) => criterionIndex === index ? { ...criterion, [field]: value } : criterion) }));
     setErrors((current) => ({ ...current, [`markingComponents.${index}.${field}`]: "", markingComponents: "" }));
   };
-  const addCriterion = () => setValues((current) => current.markingComponents.length >= 100 ? current : { ...current, markingComponents: [...current.markingComponents, { description: "", marks: "" }] });
+  const addCriterion = () => setValues((current) => current.markingComponents.length >= 100 ? current : { ...current, markingComponents: [...current.markingComponents, { description: "", marks: "", keywords: "" }] });
   const removeCriterion = (index: number) => { setValues((current) => ({ ...current, markingComponents: current.markingComponents.filter((_, criterionIndex) => criterionIndex !== index) })); setErrors({}); };
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -155,7 +160,7 @@ export default function QuestionForm({ mode, initialQuestion, submitQuestion, on
     <Box component="section" aria-labelledby="marking-criteria-title" sx={{ mt: 3, pt: 2.5, borderTop: "1px solid #F0EAE0" }}>
       <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "flex-start", justifyContent: "space-between", gap: 1.5, mb: 1.5 }}><Box><Typography id="marking-criteria-title" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 21, fontWeight: 500 }}>Marking criteria</Typography><Typography sx={{ color: "#8B837A", fontSize: 12.5, lineHeight: 1.55, mt: .5 }}>Allocate every mark so the criteria total matches the question.</Typography></Box><Button type="button" onClick={addCriterion} disabled={values.markingComponents.length >= 100} startIcon={<AddIcon />} sx={{ minHeight: 40, border: "1px solid #E4DCD0", borderRadius: "10px", color: "#2A2622", textTransform: "none", fontWeight: 500 }}>Add criterion</Button></Box>
       {errors.markingComponents && <Typography role="alert" sx={{ color: "#B4573F", fontSize: 11.5, mb: 1 }}>{errors.markingComponents}</Typography>}
-      <Box sx={{ display: "grid", gap: 1.25 }}>{values.markingComponents.map((criterion, index) => <Box key={index} sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "minmax(0, 1fr) 150px auto" }, gap: 1.25, alignItems: "start", p: 1.5, border: "1px solid #F0EAE0", borderRadius: "12px", bgcolor: "#FBF9F5" }}><TextField required fullWidth label={`Criterion ${index + 1}`} value={criterion.description} onChange={(event) => updateCriterion(index, "description", event.target.value)} error={Boolean(errors[`markingComponents.${index}.description`])} helperText={errors[`markingComponents.${index}.description`]} slotProps={{ htmlInput: { maxLength: 1000, "aria-label": `Criterion ${index + 1}` } }} sx={fieldSx} /><TextField required fullWidth label={`Criterion ${index + 1} marks`} value={criterion.marks} onChange={(event) => updateCriterion(index, "marks", event.target.value)} error={Boolean(errors[`markingComponents.${index}.marks`])} helperText={errors[`markingComponents.${index}.marks`]} slotProps={{ htmlInput: { inputMode: "decimal", "aria-label": `Criterion ${index + 1} marks` } }} sx={fieldSx} /><Button type="button" onClick={() => removeCriterion(index)} disabled={values.markingComponents.length === 1} aria-label={`Remove criterion ${index + 1}`} sx={{ minWidth: 40, minHeight: 40, mt: { xs: 0, sm: .5 }, border: "1px solid #EBE4D9", borderRadius: "9px", color: "#B4573F" }}><DeleteOutlineIcon aria-hidden="true" sx={{ fontSize: 18 }} /></Button></Box>)}</Box>
+      <Box sx={{ display: "grid", gap: 1.25 }}>{values.markingComponents.map((criterion, index) => <Box key={index} sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "minmax(0, 1fr) 150px auto" }, gap: 1.25, alignItems: "start", p: 1.5, border: "1px solid #F0EAE0", borderRadius: "12px", bgcolor: "#FBF9F5" }}><TextField required fullWidth label={`Criterion ${index + 1}`} value={criterion.description} onChange={(event) => updateCriterion(index, "description", event.target.value)} error={Boolean(errors[`markingComponents.${index}.description`])} helperText={errors[`markingComponents.${index}.description`]} slotProps={{ htmlInput: { maxLength: 1000, "aria-label": `Criterion ${index + 1}` } }} sx={fieldSx} /><TextField required fullWidth label={`Criterion ${index + 1} marks`} value={criterion.marks} onChange={(event) => updateCriterion(index, "marks", event.target.value)} error={Boolean(errors[`markingComponents.${index}.marks`])} helperText={errors[`markingComponents.${index}.marks`]} slotProps={{ htmlInput: { inputMode: "decimal", "aria-label": `Criterion ${index + 1} marks` } }} sx={fieldSx} /><Button type="button" onClick={() => removeCriterion(index)} disabled={values.markingComponents.length === 1} aria-label={`Remove criterion ${index + 1}`} sx={{ minWidth: 40, minHeight: 40, mt: { xs: 0, sm: .5 }, border: "1px solid #EBE4D9", borderRadius: "9px", color: "#B4573F" }}><DeleteOutlineIcon aria-hidden="true" sx={{ fontSize: 18 }} /></Button><TextField required fullWidth label={`Criterion ${index + 1} answer keywords`} value={criterion.keywords} onChange={(event) => updateCriterion(index, "keywords", event.target.value)} error={Boolean(errors[`markingComponents.${index}.keywords`])} helperText={errors[`markingComponents.${index}.keywords`] || "Comma-separated exact terms that can earn this criterion's marks."} slotProps={{ htmlInput: { "aria-label": `Criterion ${index + 1} answer keywords` } }} sx={{ ...fieldSx, gridColumn: { sm: "1 / -1" } }} /></Box>)}</Box>
     </Box>
     {submitError && <Box role="alert" sx={{ mt: 2.5, p: 1.75, borderLeft: "3px solid #B4573F", borderRadius: "0 10px 10px 0", bgcolor: "#F6EFE6" }}><Typography sx={{ color: "#5A544C", fontSize: 13, lineHeight: 1.55 }}>{submitError}</Typography></Box>}
     <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.25, mt: 3 }}><Button type="submit" disabled={submitting} sx={{ minHeight: 42, borderRadius: "10px", bgcolor: "#9E3A24", color: "#FBF9F5", textTransform: "none", fontWeight: 500, px: 2.25, "&:hover": { bgcolor: "#8A3120" }, "&.Mui-disabled": { bgcolor: "#EDE6DB", color: "#B5AA9C" } }}>{submitting ? (mode === "create" ? "Creating question…" : "Saving changes…") : submitLabel}</Button><Button component={Link} href={cancelHref} sx={{ minHeight: 42, border: "1px solid #E4DCD0", borderRadius: "10px", color: "#2A2622", textTransform: "none", fontWeight: 500, px: 2 }}>Cancel</Button></Box>

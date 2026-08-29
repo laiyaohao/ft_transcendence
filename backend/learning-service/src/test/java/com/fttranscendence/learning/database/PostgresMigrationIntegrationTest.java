@@ -27,7 +27,7 @@ class PostgresMigrationIntegrationTest {
             .locations("classpath:db/migration")
             .load();
 
-        assertEquals(19, flyway.migrate().migrationsExecuted);
+        assertEquals(21, flyway.migrate().migrationsExecuted);
         assertEquals(0, flyway.migrate().migrationsExecuted);
 
         try (Connection connection = POSTGRES.createConnection("");
@@ -37,6 +37,7 @@ class PostgresMigrationIntegrationTest {
                      + "AND table_name IN ("
                      + "'tutor_classes', 'student_profiles', 'syllabus_topics', "
                      + "'questions', 'marking_components', 'question_keywords', "
+                     + "'marking_component_keywords', "
                      + "'worksheets', 'worksheet_questions', 'worksheet_assignments', "
                      + "'mastery_records', 'mastery_history', 'mastery_approved_results', 'mastery_diagnostic_evidence', 'mastery_diagnostic_evidence_keywords', 'marking_review_status_projection', 'tutor_alerts', 'progress_reports', "
                      + "'class_topic_coverage', 'class_insight_settings', 'class_insight_snapshots', "

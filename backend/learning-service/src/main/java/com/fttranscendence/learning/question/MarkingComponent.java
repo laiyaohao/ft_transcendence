@@ -1,6 +1,8 @@
 package com.fttranscendence.learning.question;
 
 import jakarta.persistence.Column;
+import jakarta.persistence.CollectionTable;
+import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
@@ -18,6 +20,11 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 @Entity
 @Table(name = "marking_components")
@@ -45,12 +52,32 @@ public class MarkingComponent {
     @Column(nullable = false, precision = 6, scale = 2)
     private BigDecimal marks;
 
+    /**
+     * Explicit deterministic evidence for this criterion. Descriptions are
+     * tutor guidance, not answer text, and must never be used as a matcher.
+     */
+    @Size(max = 100)
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(
+        name = "marking_component_keywords",
+        joinColumns = @JoinColumn(name = "marking_component_id", nullable = false)
+    )
+    @jakarta.persistence.OrderColumn(name = "position")
+    @Column(name = "keyword", nullable = false, length = 80)
+    private List<@NotBlank @Size(max = 80) String> keywords = new ArrayList<>();
+
     protected MarkingComponent() {
     }
 
+    /** Retained for existing aggregate fixtures; legacy components have no deterministic keywords. */
     public MarkingComponent(String description, BigDecimal marks) {
+        this(description, marks, List.of());
+    }
+
+    public MarkingComponent(String description, BigDecimal marks, List<String> keywords) {
         this.description = description;
         this.marks = marks;
+        setKeywords(keywords);
     }
 
     @PrePersist
@@ -59,6 +86,21 @@ public class MarkingComponent {
         if (description != null) {
             description = description.trim();
         }
+        Set<String> seen = new HashSet<>();
+        List<String> normalized = new ArrayList<>(keywords.size());
+        for (String keyword : keywords) {
+            if (keyword == null) {
+                normalized.add(null);
+                continue;
+            }
+            String value = keyword.trim().toLowerCase(Locale.ROOT);
+            if (!seen.add(value)) {
+                throw new IllegalArgumentException("Marking component keywords must be unique");
+            }
+            normalized.add(value);
+        }
+        keywords.clear();
+        keywords.addAll(normalized);
     }
 
     void attachTo(Question question) {
@@ -95,5 +137,16 @@ public class MarkingComponent {
 
     public void setMarks(BigDecimal marks) {
         this.marks = marks;
+    }
+
+    public List<String> getKeywords() {
+        return List.copyOf(keywords);
+    }
+
+    public void setKeywords(List<String> keywords) {
+        this.keywords.clear();
+        if (keywords != null) {
+            this.keywords.addAll(keywords);
+        }
     }
 }

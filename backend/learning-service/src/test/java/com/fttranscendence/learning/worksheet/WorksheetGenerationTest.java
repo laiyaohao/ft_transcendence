@@ -17,6 +17,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @SpringBootTest
 @Transactional
@@ -71,6 +72,21 @@ class WorksheetGenerationTest {
         assertEquals(Worksheet.WorksheetType.STANDARD, response.worksheet().worksheetType());
         assertEquals(2, response.worksheet().questions().stream().filter(question -> question.syllabusTopicId().equals(water)).count());
         assertEquals(2, response.worksheet().questions().stream().filter(question -> question.syllabusTopicId().equals(reproduction)).count());
+    }
+
+    @Test
+    void rejectsAQuestionCountSmallerThanTheSelectedTopicSetBeforeCreatingARequest() {
+        TutorClass tutorClass = tutorClass();
+        long water = topics.findByCode("SCI_P5_CYCLES_MATTER_WATER_WATER").orElseThrow().getId();
+        long reproduction = topics.findByCode("SCI_P5_CYCLES_PLANTS_ANIMALS_REPRODUCTION").orElseThrow().getId();
+
+        WorksheetService.InvalidWorksheetRequestException exception = assertThrows(WorksheetService.InvalidWorksheetRequestException.class,
+            () -> service.generate(TUTOR_ID, tutorClass.getId(), "worksheet-invalid-count",
+                new WorksheetRequests.GenerateWorksheetRequest(WorksheetGenerationRequest.TargetMode.CLASS, List.of(water, reproduction),
+                    1, Question.QuestionType.OPEN_ENDED, null, null, null, null)));
+
+        assertEquals("questionCount must be at least the number of selected topics.", exception.getMessage());
+        assertEquals(0, jdbc.queryForObject("select count(*) from worksheet_generation_requests", Integer.class));
     }
 
     private TutorClass tutorClass() {

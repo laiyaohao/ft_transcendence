@@ -99,7 +99,7 @@ public class QuestionService {
         question.setTotalMarks(request.totalMarks());
         question.setModelAnswer(request.modelAnswer().trim());
         question.replaceMarkingComponents(request.markingComponents().stream()
-            .map(component -> new MarkingComponent(component.description().trim(), component.marks()))
+            .map(component -> new MarkingComponent(component.description().trim(), component.marks(), normalizedKeywords(component.keywords())))
             .toList());
         question.replaceKeywords(normalizedKeywords(request.keywords()));
 
@@ -124,6 +124,10 @@ public class QuestionService {
         for (QuestionRequest.MarkingComponentRequest component : request.markingComponents()) {
             if (component.marks().scale() > 2) {
                 throw new InvalidQuestionRequestException("markingComponents", "Component marks may have at most two decimal places.");
+            }
+            List<String> componentKeywords = normalizedKeywords(component.keywords());
+            if (componentKeywords.stream().distinct().count() != componentKeywords.size()) {
+                throw new InvalidQuestionRequestException("markingComponents", "Component keywords must be unique.");
             }
         }
         List<String> keywords = normalizedKeywords(request.keywords());
@@ -151,7 +155,8 @@ public class QuestionService {
             MarkingComponent existing = components.get(index);
             QuestionRequest.MarkingComponentRequest requested = requests.get(index);
             if (!existing.getDescription().equals(requested.description().trim())
-                || existing.getMarks().compareTo(requested.marks()) != 0) return false;
+                || existing.getMarks().compareTo(requested.marks()) != 0
+                || !existing.getKeywords().equals(normalizedKeywords(requested.keywords()))) return false;
         }
         return true;
     }
@@ -243,13 +248,13 @@ public class QuestionService {
             return new QuestionDetail(
                 question.getId(), question.getCode(), new SyllabusTopicSummary(topic.getId(), topic.getCode(), topic.getName(), topic.getNodeType()),
                 question.getQuestionType(), question.getPrompt(), question.getTotalMarks(), question.getModelAnswer(), question.getArchiveState(),
-                question.getMarkingComponents().stream().map(component -> new MarkingComponentDetail(component.getPosition(), component.getDescription(), component.getMarks())).toList(),
+                question.getMarkingComponents().stream().map(component -> new MarkingComponentDetail(component.getPosition(), component.getDescription(), component.getMarks(), component.getKeywords())).toList(),
                 question.getKeywords(), question.getCreatedAt(), question.getUpdatedAt()
             );
         }
     }
 
-    public record MarkingComponentDetail(int position, String description, BigDecimal marks) {}
+    public record MarkingComponentDetail(int position, String description, BigDecimal marks, List<String> keywords) {}
 
     public static final class QuestionNotFoundException extends RuntimeException {}
     public static final class DuplicateQuestionCodeException extends RuntimeException {}

@@ -317,12 +317,13 @@ public class LearningAuthorizationClient {
             Object positionValue = component.get("position");
             String description = text(component.get("description"));
             BigDecimal marks = decimal(component.get("marks"));
+            List<String> keywords = strings(component.get("keywords"));
             if (!(positionValue instanceof Number position) || position.intValue() < 0 || description == null
                 || marks == null || marks.signum() <= 0 || marks.scale() > 2 || !positions.add(position.intValue())) {
                 return List.of();
             }
             allocated = allocated.add(marks);
-            components.add(new MarkingComponentContext(position.intValue(), description, marks));
+            components.add(new MarkingComponentContext(position.intValue(), description, marks, keywords));
         }
         if (allocated.compareTo(questionTotal) != 0) return List.of();
         return components.stream().sorted(java.util.Comparator.comparingInt(MarkingComponentContext::position)).toList();
@@ -347,9 +348,9 @@ public class LearningAuthorizationClient {
         String syllabusTopicCode
     ) { }
 
-    public record MarkingComponentContext(int position, String description, BigDecimal marks) {
+    public record MarkingComponentContext(int position, String description, BigDecimal marks, List<String> keywords) {
         public RuleBasedAnswerChecker.WeightedMarkingComponent toRuleComponent() {
-            return new RuleBasedAnswerChecker.WeightedMarkingComponent(position, description, marks);
+            return new RuleBasedAnswerChecker.WeightedMarkingComponent(position, description, marks, keywords);
         }
     }
 

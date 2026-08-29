@@ -46,6 +46,7 @@ class MigrationIntegrationTest {
         jdbcTemplate.update("DELETE FROM worksheet_questions");
         jdbcTemplate.update("DELETE FROM worksheets");
         jdbcTemplate.update("DELETE FROM question_keywords");
+        jdbcTemplate.update("DELETE FROM marking_component_keywords");
         jdbcTemplate.update("DELETE FROM marking_components");
         jdbcTemplate.update("DELETE FROM questions");
         jdbcTemplate.update("DELETE FROM tutor_notes");
@@ -64,6 +65,7 @@ class MigrationIntegrationTest {
         assertEquals(1, tableCount("syllabus_topics"));
         assertEquals(1, tableCount("questions"));
         assertEquals(1, tableCount("marking_components"));
+        assertEquals(1, tableCount("marking_component_keywords"));
         assertEquals(1, tableCount("question_keywords"));
         assertEquals(1, tableCount("worksheets"));
         assertEquals(1, tableCount("worksheet_questions"));
@@ -84,8 +86,8 @@ class MigrationIntegrationTest {
         assertEquals(1, tableCount("class_insight_ranking_overrides"));
         assertEquals(1, tableCount("class_insight_refresh_queue"));
         assertEquals(1, tableCount("tutor_notes"));
-        assertEquals("19", flyway.info().current().getVersion().getVersion());
-        assertEquals(19, versionedMigrationCount());
+        assertEquals("21", flyway.info().current().getVersion().getVersion());
+        assertEquals(21, versionedMigrationCount());
         assertEquals(1, jdbcTemplate.queryForObject(
             "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'PUBLIC' "
                 + "AND LOWER(TABLE_NAME) = 'mastery_diagnostic_evidence' AND LOWER(COLUMN_NAME) = 'mistake_type'",

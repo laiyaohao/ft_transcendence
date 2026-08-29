@@ -107,18 +107,33 @@ class RuleBasedAnswerCheckerTest {
             "The heat conduction moves energy through the metal.",
             List.of(
                 new RuleBasedAnswerChecker.WeightedMarkingComponent(0, "Explains heat conduction", new BigDecimal("2.00")),
-                new RuleBasedAnswerChecker.WeightedMarkingComponent(1, "States energy transfer", new BigDecimal("1.00"))
+                new RuleBasedAnswerChecker.WeightedMarkingComponent(1, "States energy transfer", new BigDecimal("1.00"), List.of("energy transfer"))
             ),
             new BigDecimal("3.00")
         );
 
-        assertEquals(new BigDecimal("2.00"), result.awardedMarks());
-        assertEquals(List.of("Explains heat conduction"), result.matchedKeywords());
-        assertEquals(List.of("States energy transfer"), result.missingKeywords());
+        assertEquals(new BigDecimal("0.00"), result.awardedMarks());
+        assertEquals(List.of(), result.matchedKeywords());
+        assertEquals(List.of("Explains heat conduction", "States energy transfer"), result.missingKeywords());
         assertEquals(2, result.componentResults().size());
-        assertEquals(true, result.componentResults().get(0).matched());
+        assertEquals(false, result.componentResults().get(0).matched());
         assertEquals(false, result.componentResults().get(1).matched());
-        assertEquals("No deterministic component target was found.", result.componentResults().get(1).feedback());
+        assertEquals("This legacy component has no approved keywords yet.", result.componentResults().get(0).feedback());
+        assertEquals("No approved component keyword was found.", result.componentResults().get(1).feedback());
+    }
+
+    @Test
+    void scoresOnlyExplicitComponentKeywordsAndNeverTheCriterionDescription() {
+        RuleCheckResult result = checker.checkWeighted(
+            "The metal is conductive and transfers heat.",
+            List.of(new RuleBasedAnswerChecker.WeightedMarkingComponent(
+                0, "Explains heat conduction", new BigDecimal("2.00"), List.of("conductive", "transfers heat")
+            )),
+            new BigDecimal("2.00")
+        );
+
+        assertEquals(new BigDecimal("2.00"), result.awardedMarks());
+        assertEquals(List.of("conductive", "transfers heat"), result.componentResults().get(0).matchedTargets());
     }
 
     @Test

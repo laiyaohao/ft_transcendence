@@ -190,6 +190,28 @@ class MasteryServiceIntegrationTest {
     }
 
     @Test
+    void higherApprovedRevisionReplacesEvidenceWithTheSameMistakeType() {
+        StudentProfile student = student("Evidence revision");
+        long topic = activeTopics(1).get(0);
+        LocalDateTime reviewedAt = LocalDateTime.of(2026, 8, 28, 13, 0);
+        var initial = new MasteryService.DiagnosticEvidence(MasteryDiagnosticEvidence.MistakeType.MISSING_KEY_POINT,
+            MasteryDiagnosticEvidence.Category.KEYWORD, "Initial evidence.", List.of("evaporation"));
+        var revised = new MasteryService.DiagnosticEvidence(MasteryDiagnosticEvidence.MistakeType.MISSING_KEY_POINT,
+            MasteryDiagnosticEvidence.Category.KEYWORD, "Revised evidence.", List.of("condensation"));
+
+        service.applyApprovedMarking(approved(1161L, student.getId(), topic, BigDecimal.ONE, 1, reviewedAt, List.of(initial)));
+        service.applyApprovedMarking(approved(1161L, student.getId(), topic, BigDecimal.ONE, 2, reviewedAt.plusMinutes(1), List.of(revised)));
+
+        entityManager.flush();
+        entityManager.clear();
+        List<MasteryDiagnosticEvidence> stored = evidence.findByStudentProfileIdOrderByCreatedAtDescIdDesc(student.getId());
+        assertEquals(1, stored.size());
+        assertEquals(MasteryDiagnosticEvidence.MistakeType.MISSING_KEY_POINT, stored.get(0).getMistakeType());
+        assertEquals(List.of("condensation"), stored.get(0).getMissingKeywords());
+        assertEquals("Revised evidence.", stored.get(0).getTutorRationale());
+    }
+
+    @Test
     void equalOrOlderEventsCannotOverwriteTheLatestRetractionState() {
         StudentProfile student = student("Nora");
         long topic = activeTopics(1).get(0);

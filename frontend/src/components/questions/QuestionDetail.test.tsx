@@ -16,8 +16,8 @@ const question: TutorQuestion = {
   modelAnswer: "Water gains thermal energy and escapes as water vapour.",
   archiveState: "ACTIVE",
   markingComponents: [
-    { position: 0, description: "Identifies thermal energy gain", marks: 1 },
-    { position: 1, description: "Explains faster particle escape", marks: 2 },
+    { position: 0, description: "Identifies thermal energy gain", marks: 1, keywords: ["thermal energy"] },
+    { position: 1, description: "Explains faster particle escape", marks: 2, keywords: ["particle escape"] },
   ],
   keywords: ["evaporation", "thermal energy"],
   createdAt: "2026-08-27T08:00:00",
@@ -82,5 +82,22 @@ describe("QuestionDetail", () => {
     await user.click(await screen.findByRole("button", { name: "Add to worksheet draft" }));
     expect(screen.getByRole("status")).toHaveTextContent("could not save this worksheet selection");
     expect(screen.getByRole("button", { name: "Add to worksheet draft" })).toBeEnabled();
+  });
+
+  it("runs a non-persistent tutor answer-check preview", async () => {
+    const user = userEvent.setup();
+    const checkAnswer = vi.fn().mockResolvedValue({
+      awardedMarks: 3, maximumMarks: 3, matchedKeywords: ["Identifies thermal energy gain", "Explains faster particle escape"], missingKeywords: [],
+      explanation: "Matched 2 of 2 weighted marking components.", componentResults: [
+        { position: 0, description: "Identifies thermal energy gain", maximumMarks: 1, matched: true, matchedTargets: ["thermal energy"], missingTargets: [], feedback: "Matched an approved component keyword." },
+        { position: 1, description: "Explains faster particle escape", maximumMarks: 2, matched: true, matchedTargets: ["particle escape"], missingTargets: [], feedback: "Matched an approved component keyword." },
+      ],
+    });
+    render(<QuestionDetail questionId={7} loadQuestion={async () => question} checkAnswer={checkAnswer} />);
+    await user.type(await screen.findByLabelText("Sample student answer"), "It gains thermal energy and particles escape.");
+    await user.click(screen.getByRole("button", { name: "Check answer" }));
+    expect(checkAnswer).toHaveBeenCalledWith(7, "It gains thermal energy and particles escape.");
+    expect(await screen.findByText("3.00 / 3.00 marks")).toBeVisible();
+    expect(screen.getByText(/This does not save a grade\./)).toBeVisible();
   });
 });

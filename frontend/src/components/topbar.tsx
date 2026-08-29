@@ -95,7 +95,7 @@ export default function Topbar() {
             </Box>
           ) : null}
           <Divider />
-          <MenuItem onClick={openProfile}><PersonOutlineIcon fontSize="small" sx={{ mr: 1.25 }} />Profile</MenuItem>
+          {session?.role !== 'TUTOR' ? <MenuItem onClick={openProfile}><PersonOutlineIcon fontSize="small" sx={{ mr: 1.25 }} />Profile</MenuItem> : null}
           <MenuItem onClick={handleLogout}><LogoutOutlinedIcon fontSize="small" sx={{ mr: 1.25 }} />Logout</MenuItem>
         </Menu>
       </Toolbar>

@@ -25,12 +25,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private static final Set<String> ALLOWED_ROLES = Set.of("TUTOR", "STUDENT");
     private final byte[] signingKey;
+    private final StudentProfileProvisioningService profiles;
 
-    public JwtAuthenticationFilter(@Value("${jwt.secret}") String secret) {
+    public JwtAuthenticationFilter(@Value("${jwt.secret}") String secret, StudentProfileProvisioningService profiles) {
         if (secret == null || secret.getBytes(StandardCharsets.UTF_8).length < 32) {
             throw new IllegalArgumentException("JWT_SECRET must contain at least 32 bytes");
         }
         this.signingKey = secret.getBytes(StandardCharsets.UTF_8);
+        this.profiles = profiles;
     }
 
     @Override
@@ -52,6 +54,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 .getBody();
             String email = claims.getSubject();
             String role = claims.get("role", String.class);
+            String fullName = claims.get("fullName", String.class);
             Number userIdClaim = claims.get("userId", Number.class);
 
             if (StringUtils.hasText(email)
@@ -60,13 +63,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     && userIdClaim.longValue() > 0
                     && SecurityContextHolder.getContext().getAuthentication() == null) {
                 AuthenticatedUser principal = new AuthenticatedUser(
-                    userIdClaim.longValue(), email, role);
+                    userIdClaim.longValue(), email, role, StringUtils.hasText(fullName) ? fullName : email);
                 var authentication = new UsernamePasswordAuthenticationToken(
                     principal,
                     null,
                     List.of(new SimpleGrantedAuthority("ROLE_" + role))
                 );
                 SecurityContextHolder.getContext().setAuthentication(authentication);
+                if ("STUDENT".equals(role)) {
+                    profiles.ensureProfile(principal);
+                }
             }
         } catch (RuntimeException ex) {
             SecurityContextHolder.clearContext();

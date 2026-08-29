@@ -87,6 +87,9 @@ public class StudentDashboardService {
     }
 
     private List<WorksheetAssignment> effectiveApprovedAssignments(StudentProfile student) {
+        if (student.getTutorId() == null) {
+            return List.of();
+        }
         List<WorksheetAssignment> assignments = new ArrayList<>();
         for (Worksheet worksheet : worksheets.findApprovedStudentAssignedWorksheetsByTutorId(
             student.getTutorId(), student.getId())) {

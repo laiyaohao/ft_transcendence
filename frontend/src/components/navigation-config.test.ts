@@ -18,7 +18,6 @@ describe('role-aware navigation configuration', () => {
       { title: 'Question Bank', href: '/questions' },
       { title: 'Alerts', href: '/tutor/alerts' },
       { title: 'Upload', href: '/upload' },
-      { title: 'Profile', href: '/profile' },
     ]);
     expect(items.some((item) => item.href === '/progress')).toBe(false);
     expect(getWorkspaceLabel('TUTOR')).toBe('Tutor Workspace');

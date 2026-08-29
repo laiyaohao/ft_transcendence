@@ -1,5 +1,6 @@
 package com.fttranscendence.learning.dashboard;
 
+import com.fttranscendence.learning.student.StudentProfile;
 import com.fttranscendence.learning.student.StudentProfileRepository;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
@@ -133,7 +134,7 @@ class StudentDashboardIntegrationTest {
     }
 
     @Test
-    void deniesWrongRolesAndDoesNotRevealMissingLinkedProfiles() throws Exception {
+    void deniesWrongRolesAndProvisionsAStudentWithoutAnExistingProfile() throws Exception {
         mvc.perform(get("/api/learning/student/dashboard"))
             .andExpect(status().isUnauthorized());
         mvc.perform(get("/api/learning/student/dashboard")
@@ -141,8 +142,8 @@ class StudentDashboardIntegrationTest {
             .andExpect(status().isForbidden());
         mvc.perform(get("/api/learning/student/dashboard")
                 .header("Authorization", bearer("STUDENT", 9999L)))
-            .andExpect(status().isNotFound())
-            .andExpect(jsonPath("$.code").value("STUDENT_DASHBOARD_NOT_FOUND"));
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.metrics.totalAttempts").value(0));
         mvc.perform(get("/api/learning/student/dashboard")
                 .header("Authorization", bearer("STUDENT", 9999L))
                 .param("timeZone", "Mars/Olympus"))
@@ -205,7 +206,12 @@ class StudentDashboardDatabaseFailureIntegrationTest {
 
     @Test
     void returnsStructuredDatabaseFailure() throws Exception {
-        when(students.findByLoginUserId(eq(9001L))).thenThrow(new DataAccessResourceFailureException("database offline"));
+        StudentProfile existing = new StudentProfile();
+        existing.setLoginUserId(9001L);
+        existing.setFullName("Student");
+        when(students.findByLoginUserId(eq(9001L)))
+            .thenReturn(java.util.Optional.of(existing))
+            .thenThrow(new DataAccessResourceFailureException("database offline"));
         mvc.perform(get("/api/learning/student/dashboard")
                 .header("Authorization", bearer("STUDENT", 9001L)))
             .andExpect(status().isServiceUnavailable())

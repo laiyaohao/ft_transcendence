@@ -30,6 +30,11 @@ public record QuestionRequest(
 ) {
     public record MarkingComponentRequest(
         @NotBlank @Size(max = 1000) String description,
-        @NotNull @DecimalMin(value = "0.01") @Digits(integer = 4, fraction = 2) BigDecimal marks
-    ) {}
+        @NotNull @DecimalMin(value = "0.01") @Digits(integer = 4, fraction = 2) BigDecimal marks,
+        @Size(max = 100) List<@NotBlank @Size(max = 80) String> keywords
+    ) {
+        public MarkingComponentRequest {
+            keywords = keywords == null ? List.of() : List.copyOf(keywords);
+        }
+    }
 }

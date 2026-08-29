@@ -59,7 +59,7 @@ class StudentProfileRepositoryTest {
     }
 
     @Test
-    void validatesRequiredFieldsAndAllowsAnAbsentLoginIdentity() {
+    void allowsAnUnassignedProfileWhileValidatingRemainingIdentityFields() {
         StudentProfile missingOwner = profileFor(null, null, "Test Student");
         StudentProfile invalidOwner = profileFor(0L, null, "Test Student");
         StudentProfile missingName = profileFor(101L, null, "  ");
@@ -68,7 +68,7 @@ class StudentProfileRepositoryTest {
         invalidMembership.addClassMembership(null);
         StudentProfile unlinked = profileFor(101L, null, "Test Student");
 
-        assertFalse(validator.validate(missingOwner).isEmpty());
+        assertTrue(validator.validate(missingOwner).isEmpty());
         assertFalse(validator.validate(invalidOwner).isEmpty());
         assertFalse(validator.validate(missingName).isEmpty());
         assertFalse(validator.validate(invalidLogin).isEmpty());
