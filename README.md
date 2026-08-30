@@ -210,6 +210,17 @@ make production-up
 This command permanently deletes the VM's PostgreSQL and uploaded-document
 volumes. Never use it against data you need to keep.
 
+### Troubleshooting an existing local database
+
+PostgreSQL applies `POSTGRES_PW` only when its data volume is first created.
+After the first successful start, keep the same `POSTGRES_PW` in
+`../secrets.txt`; do not regenerate that file for an existing database. If an
+older local volume and a newly generated secrets file are combined, auth-service
+will report `password authentication failed for user "lumina"` even though
+PostgreSQL itself is healthy. Restore the password used when that volume was
+created to preserve its data. For a disposable VM test, use the explicit
+volume-reset command above instead.
+
 ### 7. Stop the VM stack
 
 ```bash

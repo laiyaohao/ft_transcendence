@@ -45,10 +45,12 @@ server {
     location = /healthz {
         access_log off;
         add_header Cache-Control "no-store" always;
-        return 204;
+        return 200 "ok\n";
     }
 
-    return 444;
+    location / {
+        return 444;
+    }
 }
 
 server {
@@ -59,7 +61,7 @@ server {
     location = /healthz {
         access_log off;
         add_header Cache-Control "no-store" always;
-        return 204;
+        return 200 "ok\n";
     }
 
     location / {
@@ -106,6 +108,12 @@ server {
     proxy_connect_timeout 5s;
     proxy_read_timeout 60s;
     proxy_send_timeout 60s;
+
+    location = /healthz {
+        access_log off;
+        add_header Cache-Control "no-store" always;
+        return 200 "ok\n";
+    }
 
     # Backend-to-backend coordination must never be exposed through the browser
     # proxy. This prefix would otherwise be matched by the generic /learning/

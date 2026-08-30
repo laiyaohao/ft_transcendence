@@ -17,7 +17,7 @@ umask 077
   printf 'LEARNING_MARKING_SYNC_KEY='; openssl rand -hex 32
   printf 'BOOTSTRAP_TUTOR_PASSWORD=Lumina!'; openssl rand -hex 24
   printf '%s\n' 'BOOTSTRAP_TUTOR_EMAIL=admin@lumina.sg'
-  printf '%s\n' 'BOOTSTRAP_TUTOR_FULL_NAME=Lumina Administrator'
+  printf '%s\n' 'BOOTSTRAP_TUTOR_FULL_NAME="Lumina Administrator"'
   printf '%s\n' 'AI_ENGINE_API_KEY=REPLACE_WITH_AN_APPROVED_AI_PROVIDER_KEY'
 } > "$secrets_path"
 
