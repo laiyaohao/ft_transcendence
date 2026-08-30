@@ -7,6 +7,13 @@ map $http_upgrade $connection_upgrade {
     '' close;
 }
 
+# Keep HSTS disabled while the VM is using a self-signed certificate. Enable it
+# only after the browser trusts the edge certificate and HTTPS has been tested.
+map "${SECURITY_HEADERS_HSTS_ENABLED}" $strict_transport_security {
+    default "";
+    "true" "max-age=31536000; includeSubDomains";
+}
+
 upstream frontend_upstream {
     server frontend:3000;
     keepalive 16;
@@ -89,7 +96,7 @@ server {
 
     # The edge owns HSTS. Upstream copies are hidden so browsers receive one
     # authoritative policy after TLS has been terminated successfully.
-    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header Strict-Transport-Security $strict_transport_security always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
     add_header X-Frame-Options "DENY" always;

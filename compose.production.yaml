@@ -20,21 +20,21 @@ services:
     networks: [application]
     environment:
       FRONTEND_ALLOWED_ORIGINS: ${FRONTEND_ALLOWED_ORIGINS:?Set FRONTEND_ALLOWED_ORIGINS to the public HTTPS origin}
-      SECURITY_HEADERS_HSTS_ENABLED: "true"
+      SECURITY_HEADERS_HSTS_ENABLED: ${SECURITY_HEADERS_HSTS_ENABLED:-false}
 
   grading-service:
     ports: !reset []
     networks: [application]
     environment:
       FRONTEND_ALLOWED_ORIGINS: ${FRONTEND_ALLOWED_ORIGINS:?Set FRONTEND_ALLOWED_ORIGINS to the public HTTPS origin}
-      SECURITY_HEADERS_HSTS_ENABLED: "true"
+      SECURITY_HEADERS_HSTS_ENABLED: ${SECURITY_HEADERS_HSTS_ENABLED:-false}
 
   learning-service:
     ports: !reset []
     networks: [application]
     environment:
       FRONTEND_ALLOWED_ORIGINS: ${FRONTEND_ALLOWED_ORIGINS:?Set FRONTEND_ALLOWED_ORIGINS to the public HTTPS origin}
-      SECURITY_HEADERS_HSTS_ENABLED: "true"
+      SECURITY_HEADERS_HSTS_ENABLED: ${SECURITY_HEADERS_HSTS_ENABLED:-false}
 
   frontend:
     ports: !reset []
@@ -70,8 +70,9 @@ services:
     environment:
       # Limit the official Nginx image's template substitution to this one
       # value. This preserves Nginx variables such as $host and $remote_addr.
-      NGINX_ENVSUBST_FILTER: PUBLIC_APP_DOMAIN
+      NGINX_ENVSUBST_FILTER: PUBLIC_APP_DOMAIN|SECURITY_HEADERS_HSTS_ENABLED
       PUBLIC_APP_DOMAIN: ${PUBLIC_APP_DOMAIN:?Set PUBLIC_APP_DOMAIN to the public DNS hostname}
+      SECURITY_HEADERS_HSTS_ENABLED: ${SECURITY_HEADERS_HSTS_ENABLED:-false}
     volumes:
       - ./docker/nginx/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
       - type: bind

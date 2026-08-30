@@ -1,5 +1,6 @@
 package com.fttranscendence.grading.service;
 
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -28,15 +29,38 @@ public class AiOcrService {
         this.restTemplate = restTemplate;
     }
 
+    /**
+     * OCR and marking share this provider credential. Reject generated-template
+     * values during startup so a deployment cannot appear healthy until its
+     * real server-side AI credential has been supplied.
+     */
+    @PostConstruct
+    void validateProviderCredential() {
+        validateApiKey(apiKey);
+    }
+
+    static void validateApiKey(String candidate) {
+        String normalized = candidate == null ? "" : candidate.trim();
+        if (normalized.isBlank()
+                || normalized.toLowerCase(java.util.Locale.ROOT).contains("change-me")
+                || normalized.startsWith("REPLACE_WITH_")) {
+            throw new IllegalArgumentException(
+                "AI_ENGINE_API_KEY must be a real provider credential, not a placeholder");
+        }
+    }
+
     public String extractTextFromImage(String base64Image) {
-        return extractBase64(base64Image).text();
+        return extractBase64(base64Image, "image/jpeg").text();
     }
 
     public OcrResult extract(byte[] bytes, String mediaType) {
-        return extractBase64(java.util.Base64.getEncoder().encodeToString(bytes));
+        if (!isSupportedImage(mediaType)) {
+            return new OcrResult("Error: OCR accepts JPEG or PNG images only.", 0, true);
+        }
+        return extractBase64(java.util.Base64.getEncoder().encodeToString(bytes), mediaType);
     }
 
-    private OcrResult extractBase64(String base64Image) {
+    private OcrResult extractBase64(String base64Image, String mediaType) {
         // Strict prompt specifically optimized for handwritten math & equations
         String prompt = "You are a precise mathematical OCR engine. " +
                         "Extract all printed text and handwritten calculations exactly as written. " +
@@ -45,7 +69,7 @@ public class AiOcrService {
 
         List<Map<String, Object>> contentArray = List.of(
             Map.of("type", "text", "text", prompt),
-            Map.of("type", "image_url", "image_url", Map.of("url", "data:image/jpeg;base64," + base64Image))
+            Map.of("type", "image_url", "image_url", Map.of("url", "data:" + mediaType + ";base64," + base64Image))
         );
 
         Map<String, Object> userMessage = Map.of("role", "user", "content", contentArray);
@@ -93,5 +117,8 @@ public class AiOcrService {
         return rawText.replaceAll("(?s)<think>.*?</think>", "").trim();
     }
     private double confidence(String text) { return text.matches(".*[A-Za-z0-9].*") ? (text.length() < 8 ? .65 : .94) : .4; }
+    private boolean isSupportedImage(String mediaType) {
+        return "image/jpeg".equals(mediaType) || "image/png".equals(mediaType);
+    }
     public record OcrResult(String text, double confidence, boolean unreadable) { }
 }

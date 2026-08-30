@@ -15,6 +15,8 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -34,6 +36,15 @@ class AiOcrServiceTest {
         ReflectionTestUtils.setField(service, "apiUrl", "http://localhost/ocr-test");
         ReflectionTestUtils.setField(service, "visionModel", "test-vision-model");
         ReflectionTestUtils.setField(service, "apiKey", "test-api-key");
+    }
+
+    @Test
+    void rejectsMissingAndTemplateProviderCredentials() {
+        assertThrows(IllegalArgumentException.class, () -> AiOcrService.validateApiKey(null));
+        assertThrows(IllegalArgumentException.class,
+            () -> AiOcrService.validateApiKey("REPLACE_WITH_AN_APPROVED_AI_PROVIDER_KEY"));
+        assertThrows(IllegalArgumentException.class, () -> AiOcrService.validateApiKey("change-me-key"));
+        assertDoesNotThrow(() -> AiOcrService.validateApiKey("sk-real-provider-key"));
     }
 
     @Test
@@ -62,6 +73,37 @@ class AiOcrServiceTest {
         );
         assertEquals("Bearer test-api-key", entityCaptor.getValue().getHeaders().getFirst("Authorization"));
         assertTrue(entityCaptor.getValue().getBody().toString().contains("encoded-image"));
+    }
+
+    @Test
+    void preservesTheUploadedImageMediaTypeForVisionProviders() {
+        Map<String, Object> response = Map.of(
+            "choices", List.of(Map.of("message", Map.of("content", "recognised text")))
+        );
+        when(restTemplate.postForObject(eq("http://localhost/ocr-test"), any(HttpEntity.class), eq(Map.class)))
+            .thenReturn(response);
+
+        service.extract(new byte[] {1, 2, 3}, "image/png");
+
+        ArgumentCaptor<HttpEntity> entityCaptor = ArgumentCaptor.forClass(HttpEntity.class);
+        verify(restTemplate).postForObject(eq("http://localhost/ocr-test"), entityCaptor.capture(), eq(Map.class));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = (Map<String, Object>) entityCaptor.getValue().getBody();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> messages = (List<Map<String, Object>>) payload.get("messages");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> content = (List<Map<String, Object>>) messages.get(0).get("content");
+        @SuppressWarnings("unchecked")
+        Map<String, String> imageUrl = (Map<String, String>) content.get(1).get("image_url");
+        assertEquals("data:image/png;base64,AQID", imageUrl.get("url"));
+    }
+
+    @Test
+    void rejectsNonImageOcrInputInsteadOfMislabellingItAsJpeg() {
+        AiOcrService.OcrResult result = service.extract(new byte[] {1, 2, 3}, "application/pdf");
+
+        assertTrue(result.unreadable());
+        assertTrue(result.text().contains("JPEG or PNG"));
     }
 
     @Test

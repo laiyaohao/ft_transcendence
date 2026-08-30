@@ -22,6 +22,12 @@ origin. The application does not guess either value. Detailed configuration,
 smoke checks, and remaining risks are in `docs/production-transport.md` and
 `docs/DEPLOYMENT-AND-CI-RECOMMENDATIONS.md`.
 
+**Deployment inputs now set:** the configured hostname is `lumina.sg`, with
+the sole browser origin `https://lumina.sg`. Runtime secrets are loaded from
+the external, Git-ignored `../secrets.txt`. A certificate/key covering
+`lumina.sg` and a real approved AI-provider key are still required before a
+trusted HTTPS deployment and AI marking can be verified.
+
 ## Issue 51 — Add Privacy Policy and Terms
 
 **Confirmed:** create public documents based on the current build and
