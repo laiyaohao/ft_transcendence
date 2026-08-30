@@ -42,10 +42,12 @@ describe("WorksheetBuilder", () => {
     await chooseClass(user); await continueToConfiguration(user);
     expect(screen.getByText(/Whole class.*P5 Curie/i)).toBeVisible();
     await configureWaterTopic(user);
+    await choose(user, "Question type", "Open ended");
+    await choose(user, "Difficulty", "Challenge");
     await user.click(screen.getByRole("button", { name: "Generate worksheet draft" }));
     expect(await screen.findByText("Explain evaporation.", { exact: false })).toBeVisible();
     expect(loadClasses).toHaveBeenCalledTimes(1);
-    expect(generate).toHaveBeenCalledWith(1, expect.objectContaining({ topicIds: [4] }), expect.any(String));
+    expect(generate).toHaveBeenCalledWith(1, expect.objectContaining({ topicIds: [4], questionType: "OPEN_ENDED", difficulty: "CHALLENGE" }), expect.any(String));
     await user.click(screen.getByRole("button", { name: "Approve & assign worksheet" }));
     expect(approve).toHaveBeenCalledWith(9, undefined);
   });

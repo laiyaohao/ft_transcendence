@@ -1,10 +1,12 @@
 export type QuestionType = "MULTIPLE_CHOICE" | "TRUE_FALSE" | "FILL_IN_THE_BLANK" | "SHORT_ANSWER" | "OPEN_ENDED" | "CALCULATION" | "DIAGRAM";
+export type QuestionDifficulty = "FOUNDATION" | "APPLICATION" | "CHALLENGE";
 export type QuestionArchiveState = "ACTIVE" | "ARCHIVED";
 export type SyllabusNodeType = "TOPIC" | "SUBTOPIC";
 
 export interface QuestionBankFilters {
   topicId?: number;
   questionType?: QuestionType;
+  difficulty?: QuestionDifficulty;
   archiveState?: QuestionArchiveState;
   /** A literal, case- and accent-insensitive search over code, prompt, and keywords. */
   search?: string;
@@ -17,6 +19,8 @@ export interface QuestionBankItem {
   code: string;
   syllabusTopic: { id: number; code: string; name: string; nodeType: SyllabusNodeType };
   questionType: QuestionType;
+  /** Optional while older test fixtures are migrated; API data always supplies it. */
+  difficulty?: QuestionDifficulty;
   prompt: string;
   totalMarks: number;
   archiveState: QuestionArchiveState;
@@ -52,6 +56,7 @@ export interface QuestionMutationRequest {
   code: string;
   syllabusTopicId: number;
   questionType: QuestionType;
+  difficulty?: QuestionDifficulty;
   prompt: string;
   totalMarks: number;
   modelAnswer: string;
@@ -76,6 +81,7 @@ const LEARNING_API_URL = process.env.NEXT_PUBLIC_LEARNING_API_URL || "http://loc
 const GRADING_API_URL = process.env.NEXT_PUBLIC_GRADING_API_URL || "http://localhost:8082";
 const QUESTION_BANK_PATH = "/api/learning/tutor/questions";
 const QUESTION_TYPES: readonly QuestionType[] = ["MULTIPLE_CHOICE", "TRUE_FALSE", "FILL_IN_THE_BLANK", "SHORT_ANSWER", "OPEN_ENDED", "CALCULATION", "DIAGRAM"];
+const QUESTION_DIFFICULTIES: readonly QuestionDifficulty[] = ["FOUNDATION", "APPLICATION", "CHALLENGE"];
 const WORKSHEET_DRAFT_QUESTION_IDS_KEY = "worksheet_draft_question_ids";
 
 function isNonEmptyString(value: unknown): value is string {
@@ -92,6 +98,10 @@ function isNonNegativeInteger(value: unknown): value is number {
 
 function isQuestionType(value: unknown): value is QuestionType {
   return typeof value === "string" && QUESTION_TYPES.includes(value as QuestionType);
+}
+
+function isQuestionDifficulty(value: unknown): value is QuestionDifficulty {
+  return typeof value === "string" && QUESTION_DIFFICULTIES.includes(value as QuestionDifficulty);
 }
 
 function isArchiveState(value: unknown): value is QuestionArchiveState {
@@ -114,6 +124,7 @@ function isQuestionBankItem(value: unknown): value is QuestionBankItem {
     && isNonEmptyString(candidate.code)
     && isSyllabusTopic(candidate.syllabusTopic)
     && isQuestionType(candidate.questionType)
+    && (candidate.difficulty === undefined || isQuestionDifficulty(candidate.difficulty))
     && isNonEmptyString(candidate.prompt)
     && typeof candidate.totalMarks === "number" && Number.isFinite(candidate.totalMarks) && candidate.totalMarks > 0
     && isArchiveState(candidate.archiveState);
@@ -188,6 +199,7 @@ function queryString(filters: QuestionBankFilters): string {
   if (!isNonNegativeInteger(page) || !Number.isSafeInteger(size) || size < 1 || size > 100
     || (filters.topicId !== undefined && !isPositiveId(filters.topicId))
     || (filters.questionType !== undefined && !isQuestionType(filters.questionType))
+    || (filters.difficulty !== undefined && !isQuestionDifficulty(filters.difficulty))
     || (filters.archiveState !== undefined && !isArchiveState(filters.archiveState))
     || (filters.search !== undefined && (typeof filters.search !== "string" || filters.search.trim().length > 120))) {
     throw new QuestionApiError("Question bank filters are invalid.", 400);
@@ -195,6 +207,7 @@ function queryString(filters: QuestionBankFilters): string {
   const params = new URLSearchParams({ page: String(page), size: String(size) });
   if (filters.topicId !== undefined) params.set("topicId", String(filters.topicId));
   if (filters.questionType !== undefined) params.set("questionType", filters.questionType);
+  if (filters.difficulty !== undefined) params.set("difficulty", filters.difficulty);
   if (filters.archiveState !== undefined) params.set("archiveState", filters.archiveState);
   const search = filters.search?.trim();
   if (search) params.set("search", search);

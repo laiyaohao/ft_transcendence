@@ -89,6 +89,23 @@ class WorksheetGenerationTest {
         assertEquals(0, jdbc.queryForObject("select count(*) from worksheet_generation_requests", Integer.class));
     }
 
+    @Test
+    void generatesAP6ScienceWorksheetFromSeededQuestionsUsingTypeAndDifficulty() {
+        TutorClass tutorClass = tutorClass();
+        long topic = topics.findByCode("SCI_P6_ENERGY_FORMS_USES_PHOTOSYNTHESIS").orElseThrow().getId();
+
+        WorksheetRequests.GenerationRequestResponse response = service.generate(TUTOR_ID, tutorClass.getId(), "p6-seeded-question-key",
+            new WorksheetRequests.GenerateWorksheetRequest(WorksheetGenerationRequest.TargetMode.CLASS, List.of(topic),
+                1, Question.QuestionType.OPEN_ENDED, Question.Difficulty.CHALLENGE, null, "P6 Science investigation", null, null,
+                Worksheet.WorksheetType.STANDARD));
+
+        assertEquals(WorksheetGenerationRequest.Status.SUCCEEDED, response.status());
+        assertNotNull(response.worksheet());
+        assertEquals(List.of("P6SCI-PHOTO-003"), response.worksheet().questions().stream()
+            .map(WorksheetRequests.QuestionSummary::code).toList());
+        assertEquals(Question.Difficulty.CHALLENGE, response.difficulty());
+    }
+
     private TutorClass tutorClass() {
         TutorClass tutorClass = new TutorClass();
         tutorClass.setTutorId(TUTOR_ID); tutorClass.setClassName("Generated science"); tutorClass.setSubject("Science"); tutorClass.setLevel("P5");

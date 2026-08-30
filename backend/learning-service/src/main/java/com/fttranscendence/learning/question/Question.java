@@ -61,6 +61,13 @@ public class Question {
         ARCHIVED
     }
 
+    /** Curriculum demand level used for question-bank and worksheet filtering. */
+    public enum Difficulty {
+        FOUNDATION,
+        APPLICATION,
+        CHALLENGE
+    }
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -93,6 +100,11 @@ public class Question {
     @Enumerated(EnumType.STRING)
     @Column(name = "question_type", nullable = false, length = 32)
     private QuestionType questionType;
+
+    @NotNull
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    private Difficulty difficulty = Difficulty.FOUNDATION;
 
     @NotBlank
     @Size(max = 4000)
@@ -319,6 +331,14 @@ public class Question {
 
     public void setQuestionType(QuestionType questionType) {
         this.questionType = questionType;
+    }
+
+    public Difficulty getDifficulty() {
+        return difficulty;
+    }
+
+    public void setDifficulty(Difficulty difficulty) {
+        this.difficulty = difficulty;
     }
 
     public String getPrompt() {

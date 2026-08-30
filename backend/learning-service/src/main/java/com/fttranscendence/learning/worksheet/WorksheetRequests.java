@@ -21,6 +21,7 @@ public final class WorksheetRequests {
         @NotEmpty @Size(max = 100) List<@Positive Long> topicIds,
         @NotNull @Positive @Max(100) Integer questionCount,
         Question.QuestionType questionType,
+        Question.Difficulty difficulty,
         @Future LocalDateTime dueAt,
         @Size(max = 200) String title,
         @Size(max = 2000) String instructions,
@@ -31,8 +32,15 @@ public final class WorksheetRequests {
         public GenerateWorksheetRequest(WorksheetGenerationRequest.TargetMode targetMode, List<Long> topicIds,
                 Integer questionCount, Question.QuestionType questionType, LocalDateTime dueAt, String title,
                 String instructions, List<Long> studentIds) {
-            this(targetMode, topicIds, questionCount, questionType, dueAt, title, instructions, studentIds,
+            this(targetMode, topicIds, questionCount, questionType, null, dueAt, title, instructions, studentIds,
                 Worksheet.WorksheetType.STANDARD);
+        }
+
+        public GenerateWorksheetRequest(WorksheetGenerationRequest.TargetMode targetMode, List<Long> topicIds,
+                Integer questionCount, Question.QuestionType questionType, LocalDateTime dueAt, String title,
+                String instructions, List<Long> studentIds, Worksheet.WorksheetType worksheetType) {
+            this(targetMode, topicIds, questionCount, questionType, null, dueAt, title, instructions, studentIds,
+                worksheetType);
         }
     }
 
@@ -46,11 +54,18 @@ public final class WorksheetRequests {
         @NotEmpty @Size(max = 100) List<@Positive Long> topicIds,
         @NotNull @Positive @Max(100) Integer questionCount,
         Question.QuestionType questionType,
+        Question.Difficulty difficulty,
         @Future LocalDateTime dueAt,
         @Size(max = 200) String title,
         @Size(max = 2000) String instructions,
         @Size(max = 100) List<@Positive Long> studentIds
-    ) { }
+    ) {
+        public GenerateDiagnosticWorksheetRequest(WorksheetGenerationRequest.TargetMode targetMode, List<Long> topicIds,
+                Integer questionCount, Question.QuestionType questionType, LocalDateTime dueAt, String title,
+                String instructions, List<Long> studentIds) {
+            this(targetMode, topicIds, questionCount, questionType, null, dueAt, title, instructions, studentIds);
+        }
+    }
 
     public record UpdateWorksheetRequest(
         @Size(max = 200) String title,
@@ -92,7 +107,7 @@ public final class WorksheetRequests {
     }
 
     public record GenerationRequestResponse(Long id, Long classId, WorksheetGenerationRequest.TargetMode targetMode,
-        List<Long> topicIds, List<Long> studentIds, int questionCount, Question.QuestionType questionType,
+        List<Long> topicIds, List<Long> studentIds, int questionCount, Question.QuestionType questionType, Question.Difficulty difficulty,
         LocalDateTime dueAt, WorksheetGenerationRequest.Status status, String failureCode, String failureMessage,
         WorksheetResponse worksheet) { }
 

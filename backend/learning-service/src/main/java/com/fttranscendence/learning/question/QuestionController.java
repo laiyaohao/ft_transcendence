@@ -42,12 +42,13 @@ public class QuestionController {
     public QuestionService.QuestionPage list(
         @RequestParam(required = false) @Positive Long topicId,
         @RequestParam(required = false) Question.QuestionType questionType,
+        @RequestParam(required = false) Question.Difficulty difficulty,
         @RequestParam(defaultValue = "ACTIVE") Question.ArchiveState archiveState,
         @RequestParam(required = false) @Size(max = 120) String search,
         @RequestParam(defaultValue = "0") @Min(0) int page,
         @RequestParam(defaultValue = "25") @Min(1) @Max(100) int size
     ) {
-        return questionService.list(new QuestionService.QuestionQuery(topicId, questionType, archiveState, search, page, size));
+        return questionService.list(new QuestionService.QuestionQuery(topicId, questionType, difficulty, archiveState, search, page, size));
     }
 
     @GetMapping("/{questionId}")

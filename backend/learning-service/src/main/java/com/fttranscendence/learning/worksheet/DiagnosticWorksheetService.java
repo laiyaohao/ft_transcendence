@@ -85,7 +85,7 @@ public class DiagnosticWorksheetService {
             .collect(java.util.stream.Collectors.joining(" "));
         return worksheets.generate(tutorId, classId, idempotencyKey,
             new WorksheetRequests.GenerateWorksheetRequest(input.targetMode(), selectedTopics, input.questionCount(),
-                input.questionType(), input.dueAt(), input.title(), joinInstructions(input.instructions(), evidence), input.studentIds(),
+                input.questionType(), input.difficulty(), input.dueAt(), input.title(), joinInstructions(input.instructions(), evidence), input.studentIds(),
                 Worksheet.WorksheetType.DIAGNOSTIC));
     }
 

@@ -48,6 +48,8 @@ describe("QuestionList", () => {
 
     await user.click(screen.getByRole("button", { name: "Open ended" }));
     await waitFor(() => expect(loadQuestions).toHaveBeenLastCalledWith(expect.objectContaining({ page: 0, questionType: "OPEN_ENDED" })));
+    await user.click(screen.getByRole("button", { name: "Challenge" }));
+    await waitFor(() => expect(loadQuestions).toHaveBeenLastCalledWith(expect.objectContaining({ page: 0, questionType: "OPEN_ENDED", difficulty: "CHALLENGE" })));
     await choose(user, "Subject", "Science");
     await choose(user, "Level", "Primary 5");
     await choose(user, "Theme", "Cycles");

@@ -36,6 +36,7 @@ public class WorksheetGenerationRequest {
     @Enumerated(EnumType.STRING) @Column(name = "target_mode", nullable = false, length = 16) private TargetMode targetMode;
     @Column(name = "question_count", nullable = false) private int questionCount;
     @Enumerated(EnumType.STRING) @Column(name = "question_type", length = 32) private Question.QuestionType questionType;
+    @Enumerated(EnumType.STRING) @Column(name = "difficulty", length = 16) private Question.Difficulty difficulty;
     @Column(name = "due_at") private LocalDateTime dueAt;
     @Column(name = "idempotency_key", nullable = false, length = 128) private String idempotencyKey;
     @Column(name = "request_hash", nullable = false, length = 128) private String requestHash;
@@ -59,10 +60,10 @@ public class WorksheetGenerationRequest {
     protected WorksheetGenerationRequest() { }
 
     public WorksheetGenerationRequest(long tutorId, long classId, TargetMode targetMode, int questionCount,
-            Question.QuestionType questionType, LocalDateTime dueAt, String idempotencyKey, String requestHash,
+            Question.QuestionType questionType, Question.Difficulty difficulty, LocalDateTime dueAt, String idempotencyKey, String requestHash,
             List<Long> topicIds, Set<Long> studentIds) {
         this.tutorId = tutorId; this.classId = classId; this.targetMode = targetMode; this.questionCount = questionCount;
-        this.questionType = questionType; this.dueAt = dueAt; this.idempotencyKey = idempotencyKey; this.requestHash = requestHash;
+        this.questionType = questionType; this.difficulty = difficulty; this.dueAt = dueAt; this.idempotencyKey = idempotencyKey; this.requestHash = requestHash;
         this.topicIds = new ArrayList<>(topicIds); this.studentIds = new LinkedHashSet<>(studentIds);
     }
 
@@ -74,7 +75,7 @@ public class WorksheetGenerationRequest {
 
     public Long getId() { return id; } public Long getTutorId() { return tutorId; } public Long getClassId() { return classId; }
     public TargetMode getTargetMode() { return targetMode; } public int getQuestionCount() { return questionCount; }
-    public Question.QuestionType getQuestionType() { return questionType; } public LocalDateTime getDueAt() { return dueAt; }
+    public Question.QuestionType getQuestionType() { return questionType; } public Question.Difficulty getDifficulty() { return difficulty; } public LocalDateTime getDueAt() { return dueAt; }
     public String getIdempotencyKey() { return idempotencyKey; } public String getRequestHash() { return requestHash; }
     public Status getStatus() { return status; } public String getFailureCode() { return failureCode; }
     public String getFailureMessage() { return failureMessage; } public List<Long> getTopicIds() { return List.copyOf(topicIds); }

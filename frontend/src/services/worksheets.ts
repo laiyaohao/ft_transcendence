@@ -1,4 +1,4 @@
-import type { QuestionType } from "./questions";
+import type { QuestionDifficulty, QuestionType } from "./questions";
 
 export type WorksheetTargetMode = "CLASS" | "STUDENTS";
 export type WorksheetStatus = "DRAFT" | "APPROVED" | "ARCHIVED";
@@ -53,6 +53,7 @@ export interface GenerateWorksheetRequest {
   topicIds: number[];
   questionCount: number;
   questionType?: QuestionType;
+  difficulty?: QuestionDifficulty;
   dueAt?: string;
   title?: string;
   instructions?: string;

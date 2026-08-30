@@ -44,11 +44,13 @@ public interface QuestionRepository extends Repository<Question, Long> {
         where topic.id in :topicIds
           and question.archiveState = com.fttranscendence.learning.question.Question.ArchiveState.ACTIVE
           and (:questionType is null or question.questionType = :questionType)
+          and (:difficulty is null or question.difficulty = :difficulty)
         order by topic.id asc, question.code asc, question.id asc
         """)
     List<Question> findDeterministicActiveQuestionBank(
         @Param("topicIds") List<Long> topicIds,
-        @Param("questionType") Question.QuestionType questionType
+        @Param("questionType") Question.QuestionType questionType,
+        @Param("difficulty") Question.Difficulty difficulty
     );
 
     @Query(
@@ -58,6 +60,7 @@ public interface QuestionRepository extends Repository<Question, Long> {
             join fetch question.syllabusTopic topic
             where (:topicId is null or topic.id = :topicId)
               and (:questionType is null or question.questionType = :questionType)
+              and (:difficulty is null or question.difficulty = :difficulty)
               and question.archiveState = :archiveState
               and (
                 :search is null
@@ -82,6 +85,7 @@ public interface QuestionRepository extends Repository<Question, Long> {
             from Question question
             where (:topicId is null or question.syllabusTopic.id = :topicId)
               and (:questionType is null or question.questionType = :questionType)
+              and (:difficulty is null or question.difficulty = :difficulty)
               and question.archiveState = :archiveState
               and (
                 :search is null
@@ -104,6 +108,7 @@ public interface QuestionRepository extends Repository<Question, Long> {
     Page<Question> findQuestionBank(
         @Param("topicId") Long topicId,
         @Param("questionType") Question.QuestionType questionType,
+        @Param("difficulty") Question.Difficulty difficulty,
         @Param("archiveState") Question.ArchiveState archiveState,
         @Param("search") String search,
         Pageable pageable

@@ -15,6 +15,7 @@ import SyllabusPicker from "@/components/syllabus/SyllabusPicker";
 import {
   QuestionApiError,
   type QuestionArchiveState,
+  type QuestionDifficulty,
   type QuestionMutationRequest,
   type QuestionType,
   type TutorQuestion,
@@ -30,10 +31,13 @@ const questionTypes: readonly { value: QuestionType; label: string }[] = [
   { value: "CALCULATION", label: "Calculation" },
   { value: "DIAGRAM", label: "Diagram" },
 ];
+const difficulties: readonly { value: QuestionDifficulty; label: string }[] = [
+  { value: "FOUNDATION", label: "Foundation" }, { value: "APPLICATION", label: "Application" }, { value: "CHALLENGE", label: "Challenge" },
+];
 
 type MarkingCriterion = { description: string; marks: string; keywords: string };
 type FormValues = {
-  code: string; syllabusTopicId: string; questionType: QuestionType; prompt: string; totalMarks: string;
+  code: string; syllabusTopicId: string; questionType: QuestionType; difficulty: QuestionDifficulty; prompt: string; totalMarks: string;
   modelAnswer: string; archiveState: QuestionArchiveState; markingComponents: MarkingCriterion[]; keywords: string;
 };
 type FieldErrors = Record<string, string>;
@@ -54,13 +58,13 @@ const fieldSx = {
 } as const;
 
 function blankValues(): FormValues {
-  return { code: "", syllabusTopicId: "", questionType: "OPEN_ENDED", prompt: "", totalMarks: "", modelAnswer: "", archiveState: "ACTIVE", markingComponents: [{ description: "", marks: "", keywords: "" }], keywords: "" };
+  return { code: "", syllabusTopicId: "", questionType: "OPEN_ENDED", difficulty: "FOUNDATION", prompt: "", totalMarks: "", modelAnswer: "", archiveState: "ACTIVE", markingComponents: [{ description: "", marks: "", keywords: "" }], keywords: "" };
 }
 
 function initialValues(question?: TutorQuestion): FormValues {
   if (!question) return blankValues();
   return {
-    code: question.code, syllabusTopicId: String(question.syllabusTopic.id), questionType: question.questionType, prompt: question.prompt,
+    code: question.code, syllabusTopicId: String(question.syllabusTopic.id), questionType: question.questionType, difficulty: question.difficulty ?? "FOUNDATION", prompt: question.prompt,
     totalMarks: String(question.totalMarks), modelAnswer: question.modelAnswer, archiveState: question.archiveState,
     markingComponents: question.markingComponents.map((component) => ({ description: component.description, marks: String(component.marks), keywords: component.keywords.join(", ") })),
     keywords: question.keywords.join(", "),
@@ -110,7 +114,7 @@ export function validateQuestionForm(values: FormValues): FieldErrors {
 
 function requestFor(values: FormValues): QuestionMutationRequest {
   return {
-    code: values.code.trim(), syllabusTopicId: Number(values.syllabusTopicId), questionType: values.questionType,
+    code: values.code.trim(), syllabusTopicId: Number(values.syllabusTopicId), questionType: values.questionType, difficulty: values.difficulty,
     prompt: values.prompt.trim(), totalMarks: Number(values.totalMarks), modelAnswer: values.modelAnswer.trim(), archiveState: values.archiveState,
     markingComponents: values.markingComponents.map((component) => ({ description: component.description.trim(), marks: Number(component.marks), keywords: component.keywords.split(",").map((keyword) => keyword.trim()).filter(Boolean) })),
     keywords: values.keywords.split(",").map((keyword) => keyword.trim()).filter(Boolean),
@@ -151,6 +155,7 @@ export default function QuestionForm({ mode, initialQuestion, submitQuestion, on
       <TextField required fullWidth label="Question code" value={values.code} onChange={(event) => update("code", event.target.value)} error={Boolean(errors.code)} helperText={errors.code || "A stable reference; it will be stored in uppercase."} slotProps={{ htmlInput: { maxLength: 120, "aria-label": "Question code" } }} sx={fieldSx} />
       <Box sx={{ minWidth: 0 }}><SyllabusPicker value={Number(values.syllabusTopicId) || null} onChange={(topicId) => update("syllabusTopicId", topicId ? String(topicId) : "")} label="Syllabus topic" required error={errors.syllabusTopicId} helperText="Choose an active topic, then optionally refine it to a subtopic." loadSyllabus={loadSyllabus} /></Box>
       <TextField select fullWidth required label="Question type" value={values.questionType} onChange={(event) => update("questionType", event.target.value as QuestionType)} sx={fieldSx}>{questionTypes.map((type) => <MenuItem key={type.value} value={type.value}>{type.label}</MenuItem>)}</TextField>
+      <TextField select fullWidth required label="Difficulty" value={values.difficulty} onChange={(event) => update("difficulty", event.target.value as QuestionDifficulty)} sx={fieldSx}>{difficulties.map((item) => <MenuItem key={item.value} value={item.value}>{item.label}</MenuItem>)}</TextField>
       <TextField select fullWidth required label="Availability" value={values.archiveState} onChange={(event) => update("archiveState", event.target.value as QuestionArchiveState)} sx={fieldSx}><MenuItem value="ACTIVE">Active — can be used in worksheets</MenuItem><MenuItem value="ARCHIVED">Archived — kept for records only</MenuItem></TextField>
       <TextField required fullWidth multiline minRows={4} label="Question prompt" value={values.prompt} onChange={(event) => update("prompt", event.target.value)} error={Boolean(errors.prompt)} helperText={errors.prompt} slotProps={{ htmlInput: { maxLength: 4000, "aria-label": "Question prompt" } }} sx={{ ...fieldSx, gridColumn: { sm: "1 / -1" } }} />
       <TextField required fullWidth label="Total marks" value={values.totalMarks} onChange={(event) => update("totalMarks", event.target.value)} error={Boolean(errors.totalMarks)} helperText={errors.totalMarks || "Use up to two decimal places."} slotProps={{ htmlInput: { inputMode: "decimal", "aria-label": "Total marks" } }} sx={fieldSx} />

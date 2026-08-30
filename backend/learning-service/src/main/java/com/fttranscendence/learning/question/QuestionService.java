@@ -29,7 +29,7 @@ public class QuestionService {
     @Transactional(readOnly = true)
     public QuestionPage list(QuestionQuery query) {
         Page<Question> result = questions.findQuestionBank(
-            query.topicId(), query.questionType(), query.archiveState(), normalizeSearch(query.search()),
+            query.topicId(), query.questionType(), query.difficulty(), query.archiveState(), normalizeSearch(query.search()),
             PageRequest.of(query.page(), query.size())
         );
         return new QuestionPage(
@@ -95,6 +95,7 @@ public class QuestionService {
         question.setCode(normalizedCode(request.code()));
         question.setSyllabusTopic(topic);
         question.setQuestionType(request.questionType());
+        question.setDifficulty(request.difficulty() == null ? Question.Difficulty.FOUNDATION : request.difficulty());
         question.setPrompt(request.prompt().trim());
         question.setTotalMarks(request.totalMarks());
         question.setModelAnswer(request.modelAnswer().trim());
@@ -140,6 +141,7 @@ public class QuestionService {
         if (!question.getCode().equals(normalizedCode(request.code()))
             || !question.getSyllabusTopic().getId().equals(request.syllabusTopicId())
             || question.getQuestionType() != request.questionType()
+            || question.getDifficulty() != (request.difficulty() == null ? Question.Difficulty.FOUNDATION : request.difficulty())
             || !question.getPrompt().equals(request.prompt().trim())
             || question.getTotalMarks().compareTo(request.totalMarks()) != 0
             || !question.getModelAnswer().equals(request.modelAnswer().trim())
@@ -190,6 +192,7 @@ public class QuestionService {
     public record QuestionQuery(
         Long topicId,
         Question.QuestionType questionType,
+        Question.Difficulty difficulty,
         Question.ArchiveState archiveState,
         String search,
         int page,
@@ -210,6 +213,7 @@ public class QuestionService {
         String code,
         SyllabusTopicSummary syllabusTopic,
         Question.QuestionType questionType,
+        Question.Difficulty difficulty,
         String prompt,
         BigDecimal totalMarks,
         Question.ArchiveState archiveState
@@ -218,7 +222,7 @@ public class QuestionService {
             SyllabusTopic topic = question.getSyllabusTopic();
             return new QuestionItem(question.getId(), question.getCode(), new SyllabusTopicSummary(
                 topic.getId(), topic.getCode(), topic.getName(), topic.getNodeType()),
-                question.getQuestionType(), question.getPrompt(), question.getTotalMarks(), question.getArchiveState());
+                question.getQuestionType(), question.getDifficulty(), question.getPrompt(), question.getTotalMarks(), question.getArchiveState());
         }
     }
 
@@ -234,6 +238,7 @@ public class QuestionService {
         String code,
         SyllabusTopicSummary syllabusTopic,
         Question.QuestionType questionType,
+        Question.Difficulty difficulty,
         String prompt,
         BigDecimal totalMarks,
         String modelAnswer,
@@ -247,7 +252,7 @@ public class QuestionService {
             SyllabusTopic topic = question.getSyllabusTopic();
             return new QuestionDetail(
                 question.getId(), question.getCode(), new SyllabusTopicSummary(topic.getId(), topic.getCode(), topic.getName(), topic.getNodeType()),
-                question.getQuestionType(), question.getPrompt(), question.getTotalMarks(), question.getModelAnswer(), question.getArchiveState(),
+                question.getQuestionType(), question.getDifficulty(), question.getPrompt(), question.getTotalMarks(), question.getModelAnswer(), question.getArchiveState(),
                 question.getMarkingComponents().stream().map(component -> new MarkingComponentDetail(component.getPosition(), component.getDescription(), component.getMarks(), component.getKeywords())).toList(),
                 question.getKeywords(), question.getCreatedAt(), question.getUpdatedAt()
             );

@@ -21,6 +21,7 @@ public record QuestionRequest(
     @NotBlank @Size(max = 120) String code,
     @NotNull @Positive Long syllabusTopicId,
     @NotNull Question.QuestionType questionType,
+    Question.Difficulty difficulty,
     @NotBlank @Size(max = 4000) String prompt,
     @NotNull @DecimalMin(value = "0.01") @Digits(integer = 4, fraction = 2) BigDecimal totalMarks,
     @NotBlank @Size(max = 4000) String modelAnswer,
