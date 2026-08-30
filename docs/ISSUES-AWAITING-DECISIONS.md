@@ -12,13 +12,14 @@ subject-profile screen. Implementation is in progress.
 
 ## Issue 50 — Harden validation, headers, secrets and transport
 
-**Recommendation accepted pending deployment:** use a single public Nginx
-edge, terminate TLS there, redirect HTTP to HTTPS, and publish only ports 80
-and 443. Keep auth, grading, learning, PostgreSQL, and Adminer on the private
-Compose network. Set `FRONTEND_ALLOWED_ORIGINS` to the final HTTPS application
-origin only and enable HSTS after the TLS edge is verified. Keep the current
-CSP deny-by-default; add external analytics or asset origins only when they are
-actually introduced. Detailed risks and rollout guidance are in
+**Implemented pending deployment inputs:** a production Compose overlay now
+uses a single public Nginx edge, redirects HTTP to HTTPS, terminates TLS, and
+publishes only ports 80 and 443. Auth, grading, learning, PostgreSQL, Adminer,
+and the frontend have no production host-port mapping. Before deployment, the
+operator must still select the public DNS hostname and provide matching PEM
+certificate/key paths; then set `FRONTEND_ALLOWED_ORIGINS` to that one HTTPS
+origin. The application does not guess either value. Detailed configuration,
+smoke checks, and remaining risks are in `docs/production-transport.md` and
 `docs/DEPLOYMENT-AND-CI-RECOMMENDATIONS.md`.
 
 ## Issue 51 — Add Privacy Policy and Terms
@@ -44,8 +45,8 @@ wiring remains unchanged. Implementation is in progress.
 **Skipped at user request. Recommendation:** use the Nginx/private-network/TLS
 edge described above; verify the PostgreSQL data mount, keep a named upload
 volume, and create encrypted database/upload backups before a public launch.
-Do not add Nginx or make port-exposure changes until the domain and certificate
-source are available.
+The Issue 50 production transport overlay provides the Nginx/private-network
+topology, but the broader Compose deployment work remains skipped.
 
 ## Issue 55 — Configure CI/CD
 
