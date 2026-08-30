@@ -16,10 +16,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 
 import Stack from "@/components/lumina-stack";
 import PageReview from "@/components/submissions/PageReview";
+import { getBrowserSession } from "@/lib/auth";
 import { createOcrDocument, releasePagePreview, validateUploadFiles, type UploadPage } from "@/services/submissions";
 import { fetchTutorClasses, type TutorClass } from "@/services/classes";
-import { fetchTutorStudents, type TutorStudent } from "@/services/students";
-import { fetchSubmissionWorksheets, fetchTutorWorksheet, type TutorWorksheet } from "@/services/worksheets";
+import { fetchStudentSelfProfile, fetchTutorStudents, type StudentSelfProfile, type TutorStudent } from "@/services/students";
+import { fetchStudentWorksheets, fetchSubmissionWorksheets, fetchTutorWorksheet, type StudentWorksheet, type TutorWorksheet } from "@/services/worksheets";
 
 const button = { minHeight: 42, textTransform: "none", borderRadius: "10px" };
 const primary = { ...button, bgcolor: "#9E3A24", color: "#FFFDFA", "&:hover": { bgcolor: "#8A3120" } };
@@ -31,7 +32,7 @@ function positiveId(value: string | null): number | null {
   return Number.isSafeInteger(id) && id > 0 ? id : null;
 }
 
-function UploadWizard() {
+function TutorUploadWizard() {
   const router = useRouter();
   const params = useSearchParams();
   const requestedClassId = positiveId(params.get("classId"));
@@ -157,4 +158,131 @@ function UploadWizard() {
   </Box></Box>;
 }
 
-export default function Page() { return <React.Suspense fallback={null}><UploadWizard /></React.Suspense>; }
+/**
+ * Students may upload only work assigned to their authenticated profile.  This
+ * deliberately has no class/student selector: those values are authoritative
+ * server-side and a Student must never call the Tutor selection endpoints.
+ */
+function StudentUploadWizard() {
+  const router = useRouter();
+  const params = useSearchParams();
+  const requestedWorksheetId = positiveId(params.get("worksheetId")) ?? positiveId(params.get("ws"));
+  const [profile, setProfile] = React.useState<StudentSelfProfile | null>(null);
+  const [worksheet, setWorksheet] = React.useState<StudentWorksheet | null>(null);
+  const [loading, setLoading] = React.useState(requestedWorksheetId !== null);
+  const [selectionError, setSelectionError] = React.useState<string | null>(requestedWorksheetId === null ? "Choose an assigned worksheet from My Worksheets before uploading." : null);
+  const [retryCount, setRetryCount] = React.useState(0);
+  const [pages, setPages] = React.useState<UploadPage[]>([]);
+  const [errors, setErrors] = React.useState<string[]>([]);
+  const [dragOver, setDragOver] = React.useState(false);
+  const [uploading, setUploading] = React.useState(false);
+
+  React.useEffect(() => {
+    if (requestedWorksheetId === null) return;
+    let active = true;
+    queueMicrotask(() => { if (active) { setLoading(true); setSelectionError(null); setProfile(null); setWorksheet(null); } });
+    void Promise.all([fetchStudentSelfProfile(), fetchStudentWorksheets({ status: "ASSIGNED" })])
+      .then(([loadedProfile, assigned]) => {
+        if (!active) return;
+        const selected = assigned.find((item) => item.id === requestedWorksheetId) ?? null;
+        if (selected === null) {
+          setSelectionError("This worksheet is not assigned to you or is no longer available for upload.");
+          return;
+        }
+        setProfile(loadedProfile);
+        setWorksheet(selected);
+      })
+      .catch((error: unknown) => {
+        if (active) setSelectionError(error instanceof Error ? error.message : "Your assigned worksheets could not be loaded. Please try again.");
+      })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [requestedWorksheetId, retryCount]);
+
+  const add = (files: File[]) => {
+    const result = validateUploadFiles(files, pages);
+    setPages((current) => [...current, ...result.pages]);
+    setErrors(result.errors);
+  };
+  const move = (id: string, direction: -1 | 1) => setPages((current) => {
+    const index = current.findIndex((page) => page.id === id);
+    const next = index + direction;
+    if (index < 0 || next < 0 || next >= current.length) return current;
+    const copy = [...current];
+    [copy[index], copy[next]] = [copy[next], copy[index]];
+    return copy;
+  });
+  const remove = (id: string) => setPages((current) => {
+    const page = current.find((item) => item.id === id);
+    if (page) releasePagePreview(page);
+    return current.filter((item) => item.id !== id);
+  });
+  const replace = (id: string, file: File) => {
+    const old = pages.find((page) => page.id === id);
+    if (!old) return;
+    const result = validateUploadFiles([file], pages.filter((page) => page.id !== id));
+    if (result.errors.length > 0) { setErrors(result.errors); return; }
+    releasePagePreview(old);
+    setPages((current) => current.map((page) => page.id === id ? result.pages[0] : page));
+  };
+  const submit = async () => {
+    if (profile === null || worksheet === null || pages.length === 0) {
+      setErrors(["Add at least one page before submitting your assigned worksheet."]);
+      return;
+    }
+    setUploading(true);
+    setErrors([]);
+    try {
+      const saved = await createOcrDocument({ studentId: profile.id, worksheetId: worksheet.id, pages });
+      router.push(`/ocr?submissionId=${saved.id}`);
+    } catch (error) {
+      setErrors([error instanceof Error ? error.message : "Upload failed. Please try again."]);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return <Box sx={{ minHeight: "100vh", bgcolor: "#F7F4EF", px: { xs: 2, sm: 4 }, py: 4 }}>
+    <Box sx={{ maxWidth: 850, mx: "auto" }}>
+      <Typography sx={{ fontSize: 12, letterSpacing: ".1em", color: "#6F675E", mb: 3 }}>UPLOAD ASSIGNED WORKSHEET</Typography>
+      {loading ? <LinearProgress aria-label="Loading assigned worksheet" sx={{ mb: 2 }} /> : null}
+      {selectionError ? <Card role="alert" variant="outlined" sx={{ p: 3, borderColor: "#D79B63", bgcolor: "#FFFDFA" }}>
+        <Typography sx={{ fontWeight: 700, color: "#9E3A24" }}>{selectionError}</Typography>
+        <Stack direction="row" gap={1} sx={{ mt: 2 }}>
+          {requestedWorksheetId !== null ? <Button onClick={() => setRetryCount((value) => value + 1)} sx={secondary}>Retry</Button> : null}
+          <Button component={Link} href="/worksheets" sx={primary}>Return to My Worksheets</Button>
+        </Stack>
+      </Card> : null}
+      {profile !== null && worksheet !== null ? <>
+        <Typography component="h1" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 31, mb: 1 }}>Upload completed work</Typography>
+        <Typography sx={{ color: "#6F675E", mb: 2 }}>Your submission will be saved against this assigned worksheet before OCR review.</Typography>
+        <Card variant="outlined" sx={{ p: 2, mb: 2, bgcolor: "#FFFDFA", borderColor: "#EBE4D9" }}>
+          <Typography sx={{ fontWeight: 700 }}>Student: {profile.fullName}</Typography>
+          <Typography>Worksheet: {worksheet.title}</Typography>
+          <Typography sx={{ fontSize: 13, color: "#6F675E", mt: .5 }}>{worksheet.subjects.map((subject) => subject.name).join(" · ") || "Assigned worksheet"}</Typography>
+        </Card>
+        <Box onDragOver={(event) => { event.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={(event) => { event.preventDefault(); setDragOver(false); add(Array.from(event.dataTransfer.files)); }} sx={{ border: "2px dashed", borderColor: dragOver ? "#9E3A24" : "#DCCFBE", borderRadius: 2, p: 4, textAlign: "center", bgcolor: "#FFFDFA" }}>
+          <UploadFileIcon /><Typography sx={{ fontWeight: 700 }}>Drag and drop completed pages here</Typography>
+          <Stack direction="row" justifyContent="center" gap={1} sx={{ mt: 2 }}>
+            <Button component="label" variant="outlined" sx={secondary}>Choose files<input hidden type="file" multiple accept="image/jpeg,image/png,application/pdf" onChange={(event) => { add(Array.from(event.currentTarget.files || [])); event.currentTarget.value = ""; }} /></Button>
+            <Button component="label" variant="outlined" startIcon={<CameraAltOutlinedIcon />} sx={secondary}>Take photo<input hidden type="file" accept="image/jpeg,image/png" capture="environment" onChange={(event) => { add(Array.from(event.currentTarget.files || [])); event.currentTarget.value = ""; }} /></Button>
+          </Stack>
+          <Typography sx={{ fontSize: 12, color: "#6F675E", mt: 2 }}>JPG, PNG, or one PDF · up to 20 MB per file</Typography>
+        </Box>
+        {errors.length > 0 ? <Box role="alert" sx={{ color: "#B4573F", mt: 2 }}>{errors.map((error) => <Typography key={error}>{error}</Typography>)}</Box> : null}
+        <Typography sx={{ mt: 2, fontSize: 12, letterSpacing: ".1em" }}>{pages.length} PAGE{pages.length === 1 ? "" : "S"} DETECTED</Typography>
+        {pages.length > 0 ? <PageReview pages={pages} onMove={move} onRotate={(id) => setPages((current) => current.map((page) => page.id === id ? { ...page, rotation: ((page.rotation + 90) % 360) as UploadPage["rotation"] } : page))} onRemove={remove} onReplace={replace} /> : null}
+        <Stack direction="row" justifyContent="space-between" sx={{ mt: 3 }}>
+          <Button component={Link} href="/worksheets" variant="outlined" sx={secondary}>Cancel</Button>
+          <Button onClick={() => void submit()} disabled={uploading || pages.length === 0} sx={primary}>{uploading ? "Uploading…" : "Save and continue to OCR review"}</Button>
+        </Stack>
+      </> : null}
+    </Box>
+  </Box>;
+}
+
+function UploadPage() {
+  return getBrowserSession()?.role === "STUDENT" ? <StudentUploadWizard /> : <TutorUploadWizard />;
+}
+
+export default function Page() { return <React.Suspense fallback={null}><UploadPage /></React.Suspense>; }

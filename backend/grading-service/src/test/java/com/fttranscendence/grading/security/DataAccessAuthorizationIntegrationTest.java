@@ -276,6 +276,21 @@ class DataAccessAuthorizationIntegrationTest {
         createdExtractionId = extractionIdValue.longValue();
         org.junit.jupiter.api.Assertions.assertTrue(documents.existsById(documentId));
         org.junit.jupiter.api.Assertions.assertTrue(extractions.existsById(createdExtractionId));
+
+        // The Student can reopen only the document they just saved, which is
+        // the durable context required by the OCR review screen.
+        mockMvc.perform(get("/api/grading/submission-documents/{documentId}", documentId)
+                .header(HttpHeaders.AUTHORIZATION, bearer("STUDENT", OWNER_STUDENT_USER_ID)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.id").value(documentId))
+            .andExpect(jsonPath("$.studentId").value(501))
+            .andExpect(jsonPath("$.worksheetId").value(401));
+
+        // Role is part of the ownership boundary; a Tutor token with the same
+        // numeric subject must not read a Student-owned upload.
+        mockMvc.perform(get("/api/grading/submission-documents/{documentId}", documentId)
+                .header(HttpHeaders.AUTHORIZATION, bearer("TUTOR", OWNER_STUDENT_USER_ID)))
+            .andExpect(status().isNotFound());
     }
 
     @Test
@@ -324,7 +339,8 @@ class DataAccessAuthorizationIntegrationTest {
             .andExpect(jsonPath("$.code").value("SUBMISSION_DOCUMENT_NOT_FOUND"));
         mockMvc.perform(get("/api/grading/submission-documents/{id}", createdDocumentId)
                 .header(HttpHeaders.AUTHORIZATION, bearer("STUDENT", OWNER_STUDENT_USER_ID)))
-            .andExpect(status().isForbidden());
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.code").value("SUBMISSION_DOCUMENT_NOT_FOUND"));
     }
 
     @Test

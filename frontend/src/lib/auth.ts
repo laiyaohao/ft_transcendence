@@ -25,6 +25,7 @@ const STUDENT_PATHS = [
   '/student/dashboard',
   '/worksheets',
   '/upload',
+  '/ocr',
   '/mistakes',
   '/progress',
   '/topics',

@@ -37,7 +37,7 @@ describe("route proxy", () => {
 
   it("protects the durable OCR review route as Tutor-only", () => {
     expect(proxy(request("/ocr?submissionId=10", "TUTOR")).status).toBe(200);
-    expect(proxy(request("/ocr?submissionId=10", "STUDENT")).headers.get("location")).toBe("http://localhost:3000/student/dashboard");
+    expect(proxy(request("/ocr?submissionId=10", "STUDENT")).status).toBe(200);
   });
 
   it("allows the Student dashboard while preventing Tutor access", () => {

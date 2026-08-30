@@ -77,6 +77,6 @@ describe('authentication sessions', () => {
     expect(isPathAllowed('STUDENT', '/questions')).toBe(false);
     expect(isPathAllowed('STUDENT', '/tutor/dashboard')).toBe(false);
     expect(isPathAllowed('STUDENT', '/upload')).toBe(true);
-    expect(isPathAllowed('STUDENT', '/ocr')).toBe(false);
+    expect(isPathAllowed('STUDENT', '/ocr')).toBe(true);
   });
 });

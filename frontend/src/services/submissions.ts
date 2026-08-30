@@ -55,9 +55,9 @@ function parseSubmissionDocument(value: unknown): SubmissionDocument {
   return { id: raw.id as number, classId: raw.classId as number | null, studentId: raw.studentId as number, worksheetId: raw.worksheetId as number, uploadedByTutorId: raw.uploadedByTutorId as number | null, status: raw.status, createdAt: raw.createdAt, pages };
 }
 
-export async function createOcrDocument(input:{classId:number;studentId:number;worksheetId:number;worksheetQuestionId?:number;pages:UploadPage[]}):Promise<SubmissionDocument>{
-  if (!Number.isSafeInteger(input.classId) || input.classId <= 0 || !Number.isSafeInteger(input.studentId) || input.studentId <= 0 || !Number.isSafeInteger(input.worksheetId) || input.worksheetId <= 0 || !input.pages.length) throw new SubmissionApiError("Submission details are invalid.",400);
-  const form=new FormData(); form.append("studentId",String(input.studentId)); form.append("worksheetId",String(input.worksheetId)); form.append("classId",String(input.classId)); if(input.worksheetQuestionId)form.append("worksheetQuestionId",String(input.worksheetQuestionId)); input.pages.forEach(p=>form.append("files",p.file));
+export async function createOcrDocument(input:{classId?:number;studentId:number;worksheetId:number;worksheetQuestionId?:number;pages:UploadPage[]}):Promise<SubmissionDocument>{
+  if ((input.classId !== undefined && (!Number.isSafeInteger(input.classId) || input.classId <= 0)) || !Number.isSafeInteger(input.studentId) || input.studentId <= 0 || !Number.isSafeInteger(input.worksheetId) || input.worksheetId <= 0 || !input.pages.length) throw new SubmissionApiError("Submission details are invalid.",400);
+  const form=new FormData(); form.append("studentId",String(input.studentId)); form.append("worksheetId",String(input.worksheetId)); if(input.classId !== undefined)form.append("classId",String(input.classId)); if(input.worksheetQuestionId)form.append("worksheetQuestionId",String(input.worksheetQuestionId)); input.pages.forEach(p=>form.append("files",p.file));
   const response=await fetch(`${gradingUrl}/api/grading/submission-documents`,{method:"POST",headers:headers(),body:form}); if(!response.ok){const b=await response.json().catch(()=>null) as {error?:string}|null;throw new SubmissionApiError(b?.error||"OCR could not be started.",response.status);}
   return parseSubmissionDocument(await response.json());
 }

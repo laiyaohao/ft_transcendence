@@ -11,6 +11,7 @@ import { useSearchParams } from "next/navigation";
 
 import OcrReview from "@/components/submissions/OcrReview";
 import Stack from "@/components/lumina-stack";
+import { getBrowserSession } from "@/lib/auth";
 import {
   correctOcrExtraction,
   fetchSubmissionDocument,
@@ -27,6 +28,9 @@ function submissionId(value: string | null): number | null {
 function OcrPage() {
   const params = useSearchParams();
   const id = submissionId(params.get("submissionId"));
+  const isStudent = getBrowserSession()?.role === "STUDENT";
+  const returnPath = isStudent ? "/worksheets" : "/upload";
+  const completionPath = isStudent ? "/worksheets" : "/tutor/worksheets";
   const [document, setDocument] = React.useState<SubmissionDocument | null>(null);
   const [error, setError] = React.useState<string | null>(id === null ? "Choose a saved submission before reviewing OCR." : null);
   const [loading, setLoading] = React.useState(id !== null);
@@ -58,10 +62,10 @@ function OcrPage() {
     <Box sx={{ maxWidth: 850, mx: "auto" }}>
       <Typography sx={{ fontSize: 12, letterSpacing: ".1em", color: "#6F675E", mb: 3 }}>OCR REVIEW</Typography>
       {loading ? <Stack alignItems="center" gap={2} sx={{ py: 7 }}><CircularProgress aria-label="Loading saved submission" /><Typography>Loading saved submission…</Typography></Stack> : null}
-      {error ? <Card role="alert" variant="outlined" sx={{ p: 3, borderColor: "#D79B63", bgcolor: "#FFFDFA" }}><Typography sx={{ fontWeight: 700, color: "#9E3A24" }}>{error}</Typography><Stack direction="row" gap={1} sx={{ mt: 2 }}><Button onClick={() => setReload((value) => value + 1)}>Retry</Button><Button component={Link} href="/upload">Return to upload</Button></Stack></Card> : null}
+      {error ? <Card role="alert" variant="outlined" sx={{ p: 3, borderColor: "#D79B63", bgcolor: "#FFFDFA" }}><Typography sx={{ fontWeight: 700, color: "#9E3A24" }}>{error}</Typography><Stack direction="row" gap={1} sx={{ mt: 2 }}><Button onClick={() => setReload((value) => value + 1)}>Retry</Button><Button component={Link} href={returnPath}>{isStudent ? "Return to My Worksheets" : "Return to upload"}</Button></Stack></Card> : null}
       {document ? <>
         <Typography component="h1" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 31, mb: 1 }}>Review extracted text</Typography>
-        <Typography sx={{ color: "#6F675E", mb: 2 }}>This review is tied to the saved Tutor submission, not temporary browser data.</Typography>
+        <Typography sx={{ color: "#6F675E", mb: 2 }}>This review is tied to the saved submission, not temporary browser data.</Typography>
         <Card variant="outlined" sx={{ p: 2, mb: 2, bgcolor: "#FFFDFA", borderColor: "#EBE4D9" }}>
           <Typography sx={{ fontWeight: 700 }}>Submission #{document.id}</Typography>
           <Typography>Class #{document.classId} · Student #{document.studentId} · Worksheet #{document.worksheetId}</Typography>
@@ -74,7 +78,7 @@ function OcrPage() {
             pages: current.pages.map((page) => page.extractionId === extractionId ? { ...page, ...corrected, pageId: page.pageId } : page),
           });
         }} />
-        <Stack direction="row" justifyContent="flex-end" sx={{ mt: 3 }}><Button component={Link} href="/tutor/worksheets" sx={{ bgcolor: "#9E3A24", color: "#FFFDFA", "&:hover": { bgcolor: "#8A3120" } }}>Continue to worksheets</Button></Stack>
+        <Stack direction="row" justifyContent="flex-end" sx={{ mt: 3 }}><Button component={Link} href={completionPath} sx={{ bgcolor: "#9E3A24", color: "#FFFDFA", "&:hover": { bgcolor: "#8A3120" } }}>{isStudent ? "Return to My Worksheets" : "Continue to worksheets"}</Button></Stack>
       </> : null}
     </Box>
   </Box>;

@@ -143,7 +143,11 @@ public class SubmissionDocumentController {
         @AuthenticationPrincipal AuthenticatedUser user,
         @PathVariable long documentId
     ) {
-        SubmissionDocument document = documents.findByIdAndOwnerUserId(documentId, user.userId())
+        SubmissionDocument document = documents.findByIdAndOwnerUserIdAndOwnerRole(
+                documentId,
+                user.userId(),
+                SubmissionDocument.OwnerRole.valueOf(user.role())
+            )
             .orElseThrow(DocumentNotFound::new);
         return DocumentResponse.of(
             document,
