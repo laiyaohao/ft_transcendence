@@ -109,6 +109,9 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       # Must be the same backend-only value supplied to grading-service.
       LEARNING_MARKING_SYNC_KEY: ${LEARNING_MARKING_SYNC_KEY:?LEARNING_MARKING_SYNC_KEY is required}
+      # Auth-service owns login identities and Student roles. Keep this private
+      # Compose address rather than calling a browser-published port.
+      AUTH_SERVICE_URL: ${AUTH_SERVICE_URL:-http://auth-service:8081}
       FRONTEND_ALLOWED_ORIGINS: ${FRONTEND_ALLOWED_ORIGINS:-http://localhost:3000}
       SECURITY_HEADERS_HSTS_ENABLED: ${SECURITY_HEADERS_HSTS_ENABLED:-false}
     healthcheck:

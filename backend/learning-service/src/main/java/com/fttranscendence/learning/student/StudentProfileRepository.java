@@ -17,6 +17,16 @@ public interface StudentProfileRepository extends Repository<StudentProfile, Lon
 
     Optional<StudentProfile> findByLoginUserId(Long loginUserId);
 
+    @Query("""
+        select profile
+        from StudentProfile profile
+        left join fetch profile.memberships
+        where profile.loginUserId in :loginUserIds
+        """)
+    List<StudentProfile> findAllByLoginUserIdInWithMemberships(
+        @Param("loginUserIds") List<Long> loginUserIds
+    );
+
     List<StudentProfile> findAllByTutorIdOrderByFullNameAsc(Long tutorId);
 
     @Query("""

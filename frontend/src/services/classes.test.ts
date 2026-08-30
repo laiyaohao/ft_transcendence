@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  addStudentToTutorClass,
   ClassApiError,
   createTutorClass,
+  fetchEligibleClassStudents,
   fetchTutorClassDetail,
   fetchTutorClassInsights,
   fetchTutorClasses,
@@ -10,6 +12,8 @@ import {
   parseTutorClassDetail,
   parseTutorClassInsights,
   parseTutorClasses,
+  parseEligibleClassStudents,
+  removeStudentFromTutorClass,
   updateTutorClass,
 } from "./classes";
 
@@ -58,6 +62,8 @@ const insights = {
   }],
   feedback: [{ id: 6, feedback: "Revisit keywords first.", createdAt: "2026-09-02T10:30:00" }],
 };
+
+const eligibleStudents = [{ loginUserId: 91, fullName: "Ada Learner", email: "ada@example.com", level: "Primary 5" }];
 
 describe("tutor class service", () => {
   beforeEach(() => {
@@ -123,6 +129,37 @@ describe("tutor class service", () => {
     await expect(fetchTutorClassDetail(12)).rejects.toMatchObject({ status: 404, message: "Class 12 was not found for this tutor" });
   });
 
+  it("retrieves the server-filtered eligible Student account list", async () => {
+    localStorage.setItem("jwt_token", "stored-token");
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify(eligibleStudents), { status: 200 }));
+
+    await expect(fetchEligibleClassStudents(12)).resolves.toEqual(eligibleStudents);
+    expect(fetch).toHaveBeenCalledWith(
+      "http://localhost:8083/api/learning/tutor/classes/12/eligible-students",
+      expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer stored-token" }) }),
+    );
+    expect(parseEligibleClassStudents([{ ...eligibleStudents[0], level: null }])).toHaveLength(1);
+    expect(() => parseEligibleClassStudents([{ ...eligibleStudents[0], email: "" }])).toThrow("invalid eligible student list");
+  });
+
+  it("adds and removes a Student through owner-scoped membership endpoints", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 80, loginUserId: 91, fullName: "Ada Learner" }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    await expect(addStudentToTutorClass(12, 91)).resolves.toBeUndefined();
+    await expect(removeStudentFromTutorClass(12, 80)).resolves.toBeUndefined();
+
+    expect(fetch).toHaveBeenNthCalledWith(1,
+      "http://localhost:8083/api/learning/tutor/classes/12/students",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ loginUserId: 91 }) }),
+    );
+    expect(fetch).toHaveBeenNthCalledWith(2,
+      "http://localhost:8083/api/learning/tutor/classes/12/students/80",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+  });
+
   it("requests and runtime-validates the owner-scoped persisted insight snapshot", async () => {
     localStorage.setItem("jwt_token", "stored-token");
     vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify(insights), { status: 200 }));
@@ -158,6 +195,8 @@ describe("tutor class service", () => {
   it("rejects invalid class references before making a request", async () => {
     await expect(fetchTutorClassDetail(0)).rejects.toMatchObject({ status: 400 });
     await expect(fetchTutorClassInsights(0)).rejects.toMatchObject({ status: 400 });
+    await expect(fetchEligibleClassStudents(0)).rejects.toMatchObject({ status: 400 });
+    await expect(addStudentToTutorClass(12, 0)).rejects.toMatchObject({ status: 400 });
     expect(fetch).not.toHaveBeenCalled();
   });
 

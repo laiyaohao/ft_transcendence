@@ -4,6 +4,7 @@ package com.fttranscendence.authservice.controller;
 import com.fttranscendence.authservice.dto.AuthRequest;
 import com.fttranscendence.authservice.dto.AuthResponse;
 import com.fttranscendence.authservice.dto.RegisterRequest;
+import com.fttranscendence.authservice.dto.StudentDirectoryResponse;
 import com.fttranscendence.authservice.service.AuthService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -12,6 +13,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.GetMapping;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -27,5 +31,11 @@ public class AuthController {
   @PostMapping("/login")
   public ResponseEntity<AuthResponse> login(@Valid @RequestBody AuthRequest request) {
     return ResponseEntity.ok(authService.login(request));
+  }
+
+  /** Tutor-only directory used by learning-service to validate enrolment. */
+  @GetMapping("/tutor/students")
+  public ResponseEntity<List<StudentDirectoryResponse>> studentDirectory() {
+    return ResponseEntity.ok(authService.listStudentAccounts());
   }
 }

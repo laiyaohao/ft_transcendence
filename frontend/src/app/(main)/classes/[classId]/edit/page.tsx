@@ -11,6 +11,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 
 import ClassForm from "@/components/classes/ClassForm";
+import ClassStudentSelector from "@/components/classes/ClassStudentSelector";
 import { fetchTutorClasses, type TutorClass, updateTutorClass } from "@/services/classes";
 
 function MissingClass({ message }: { message: string }) {
@@ -66,7 +67,7 @@ export default function EditClassPage() {
         </Box>
         <Typography sx={{ color: "#A09488", fontSize: 10.5, fontWeight: 600, letterSpacing: ".13em", mb: 0.75 }}>TEACHING GROUPS</Typography>
         <Typography component="h1" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: { xs: 32, sm: 38 }, fontWeight: 500, lineHeight: 1.1, letterSpacing: "-.02em", textWrap: "pretty", mb: 1 }}>Edit class</Typography>
-        <Typography sx={{ color: "#6F675E", fontSize: 14, lineHeight: 1.6, mb: 3 }}>Update the details and regular teaching times for this class.</Typography>
+        <Typography sx={{ color: "#6F675E", fontSize: 14, lineHeight: 1.6, mb: 3 }}>Update the details and regular teaching times, or add an existing Student account to this class.</Typography>
         {loading ? (
           <Card data-testid="edit-class-skeleton" variant="outlined" sx={{ maxWidth: 880, p: 3, borderRadius: "14px", bgcolor: "#FFFDFA", borderColor: "#EBE4D9", boxShadow: "none" }}>
             <Skeleton variant="text" height={48} sx={{ bgcolor: "#F0EAE0" }} />
@@ -76,7 +77,10 @@ export default function EditClassPage() {
         ) : displayError || !selectedClass ? (
           <MissingClass message={displayError ?? "This class is not available in your account."} />
         ) : (
-          <ClassForm mode="edit" initialClass={selectedClass} submitClass={(request) => updateTutorClass(selectedClass.id, request)} onComplete={() => router.push("/classes")} />
+          <>
+            <ClassForm mode="edit" initialClass={selectedClass} submitClass={(request) => updateTutorClass(selectedClass.id, request)} onComplete={() => router.push(`/classes/${selectedClass.id}`)} />
+            <ClassStudentSelector classId={selectedClass.id} onStudentAdded={() => router.push(`/classes/${selectedClass.id}`)} />
+          </>
         )}
       </Box>
     </Box>

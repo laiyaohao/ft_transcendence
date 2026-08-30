@@ -1,6 +1,9 @@
 package com.fttranscendence.learning.classroom;
 
 import com.fttranscendence.learning.security.AuthenticatedUser;
+import com.fttranscendence.learning.student.ClassStudentRequest;
+import com.fttranscendence.learning.student.ClassStudentResponse;
+import com.fttranscendence.learning.student.StudentService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
 import org.springframework.dao.DataAccessException;
@@ -11,11 +14,13 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -30,9 +35,11 @@ import java.util.Map;
 public class ClassController {
 
     private final ClassService classService;
+    private final StudentService studentService;
 
-    public ClassController(ClassService classService) {
+    public ClassController(ClassService classService, StudentService studentService) {
         this.classService = classService;
+        this.studentService = studentService;
     }
 
     @GetMapping
@@ -48,6 +55,46 @@ public class ClassController {
         @PathVariable @Positive long classId
     ) {
         return classService.getOwnedClassDetail(user.userId(), classId);
+    }
+
+    /** Existing Student logins available for this Tutor to add to the class. */
+    @GetMapping("/{classId}/eligible-students")
+    public List<ClassStudentResponse.EligibleStudentResponse> eligibleStudents(
+        @AuthenticationPrincipal AuthenticatedUser user,
+        @PathVariable @Positive long classId,
+        @RequestHeader("Authorization") String bearerToken
+    ) {
+        return studentService.listEligibleClassStudents(user.userId(), classId, bearerToken);
+    }
+
+    /** Current class roster; class detail includes this same roster projection. */
+    @GetMapping("/{classId}/students")
+    public List<ClassStudentResponse.ClassMemberResponse> students(
+        @AuthenticationPrincipal AuthenticatedUser user,
+        @PathVariable @Positive long classId
+    ) {
+        return studentService.listClassMembers(user.userId(), classId);
+    }
+
+    @PostMapping(value = "/{classId}/students", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<ClassStudentResponse.ClassMemberResponse> addStudent(
+        @AuthenticationPrincipal AuthenticatedUser user,
+        @PathVariable @Positive long classId,
+        @RequestHeader("Authorization") String bearerToken,
+        @Valid @RequestBody ClassStudentRequest request
+    ) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+            .body(studentService.addExistingStudentToClass(user.userId(), classId, request, bearerToken));
+    }
+
+    @DeleteMapping("/{classId}/students/{studentId}")
+    public ResponseEntity<Void> removeStudent(
+        @AuthenticationPrincipal AuthenticatedUser user,
+        @PathVariable @Positive long classId,
+        @PathVariable @Positive long studentId
+    ) {
+        studentService.removeStudentFromClass(user.userId(), classId, studentId);
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -73,6 +120,11 @@ public class ClassController {
         return error(HttpStatus.NOT_FOUND, "CLASS_NOT_FOUND", exception.getMessage(), Map.of());
     }
 
+    @ExceptionHandler(StudentService.ClassNotFoundException.class)
+    ResponseEntity<ApiError> membershipClassNotFound(StudentService.ClassNotFoundException exception) {
+        return error(HttpStatus.NOT_FOUND, "CLASS_NOT_FOUND", exception.getMessage(), Map.of());
+    }
+
     @ExceptionHandler(ClassService.DuplicateClassException.class)
     ResponseEntity<ApiError> duplicate(ClassService.DuplicateClassException exception) {
         return error(HttpStatus.CONFLICT, "CLASS_ALREADY_EXISTS", exception.getMessage(), Map.of());
@@ -81,6 +133,27 @@ public class ClassController {
     @ExceptionHandler(ClassService.InvalidClassRequestException.class)
     ResponseEntity<ApiError> invalid(ClassService.InvalidClassRequestException exception) {
         return error(HttpStatus.BAD_REQUEST, "INVALID_CLASS_REQUEST", exception.getMessage(), Map.of());
+    }
+
+    @ExceptionHandler(StudentService.StudentNotFoundException.class)
+    ResponseEntity<ApiError> studentNotFound(StudentService.StudentNotFoundException exception) {
+        return error(HttpStatus.NOT_FOUND, "STUDENT_NOT_FOUND", exception.getMessage(), Map.of());
+    }
+
+    @ExceptionHandler(StudentService.DuplicateClassMembershipException.class)
+    ResponseEntity<ApiError> duplicateMembership(StudentService.DuplicateClassMembershipException exception) {
+        return error(HttpStatus.CONFLICT, "DUPLICATE_MEMBERSHIP", exception.getMessage(), Map.of());
+    }
+
+    @ExceptionHandler(StudentService.StudentDirectoryUnavailableException.class)
+    ResponseEntity<ApiError> studentDirectoryUnavailable(StudentService.StudentDirectoryUnavailableException exception) {
+        return error(HttpStatus.SERVICE_UNAVAILABLE, "STUDENT_DIRECTORY_UNAVAILABLE",
+            "Student accounts are temporarily unavailable", Map.of());
+    }
+
+    @ExceptionHandler(StudentService.InvalidStudentRequestException.class)
+    ResponseEntity<ApiError> invalidStudent(StudentService.InvalidStudentRequestException exception) {
+        return error(HttpStatus.BAD_REQUEST, "INVALID_STUDENT_REQUEST", exception.getMessage(), Map.of());
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

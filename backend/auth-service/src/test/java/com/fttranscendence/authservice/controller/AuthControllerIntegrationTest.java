@@ -15,6 +15,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -87,6 +88,27 @@ class AuthControllerIntegrationTest {
     org.junit.jupiter.api.Assertions.assertTrue(
         passwordEncoder.matches("StrongPassword1!", saved.getPassword())
     );
+  }
+
+  @Test
+  void tutorDirectoryReturnsOnlyStudentAccountsAndRejectsOtherCallers() throws Exception {
+    userRepository.save(user("student.two@example.com", "Another Student", UserRole.STUDENT));
+    String tutorToken = login("tutor@example.com", UserRole.TUTOR);
+    String studentToken = login("student@example.com", UserRole.STUDENT);
+
+    mockMvc.perform(get("/api/auth/tutor/students")
+            .header("Authorization", "Bearer " + tutorToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[0].email").value("student.two@example.com"))
+        .andExpect(jsonPath("$[0].fullName").value("Another Student"))
+        .andExpect(jsonPath("$[1].email").value("student@example.com"))
+        .andExpect(jsonPath("$[?(@.email == 'tutor@example.com')]").isEmpty());
+
+    mockMvc.perform(get("/api/auth/tutor/students"))
+        .andExpect(status().isUnauthorized());
+    mockMvc.perform(get("/api/auth/tutor/students")
+            .header("Authorization", "Bearer " + studentToken))
+        .andExpect(status().isForbidden());
   }
 
   private String login(String email, UserRole expectedRole) throws Exception {

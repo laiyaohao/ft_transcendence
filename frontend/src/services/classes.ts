@@ -24,6 +24,19 @@ export interface ClassDetailStudent {
   masteryRecordCount: number;
 }
 
+/**
+ * An existing authenticated Student account which a Tutor may enrol in one of
+ * their classes.  It deliberately uses the auth-service user ID rather than a
+ * caller-created student profile ID.
+ */
+export interface EligibleClassStudent {
+  loginUserId: number;
+  fullName: string;
+  email: string;
+  /** The account directory does not currently maintain a teaching level. */
+  level: string | null;
+}
+
 export interface ClassMasterySummary {
   /** Null means this class does not have any mastery records yet. */
   averageScore: number | null;
@@ -193,6 +206,23 @@ function isClassDetailStudent(value: unknown): value is ClassDetailStudent {
     && isNonNegativeInteger(candidate.masteryRecordCount);
 }
 
+function isEligibleClassStudent(value: unknown): value is EligibleClassStudent {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return isPositiveNumber(candidate.loginUserId)
+    && isNonEmptyString(candidate.fullName)
+    && isNonEmptyString(candidate.email)
+    && (candidate.level === null || isNonEmptyString(candidate.level));
+}
+
+export function parseEligibleClassStudents(payload: unknown): EligibleClassStudent[] {
+  if (!Array.isArray(payload) || !payload.every(isEligibleClassStudent)) {
+    throw new Error("The learning service returned an invalid eligible student list. Please try again.");
+  }
+
+  return payload;
+}
+
 function isClassMasterySummary(value: unknown): value is ClassMasterySummary {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
@@ -349,10 +379,60 @@ export async function fetchTutorClassDetail(classId: number): Promise<TutorClass
   return parseTutorClassDetail(await response.json());
 }
 
-export async function fetchTutorClassInsights(classId: number): Promise<ClassInsightSnapshot> {
+function assertValidClassId(classId: number) {
   if (!Number.isSafeInteger(classId) || classId <= 0) {
     throw new ClassApiError("The class reference is invalid.", 400);
   }
+}
+
+export async function fetchEligibleClassStudents(classId: number): Promise<EligibleClassStudent[]> {
+  assertValidClassId(classId);
+  const response = await fetch(`${LEARNING_API_URL}${CLASS_LIST_PATH}/${classId}/eligible-students`, {
+    headers: authHeaders(),
+  });
+
+  if (!response.ok) {
+    throw await responseError(response);
+  }
+
+  return parseEligibleClassStudents(await response.json());
+}
+
+export async function addStudentToTutorClass(classId: number, loginUserId: number): Promise<void> {
+  assertValidClassId(classId);
+  if (!Number.isSafeInteger(loginUserId) || loginUserId <= 0) {
+    throw new ClassApiError("The student reference is invalid.", 400);
+  }
+
+  const response = await fetch(`${LEARNING_API_URL}${CLASS_LIST_PATH}/${classId}/students`, {
+    method: "POST",
+    headers: authHeaders(true),
+    body: JSON.stringify({ loginUserId }),
+  });
+
+  if (!response.ok) {
+    throw await responseError(response);
+  }
+}
+
+export async function removeStudentFromTutorClass(classId: number, studentProfileId: number): Promise<void> {
+  assertValidClassId(classId);
+  if (!Number.isSafeInteger(studentProfileId) || studentProfileId <= 0) {
+    throw new ClassApiError("The student reference is invalid.", 400);
+  }
+
+  const response = await fetch(`${LEARNING_API_URL}${CLASS_LIST_PATH}/${classId}/students/${studentProfileId}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+
+  if (!response.ok) {
+    throw await responseError(response);
+  }
+}
+
+export async function fetchTutorClassInsights(classId: number): Promise<ClassInsightSnapshot> {
+  assertValidClassId(classId);
 
   const response = await fetch(`${LEARNING_API_URL}${CLASS_LIST_PATH}/${classId}/insights`, {
     headers: authHeaders(),

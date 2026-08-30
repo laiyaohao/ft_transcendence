@@ -24,6 +24,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 
 import java.util.Arrays;
 import java.util.List;
@@ -43,7 +44,8 @@ public class SecurityConfig {
         .cors(cors -> {})
         .csrf(AbstractHttpConfigurer::disable)
         .authorizeHttpRequests(auth -> auth
-            .requestMatchers("/api/auth/**").permitAll() // Public auth endpoints
+            .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login").permitAll()
+            .requestMatchers(HttpMethod.GET, "/api/auth/tutor/students").hasRole("TUTOR")
             .requestMatchers("/actuator/health").permitAll() // Container health check only
             .anyRequest().denyAll() // Each exposed route must be explicitly allowed
         )

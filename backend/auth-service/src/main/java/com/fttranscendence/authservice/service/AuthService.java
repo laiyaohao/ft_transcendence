@@ -4,6 +4,7 @@ package com.fttranscendence.authservice.service;
 import com.fttranscendence.authservice.dto.AuthRequest;
 import com.fttranscendence.authservice.dto.AuthResponse;
 import com.fttranscendence.authservice.dto.RegisterRequest;
+import com.fttranscendence.authservice.dto.StudentDirectoryResponse;
 import com.fttranscendence.authservice.model.User;
 import com.fttranscendence.authservice.model.UserRole;
 import com.fttranscendence.authservice.repository.UserRepository;
@@ -19,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.dao.DataIntegrityViolationException;
 
+import java.util.List;
 import java.util.Locale;
 
 @Service
@@ -82,6 +84,16 @@ public class AuthService {
         .fullName(user.getFullName())
         .role(user.getRole())
         .build();
+  }
+
+  /**
+   * Account-role filtering remains in the service that owns identities. This
+   * intentionally exposes no credentials or broader user-directory fields.
+   */
+  public List<StudentDirectoryResponse> listStudentAccounts() {
+    return userRepository.findAllByRoleOrderByFullnameAscEmailAsc(UserRole.STUDENT).stream()
+        .map(StudentDirectoryResponse::from)
+        .toList();
   }
 
   private String normalizeEmail(String email) {

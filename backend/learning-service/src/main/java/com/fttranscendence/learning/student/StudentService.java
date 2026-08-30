@@ -41,6 +41,7 @@ public class StudentService {
     private final WorksheetRepository worksheets;
     private final TutorAlertRepository alerts;
     private final ProgressReportRepository reports;
+    private final AuthStudentDirectoryClient studentDirectory;
 
     public StudentService(
         StudentProfileRepository students,
@@ -50,7 +51,8 @@ public class StudentService {
         MasteryApprovedResultRepository approvedResults,
         WorksheetRepository worksheets,
         TutorAlertRepository alerts,
-        ProgressReportRepository reports
+        ProgressReportRepository reports,
+        AuthStudentDirectoryClient studentDirectory
     ) {
         this.students = students;
         this.classes = classes;
@@ -60,6 +62,115 @@ public class StudentService {
         this.worksheets = worksheets;
         this.alerts = alerts;
         this.reports = reports;
+        this.studentDirectory = studentDirectory;
+    }
+
+    /**
+     * Returns only existing auth-service Student accounts that this Tutor may
+     * enrol. Accounts linked to another Tutor are deliberately omitted rather
+     * than disclosed; already-enrolled accounts are omitted as well.
+     */
+    @Transactional(readOnly = true)
+    public List<ClassStudentResponse.EligibleStudentResponse> listEligibleClassStudents(
+        long tutorId,
+        long classId,
+        String bearerToken
+    ) {
+        requireTutor(tutorId);
+        requireOwnedClass(tutorId, classId);
+        List<AuthStudentDirectoryClient.StudentAccount> accounts = studentDirectory.listStudents(bearerToken);
+        if (accounts.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, StudentProfile> profilesByLogin = students
+            .findAllByLoginUserIdInWithMemberships(accounts.stream()
+                .map(AuthStudentDirectoryClient.StudentAccount::id).toList())
+            .stream()
+            .collect(java.util.stream.Collectors.toMap(
+                StudentProfile::getLoginUserId,
+                profile -> profile
+            ));
+        return accounts.stream()
+            .filter(account -> isEligibleForClass(profilesByLogin.get(account.id()), tutorId, classId))
+            .map(ClassStudentResponse.EligibleStudentResponse::from)
+            .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<ClassStudentResponse.ClassMemberResponse> listClassMembers(long tutorId, long classId) {
+        requireTutor(tutorId);
+        requireOwnedClass(tutorId, classId);
+        return students.findAllByTutorIdAndClassIdOrderByFullNameAsc(tutorId, classId).stream()
+            .map(ClassStudentResponse.ClassMemberResponse::from)
+            .toList();
+    }
+
+    /** Adds an existing auth-service Student login to an owned class. */
+    @Transactional
+    public ClassStudentResponse.ClassMemberResponse addExistingStudentToClass(
+        long tutorId,
+        long classId,
+        ClassStudentRequest request,
+        String bearerToken
+    ) {
+        requireTutor(tutorId);
+        if (request == null || request.loginUserId() == null || request.loginUserId() <= 0) {
+            throw new InvalidStudentRequestException("An existing Student login is required");
+        }
+        requireOwnedClass(tutorId, classId);
+        AuthStudentDirectoryClient.StudentAccount account = requireStudentAccount(
+            request.loginUserId(), bearerToken);
+        StudentProfile profile = students.findByLoginUserId(account.id()).orElse(null);
+        boolean claimingUnassignedProfile = profile != null && profile.getTutorId() == null;
+        if (profile != null && profile.getTutorId() != null && !Long.valueOf(tutorId).equals(profile.getTutorId())) {
+            // Do not let a Tutor claim or enumerate another Tutor's learner.
+            throw new StudentNotFoundException(profile.getId());
+        }
+        if (profile == null) {
+            profile = new StudentProfile();
+            profile.setLoginUserId(account.id());
+            profile.setFullName(account.fullName());
+            profile.setTutorId(tutorId);
+        } else {
+            profile.setTutorId(tutorId);
+            profile.setFullName(account.fullName());
+        }
+        if (!isEligibleForClass(profile, tutorId, classId)) {
+            throw new DuplicateClassMembershipException(classId);
+        }
+        try {
+            // class_memberships has a composite FK (student_profile_id, tutor_id).
+            // An auto-provisioned profile has no tutor yet, so persist that owner
+            // transition before inserting its first membership.
+            if (claimingUnassignedProfile) {
+                entityManager.flush();
+            }
+            profile.addClassMembership(classId);
+            StudentProfile saved = students.save(profile);
+            entityManager.flush();
+            return ClassStudentResponse.ClassMemberResponse.from(saved);
+        } catch (DataIntegrityViolationException exception) {
+            throw new DuplicateClassMembershipException(classId, exception);
+        } catch (DataAccessException exception) {
+            throw new StudentPersistenceException(exception);
+        }
+    }
+
+    @Transactional
+    public void removeStudentFromClass(long tutorId, long classId, long studentId) {
+        requireTutor(tutorId);
+        requireOwnedClass(tutorId, classId);
+        StudentProfile profile = requireOwnedStudent(tutorId, studentId);
+        ClassMembership membership = profile.getMemberships().stream()
+            .filter(item -> Long.valueOf(classId).equals(item.getClassId()))
+            .findFirst()
+            .orElseThrow(() -> new StudentNotFoundException(studentId));
+        profile.removeClassMembership(membership);
+        try {
+            entityManager.flush();
+        } catch (DataAccessException exception) {
+            throw new StudentPersistenceException(exception);
+        }
     }
 
     @Transactional(readOnly = true)
@@ -354,6 +465,27 @@ public class StudentService {
             });
     }
 
+    private AuthStudentDirectoryClient.StudentAccount requireStudentAccount(
+        long loginUserId,
+        String bearerToken
+    ) {
+        return studentDirectory.listStudents(bearerToken).stream()
+            .filter(account -> account.id() == loginUserId)
+            .findFirst()
+            .orElseThrow(() -> new StudentNotFoundException(loginUserId));
+    }
+
+    private boolean isEligibleForClass(StudentProfile profile, long tutorId, long classId) {
+        if (profile == null) {
+            return true;
+        }
+        if (profile.getTutorId() != null && !Long.valueOf(tutorId).equals(profile.getTutorId())) {
+            return false;
+        }
+        return profile.getMemberships().stream()
+            .noneMatch(membership -> Long.valueOf(classId).equals(membership.getClassId()));
+    }
+
     private StudentProfile requireOwnedStudent(long tutorId, long studentId) {
         return students.findByIdAndTutorId(studentId, tutorId)
             .orElseThrow(() -> new StudentNotFoundException(studentId));
@@ -406,6 +538,22 @@ public class StudentService {
     public static class DuplicateMembershipException extends RuntimeException {
         public DuplicateMembershipException(long classId) {
             super("Class " + classId + " appears more than once in this student request");
+        }
+    }
+
+    public static class DuplicateClassMembershipException extends RuntimeException {
+        public DuplicateClassMembershipException(long classId) {
+            super("Student is already enrolled in class " + classId);
+        }
+
+        public DuplicateClassMembershipException(long classId, Throwable cause) {
+            super("Student is already enrolled in class " + classId, cause);
+        }
+    }
+
+    public static class StudentDirectoryUnavailableException extends RuntimeException {
+        public StudentDirectoryUnavailableException(Throwable cause) {
+            super("Student account directory is temporarily unavailable", cause);
         }
     }
 
