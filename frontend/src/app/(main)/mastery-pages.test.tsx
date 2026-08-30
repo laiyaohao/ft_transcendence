@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { MasteryMapData, MasteryTopicDetail } from "@/services/mastery";
+import type { LearningProfile } from "@/services/insights";
 
 const navigation = vi.hoisted(() => ({ topicId: "41", studentId: null as string | null }));
 vi.mock("next/navigation", () => ({
@@ -36,7 +37,7 @@ const detail: MasteryTopicDetail = {
   node: { topicId: 41, topicCode: "SCI-P5-01", topicName: "Adaptation", parentTopicId: 1, parentDepth: 0, depth: 3, nodeType: "TOPIC", score: 65, status: "PRACTISING", attemptCount: 2, calculatedAt: null },
   history: [],
 };
-const insightProfile = { studentId: 31, strengths: [], growthAreas: [], findings: [], dataAsOf: null, source: "DETERMINISTIC" as const };
+const insightProfile: LearningProfile = { studentId: 31, strengths: [], growthAreas: [], improvements: [], dimensions: ["CONCEPT", "KEYWORD", "EXPRESSION", "APPLICATION"].map((category) => ({ category, evidenceCount: 0, evidence: [] })) as LearningProfile["dimensions"], findings: [], dataAsOf: null, source: "DETERMINISTIC" };
 
 describe("mastery-backed pages", () => {
   beforeEach(() => {

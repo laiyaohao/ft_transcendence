@@ -66,7 +66,40 @@ class LearningProfileServiceTest {
             .filter(item -> item.type().name().equals(type)).findFirst().orElseThrow();
         assertEquals(1, finding.evidence().size());
         assertEquals("Tutor confirmed this diagnostic.", finding.evidence().get(0).sourceReason());
+        LearningProfileService.LearningDimension dimension = profile.dimensions().stream()
+            .filter(item -> item.category().name().equals(category)).findFirst().orElseThrow();
+        assertEquals(1, dimension.evidenceCount());
+        assertEquals("Tutor confirmed this diagnostic.", dimension.evidence().get(0).sourceReason());
         assertEquals(LearningProfileService.Source.DETERMINISTIC, profile.source());
+    }
+
+    @Test
+    void exposesImprovingTopicsFromApprovedMasteryStatusWithoutInventingDiagnosticEvidence() {
+        MasteryRecord improving = record(76, 2, history(61, 76, "Approved result"));
+        when(improving.getMasteryStatus()).thenReturn(MasteryRecord.MasteryStatus.IMPROVING);
+        when(mastery.findProfileRecordsByStudentProfileIdWithTopicAndHistory(31L)).thenReturn(List.of(improving));
+        when(diagnostics.findByStudentProfileIdOrderByCreatedAtDescIdDesc(31L)).thenReturn(List.of());
+
+        LearningProfileService.LearningProfileResponse profile = service.forTutor(7L, 31L);
+
+        assertEquals(List.of("Adaptation"), profile.improvements().stream().map(LearningProfileService.TopicSummary::topicName).toList());
+        assertTrue(profile.dimensions().stream().allMatch(item -> item.evidenceCount() == 0));
+    }
+
+    @Test
+    void derivesStrongWeakAndImprovingTopicsFromCanonicalMasteryRecords() {
+        MasteryRecord strong = record(91, 3, history(88, 91, "Approved result"));
+        MasteryRecord weak = record(48, 2, history(52, 48, "Approved result"));
+        MasteryRecord improving = record(76, 2, history(61, 76, "Approved result"));
+        when(improving.getMasteryStatus()).thenReturn(MasteryRecord.MasteryStatus.IMPROVING);
+        when(mastery.findProfileRecordsByStudentProfileIdWithTopicAndHistory(31L)).thenReturn(List.of(strong, weak, improving));
+        when(diagnostics.findByStudentProfileIdOrderByCreatedAtDescIdDesc(31L)).thenReturn(List.of());
+
+        LearningProfileService.LearningProfileResponse profile = service.forTutor(7L, 31L);
+
+        assertEquals(List.of(new BigDecimal("91.00")), profile.strengths().stream().map(LearningProfileService.TopicSummary::score).toList());
+        assertEquals(List.of(new BigDecimal("48.00")), profile.growthAreas().stream().map(LearningProfileService.TopicSummary::score).toList());
+        assertEquals(List.of(new BigDecimal("76.00")), profile.improvements().stream().map(LearningProfileService.TopicSummary::score).toList());
     }
 
     @Test
@@ -92,6 +125,9 @@ class LearningProfileServiceTest {
 
         assertEquals(List.of(), profile.strengths());
         assertEquals(List.of(), profile.growthAreas());
+        assertEquals(List.of(), profile.improvements());
+        assertEquals(4, profile.dimensions().size());
+        assertTrue(profile.dimensions().stream().allMatch(dimension -> dimension.evidenceCount() == 0 && dimension.evidence().isEmpty()));
         assertEquals(List.of(), profile.findings());
         assertEquals(LearningProfileService.Source.DETERMINISTIC, profile.source());
     }

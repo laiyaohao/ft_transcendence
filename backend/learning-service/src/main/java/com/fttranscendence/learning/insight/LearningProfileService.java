@@ -17,6 +17,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 /**
  * Produces an evidence-first individual learning profile from approved mastery.
@@ -62,10 +63,33 @@ public class LearningProfileService {
         List<TopicSummary> growthAreas = records.stream().filter(this::needsPractice)
             .sorted(Comparator.comparing(MasteryRecord::getScore).thenComparing(record -> record.getSyllabusTopic().getName()))
             .map(this::topic).limit(3).toList();
-        List<Finding> findings = findings(records, diagnostics.findByStudentProfileIdOrderByCreatedAtDescIdDesc(student.getId()));
-        LocalDateTime dataAsOf = records.stream().map(MasteryRecord::getCalculatedAt).filter(java.util.Objects::nonNull)
-            .max(LocalDateTime::compareTo).orElse(null);
-        return new LearningProfileResponse(student.getId(), strengths, growthAreas, findings, dataAsOf, Source.DETERMINISTIC);
+        List<TopicSummary> improvements = records.stream()
+            .filter(record -> record.getMasteryStatus() == MasteryRecord.MasteryStatus.IMPROVING)
+            .sorted(Comparator.comparing(MasteryRecord::getScore).reversed().thenComparing(record -> record.getSyllabusTopic().getName()))
+            .map(this::topic).limit(3).toList();
+        List<MasteryDiagnosticEvidence> confirmedDiagnostics = diagnostics.findByStudentProfileIdOrderByCreatedAtDescIdDesc(student.getId());
+        List<Finding> findings = findings(records, confirmedDiagnostics);
+        List<LearningDimension> dimensions = dimensions(confirmedDiagnostics);
+        LocalDateTime dataAsOf = Stream.concat(
+                records.stream().map(MasteryRecord::getCalculatedAt),
+                confirmedDiagnostics.stream().map(MasteryDiagnosticEvidence::getCreatedAt))
+            .filter(java.util.Objects::nonNull).max(LocalDateTime::compareTo).orElse(null);
+        return new LearningProfileResponse(student.getId(), strengths, growthAreas, improvements, dimensions, findings, dataAsOf, Source.DETERMINISTIC);
+    }
+
+    /**
+     * These four categories are the confirmed learning dimensions.  A zero
+     * count is intentional: it means no tutor-confirmed diagnostic evidence
+     * exists for that dimension, rather than that the student has no weakness.
+     */
+    private List<LearningDimension> dimensions(List<MasteryDiagnosticEvidence> confirmedDiagnostics) {
+        return Stream.of(MasteryDiagnosticEvidence.Category.values())
+            .map(category -> {
+                List<MasteryDiagnosticEvidence> matching = confirmedDiagnostics.stream()
+                    .filter(item -> item.getCategory() == category).toList();
+                return new LearningDimension(category, matching.size(), matching.stream()
+                    .map(item -> evidence(item.getMasteryRecord(), item)).toList());
+            }).toList();
     }
 
     private List<Finding> findings(List<MasteryRecord> records, List<MasteryDiagnosticEvidence> approvedDiagnostics) {
@@ -174,9 +198,12 @@ public class LearningProfileService {
 
     public enum Source { DETERMINISTIC }
     public enum FindingType { CONCEPT_WEAKNESS, KEYWORD_WEAKNESS, EXPRESSION_WEAKNESS, APPLICATION_WEAKNESS, REPEATED_WEAKNESS, REGRESSED, MASTERY_GAP }
+    /** Additive profile fields preserve the existing strengths/growth/findings API contract. */
     public record LearningProfileResponse(Long studentId, List<TopicSummary> strengths, List<TopicSummary> growthAreas,
+                                          List<TopicSummary> improvements, List<LearningDimension> dimensions,
                                           List<Finding> findings, LocalDateTime dataAsOf, Source source) { }
     public record TopicSummary(Long topicId, String topicName, BigDecimal score, MasteryRecord.MasteryStatus status, int attemptCount) { }
+    public record LearningDimension(MasteryDiagnosticEvidence.Category category, int evidenceCount, List<Evidence> evidence) { }
     public record Finding(FindingType type, String title, String summary, String suggestedAction, List<Evidence> evidence) { }
     public record Evidence(Long topicId, String topicName, BigDecimal score, MasteryRecord.MasteryStatus status,
                            int attemptCount, String sourceReason, LocalDateTime occurredAt) { }

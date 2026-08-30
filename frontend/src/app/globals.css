@@ -7,6 +7,11 @@ body {
   color: #2a2622;
 }
 
+:root {
+  --font-dm-sans: Arial, Helvetica, sans-serif;
+  --font-playfair: Georgia, "Times New Roman", serif;
+}
+
 * {
   box-sizing: border-box;
 }

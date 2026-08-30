@@ -1,14 +1,18 @@
 import type { MasteryStatus } from "@/services/mastery";
 
 export type LearningFindingType = "CONCEPT_WEAKNESS" | "KEYWORD_WEAKNESS" | "EXPRESSION_WEAKNESS" | "APPLICATION_WEAKNESS" | "REPEATED_WEAKNESS" | "REGRESSED" | "MASTERY_GAP";
+export type LearningDimensionCategory = "CONCEPT" | "KEYWORD" | "EXPRESSION" | "APPLICATION";
 export interface LearningTopicSummary { topicId: number; topicName: string; score: number; status: MasteryStatus; attemptCount: number; }
 export interface LearningEvidence extends LearningTopicSummary { sourceReason: string | null; occurredAt: string | null; }
 export interface LearningFinding { type: LearningFindingType; title: string; summary: string; suggestedAction: string; evidence: LearningEvidence[]; }
-export interface LearningProfile { studentId: number; strengths: LearningTopicSummary[]; growthAreas: LearningTopicSummary[]; findings: LearningFinding[]; dataAsOf: string | null; source: "DETERMINISTIC"; }
+/** The four categories are derived only from tutor-confirmed diagnostic evidence. */
+export interface LearningDimension { category: LearningDimensionCategory; evidenceCount: number; evidence: LearningEvidence[]; }
+export interface LearningProfile { studentId: number; strengths: LearningTopicSummary[]; growthAreas: LearningTopicSummary[]; improvements: LearningTopicSummary[]; dimensions: LearningDimension[]; findings: LearningFinding[]; dataAsOf: string | null; source: "DETERMINISTIC"; }
 
 const API = process.env.NEXT_PUBLIC_LEARNING_API_URL || "http://localhost:8083";
 const statuses: readonly MasteryStatus[] = ["NOT_STARTED", "LEARNING", "PRACTISING", "IMPROVING", "MASTERED", "NEEDS_REVISION"];
 const types: readonly LearningFindingType[] = ["CONCEPT_WEAKNESS", "KEYWORD_WEAKNESS", "EXPRESSION_WEAKNESS", "APPLICATION_WEAKNESS", "REPEATED_WEAKNESS", "REGRESSED", "MASTERY_GAP"];
+const dimensionCategories: readonly LearningDimensionCategory[] = ["CONCEPT", "KEYWORD", "EXPRESSION", "APPLICATION"];
 
 function positive(value: unknown): value is number { return typeof value === "number" && Number.isSafeInteger(value) && value > 0; }
 function count(value: unknown): value is number { return typeof value === "number" && Number.isSafeInteger(value) && value >= 0; }
@@ -31,10 +35,21 @@ function evidence(value: unknown): LearningEvidence {
   return item;
 }
 
+function dimension(value: unknown): LearningDimension {
+  if (!value || typeof value !== "object") throw new Error("The learning profile response is invalid.");
+  const item = value as Record<string, unknown>;
+  if (typeof item.category !== "string" || !dimensionCategories.includes(item.category as LearningDimensionCategory)
+    || !count(item.evidenceCount) || !Array.isArray(item.evidence)) throw new Error("The learning profile response is invalid.");
+  const items = item.evidence.map(evidence);
+  if (items.length !== item.evidenceCount) throw new Error("The learning profile response is invalid.");
+  return { category: item.category as LearningDimensionCategory, evidenceCount: item.evidenceCount, evidence: items };
+}
+
 export function parseLearningProfile(value: unknown): LearningProfile {
   if (!value || typeof value !== "object") throw new Error("The learning profile response is invalid.");
   const profile = value as Record<string, unknown>;
-  if (!positive(profile.studentId) || !Array.isArray(profile.strengths) || !Array.isArray(profile.growthAreas)
+  if (!positive(profile.studentId) || !Array.isArray(profile.strengths) || !Array.isArray(profile.growthAreas) || !Array.isArray(profile.improvements)
+    || !Array.isArray(profile.dimensions)
     || !Array.isArray(profile.findings) || !optionalDate(profile.dataAsOf) || profile.source !== "DETERMINISTIC") throw new Error("The learning profile response is invalid.");
   const findings = profile.findings.map((value) => {
     if (!value || typeof value !== "object") throw new Error("The learning profile response is invalid.");
@@ -43,7 +58,9 @@ export function parseLearningProfile(value: unknown): LearningProfile {
       || !text(item.suggestedAction) || !Array.isArray(item.evidence) || item.evidence.length === 0) throw new Error("The learning profile response is invalid.");
     return { type: item.type as LearningFindingType, title: item.title, summary: item.summary, suggestedAction: item.suggestedAction, evidence: item.evidence.map(evidence) };
   });
-  return { studentId: profile.studentId, strengths: profile.strengths.map(summary), growthAreas: profile.growthAreas.map(summary), findings, dataAsOf: profile.dataAsOf, source: "DETERMINISTIC" };
+  const dimensions = profile.dimensions.map(dimension);
+  if (dimensions.length !== dimensionCategories.length || dimensions.some((item, index) => item.category !== dimensionCategories[index])) throw new Error("The learning profile response is invalid.");
+  return { studentId: profile.studentId, strengths: profile.strengths.map(summary), growthAreas: profile.growthAreas.map(summary), improvements: profile.improvements.map(summary), dimensions, findings, dataAsOf: profile.dataAsOf, source: "DETERMINISTIC" };
 }
 
 function headers(): HeadersInit {

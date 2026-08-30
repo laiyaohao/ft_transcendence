@@ -67,6 +67,10 @@ export default function Topbar() {
           </Typography>
         </Link>
         <Box sx={{ flex: 1 }} />
+        <Box component="nav" aria-label="Legal links" sx={{ display: { xs: 'none', sm: 'flex' }, gap: 1.5 }}>
+          <Link href="/privacy" style={{ color: '#5F574E', fontSize: 12 }}>Privacy</Link>
+          <Link href="/terms" style={{ color: '#5F574E', fontSize: 12 }}>Terms</Link>
+        </Box>
         <IconButton
           aria-label="Open account menu"
           aria-controls={accountAnchor ? 'account-menu' : undefined}
