@@ -61,6 +61,14 @@ public class SubmissionDocument {
     @Column(name = "student_id", nullable = false)
     private Long studentId;
 
+    /**
+     * The class selected by a Tutor when this source document was uploaded.
+     * Historic Student and manual documents predate this field, so it is
+     * nullable at database level. New Tutor file uploads must supply it.
+     */
+    @Column(name = "class_id")
+    private Long classId;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "source_type", nullable = false, length = 16)
     private SourceType sourceType;
@@ -101,10 +109,22 @@ public class SubmissionDocument {
         Long studentId,
         SourceType sourceType
     ) {
+        this(ownerUserId, ownerRole, worksheetId, studentId, null, sourceType);
+    }
+
+    public SubmissionDocument(
+        Long ownerUserId,
+        OwnerRole ownerRole,
+        Long worksheetId,
+        Long studentId,
+        Long classId,
+        SourceType sourceType
+    ) {
         this.ownerUserId = requirePositive(ownerUserId, "Owner user id");
         this.ownerRole = requireValue(ownerRole, "Owner role");
         this.worksheetId = requirePositive(worksheetId, "Worksheet id");
         this.studentId = requirePositive(studentId, "Student id");
+        this.classId = classId == null ? null : requirePositive(classId, "Class id");
         this.sourceType = requireValue(sourceType, "Source type");
         this.manualScopeKey = sourceType == SourceType.MANUAL
             ? manualScopeKey(ownerUserId, ownerRole, worksheetId, studentId)
@@ -304,6 +324,10 @@ public class SubmissionDocument {
 
     public Long getStudentId() {
         return studentId;
+    }
+
+    public Long getClassId() {
+        return classId;
     }
 
     public SourceType getSourceType() {

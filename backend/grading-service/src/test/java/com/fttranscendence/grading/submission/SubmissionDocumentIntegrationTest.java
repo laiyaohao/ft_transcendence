@@ -49,6 +49,7 @@ class SubmissionDocumentIntegrationTest {
             SubmissionDocument.OwnerRole.TUTOR,
             301L,
             201L,
+            101L,
             SubmissionDocument.SourceType.PDF
         );
         document.addPage(storedFile);
@@ -66,6 +67,7 @@ class SubmissionDocumentIntegrationTest {
         assertEquals(OWNER_ID, persisted.getOwnerUserId());
         assertEquals(301L, persisted.getWorksheetId());
         assertEquals(201L, persisted.getStudentId());
+        assertEquals(101L, persisted.getClassId());
         assertEquals(1, persisted.getPages().size());
 
         SubmissionPage page = persisted.getPages().get(0);

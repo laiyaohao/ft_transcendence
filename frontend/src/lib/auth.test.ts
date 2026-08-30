@@ -67,6 +67,7 @@ describe('authentication sessions', () => {
     expect(isPathAllowed('TUTOR', '/classes/42')).toBe(true);
     expect(isPathAllowed('TUTOR', '/questions/42/edit')).toBe(true);
     expect(isPathAllowed('TUTOR', '/tutor/worksheets/new')).toBe(true);
+    expect(isPathAllowed('TUTOR', '/ocr')).toBe(true);
     expect(isPathAllowed('TUTOR', '/reports/12')).toBe(true);
     expect(isPathAllowed('TUTOR', '/progress')).toBe(false);
     expect(isPathAllowed('STUDENT', '/progress')).toBe(true);
@@ -76,5 +77,6 @@ describe('authentication sessions', () => {
     expect(isPathAllowed('STUDENT', '/questions')).toBe(false);
     expect(isPathAllowed('STUDENT', '/tutor/dashboard')).toBe(false);
     expect(isPathAllowed('STUDENT', '/upload')).toBe(true);
+    expect(isPathAllowed('STUDENT', '/ocr')).toBe(false);
   });
 });

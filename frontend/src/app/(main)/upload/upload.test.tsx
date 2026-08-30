@@ -32,12 +32,13 @@ async function choose(user: ReturnType<typeof userEvent.setup>, label: string, v
 
 describe("Tutor upload wizard", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     navigation.params = new URLSearchParams(); navigation.push.mockReset();
     vi.mocked(fetchTutorClasses).mockResolvedValue(classes);
     vi.mocked(fetchTutorStudents).mockImplementation(async (classId) => classId === 3 ? students : []);
     vi.mocked(fetchSubmissionWorksheets).mockResolvedValue([worksheet]);
     vi.mocked(fetchTutorWorksheet).mockResolvedValue(worksheet);
-    vi.mocked(createOcrDocument).mockResolvedValue({ documentId: 1, pages: [] });
+    vi.mocked(createOcrDocument).mockResolvedValue({ id: 1, classId: 3, studentId: 7, worksheetId: 42, uploadedByTutorId: 1, status: "READY", createdAt: "2026-08-30T09:00:00", pages: [] });
     vi.stubGlobal("URL", { createObjectURL: vi.fn(() => "blob:file"), revokeObjectURL: vi.fn() });
   });
 
@@ -77,7 +78,7 @@ describe("Tutor upload wizard", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Continue" })).toBeEnabled());
   });
 
-  it("sends every selected relationship to OCR", async () => {
+  it("persists every selected relationship then hands the saved submission to OCR", async () => {
     const user = userEvent.setup(); render(<Page />);
     await choose(user, "Class", "P6 Science A · Primary 6 Science");
     await choose(user, "Student", "Bella Tan");
@@ -86,8 +87,20 @@ describe("Tutor upload wizard", () => {
     const input = document.querySelector('input[type="file"][multiple]') as HTMLInputElement;
     await user.upload(input, new File(["page"], "page.jpg", { type: "image/jpeg" }));
     await user.click(screen.getByRole("button", { name: "Review submission" }));
-    await user.click(screen.getByRole("button", { name: "Submit for AI Marking" }));
+    await user.click(screen.getByRole("button", { name: "Save and continue to OCR review" }));
     await waitFor(() => expect(createOcrDocument).toHaveBeenCalledWith(expect.objectContaining({ classId: 3, studentId: 7, worksheetId: 42 })));
+    expect(navigation.push).toHaveBeenCalledWith("/ocr?submissionId=1");
+  });
+
+  it("does not allow a real selection to continue without at least one file", async () => {
+    const user = userEvent.setup(); render(<Page />);
+    await choose(user, "Class", "P6 Science A · Primary 6 Science");
+    await choose(user, "Student", "Bella Tan");
+    await choose(user, "Worksheet", "Water cycle practice");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("button", { name: "Review submission" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Add at least one page");
+    expect(createOcrDocument).not.toHaveBeenCalled();
   });
 
   it("shows a safe empty state when no worksheet is available for the selected relationship", async () => {

@@ -172,7 +172,7 @@ class MigrationIntegrationTest {
             properties.getProperty("document.storage.root")
         );
         assertEquals(
-            "${DOCUMENT_STORAGE_MAX_FILE_SIZE_BYTES:10485760}",
+            "${DOCUMENT_STORAGE_MAX_FILE_SIZE_BYTES:20971520}",
             properties.getProperty("document.storage.max-file-size-bytes")
         );
     }

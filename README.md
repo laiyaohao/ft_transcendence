@@ -43,6 +43,22 @@ There are no shared default login credentials for ordinary local development. St
 
 The Compose database volume is persistent. Because the service schemas were isolated during the Issue 03 foundation, reset only disposable pre-migration development data before first use if an older database volume contains tables in `public`.
 
+## Tutor completed-work upload
+
+Tutors upload completed work through `/upload`. The page resolves a real
+Tutor-owned class, an enrolled student, and an approved worksheet before it
+accepts files; it never invents a class, student, worksheet, or page preview.
+Choose JPG, PNG, or one PDF (up to 20 MB per file). Multiple image pages can be
+previewed, removed, reordered, or replaced before submission.
+
+Submitting creates one durable grading submission document containing the class,
+student, worksheet, Tutor, original file metadata, stored page bytes, OCR
+extractions, timestamps, and status. The browser then opens `/ocr` using that
+saved submission ID, so a refresh reloads the same server-authorised OCR review
+rather than temporary browser state. Only the Tutor who uploaded the document
+can retrieve that OCR review; the grading service independently validates the
+class/student/worksheet relationship with learning-service before accepting it.
+
 ## VM-only HTTPS Docker Compose runbook
 
 This procedure starts the production-shaped Compose overlay on a virtual

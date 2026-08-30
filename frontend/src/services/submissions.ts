@@ -22,17 +22,55 @@ export function validateUploadFiles(files: File[], existing: UploadPage[] = []):
 }
 export function releasePagePreview(page: UploadPage) { if (page.previewUrl) URL.revokeObjectURL(page.previewUrl); }
 function headers(): HeadersInit { const token = typeof window === "undefined" ? null : localStorage.getItem("jwt_token"); return token ? { Authorization: `Bearer ${token}` } : {}; }
-export async function submitSubmission(worksheetId: string, pages: UploadPage[], onProgress: (completed: number, total: number) => void): Promise<{ pageCount: number; submittedAt: string }> {
-  if (!worksheetId || pages.length === 0) throw new SubmissionApiError("Choose a worksheet and add at least one page.", 400);
-  for (let index = 0; index < pages.length; index += 1) {
-    const page = pages[index]; const form = new FormData(); form.append("file", page.file); form.append("worksheetId", worksheetId); form.append("pageNumber", String(index + 1)); form.append("rotation", String(page.rotation));
-    const response = await fetch(`${gradingUrl}/api/grading/ocr`, { method: "POST", headers: headers(), body: form });
-    if (!response.ok) { const body = await response.json().catch(() => null) as { error?: string } | null; throw new SubmissionApiError(body?.error || `Page ${index + 1} could not be uploaded.`, response.status); }
-    onProgress(index + 1, pages.length);
+export type SubmissionDocument = {
+  id: number; classId: number | null; studentId: number; worksheetId: number;
+  uploadedByTutorId: number | null; status: "UPLOADING" | "READY"; createdAt: string;
+  pages: OcrPage[];
+};
+
+function parseSubmissionDocument(value: unknown): SubmissionDocument {
+  if (!value || typeof value !== "object") throw new SubmissionApiError("The submission document response is invalid.");
+  const raw = value as Record<string, unknown>;
+  if (!Number.isSafeInteger(raw.id) || (raw.id as number) <= 0
+    || !Number.isSafeInteger(raw.studentId) || (raw.studentId as number) <= 0
+    || !Number.isSafeInteger(raw.worksheetId) || (raw.worksheetId as number) <= 0
+    || (raw.classId !== null && (!Number.isSafeInteger(raw.classId) || (raw.classId as number) <= 0))
+    || (raw.uploadedByTutorId !== null && (!Number.isSafeInteger(raw.uploadedByTutorId) || (raw.uploadedByTutorId as number) <= 0))
+    || (raw.status !== "UPLOADING" && raw.status !== "READY") || typeof raw.createdAt !== "string" || !Array.isArray(raw.pages)) {
+    throw new SubmissionApiError("The submission document response is invalid.");
   }
-  return { pageCount: pages.length, submittedAt: new Date().toISOString() };
+  const pageIds = new Set<number>();
+  const pages = raw.pages.map((value): OcrPage => {
+    if (!value || typeof value !== "object") throw new SubmissionApiError("The submission document response is invalid.");
+    const page = value as Record<string, unknown>;
+    if (!Number.isSafeInteger(page.id) || (page.id as number) <= 0 || pageIds.has(page.id as number)
+      || !Number.isSafeInteger(page.extractionId) || (page.extractionId as number) <= 0
+      || typeof page.text !== "string" || typeof page.confidence !== "number"
+      || (page.status !== "READY" && page.status !== "REQUIRES_REVIEW" && page.status !== "UNREADABLE")) {
+      throw new SubmissionApiError("The submission document response is invalid.");
+    }
+    pageIds.add(page.id as number);
+    return { pageId: page.id as number, extractionId: page.extractionId as number, text: page.text, confidence: page.confidence, status: page.status };
+  });
+  return { id: raw.id as number, classId: raw.classId as number | null, studentId: raw.studentId as number, worksheetId: raw.worksheetId as number, uploadedByTutorId: raw.uploadedByTutorId as number | null, status: raw.status, createdAt: raw.createdAt, pages };
 }
-export async function createOcrDocument(input:{classId?:number;studentId:number;worksheetId:number;worksheetQuestionId?:number;pages:UploadPage[]}):Promise<{documentId:number;pages:OcrPage[]}>{ if(!Number.isSafeInteger(input.studentId)||!Number.isSafeInteger(input.worksheetId)||!input.pages.length||(input.classId!==undefined&&(!Number.isSafeInteger(input.classId)||input.classId<=0)))throw new SubmissionApiError("Submission details are invalid.",400); const form=new FormData(); form.append("studentId",String(input.studentId)); form.append("worksheetId",String(input.worksheetId)); if(input.classId)form.append("classId",String(input.classId)); if(input.worksheetQuestionId)form.append("worksheetQuestionId",String(input.worksheetQuestionId)); input.pages.forEach(p=>form.append("files",p.file)); const response=await fetch(`${gradingUrl}/api/grading/submission-documents`,{method:"POST",headers:headers(),body:form}); if(!response.ok){const b=await response.json().catch(()=>null) as {error?:string}|null;throw new SubmissionApiError(b?.error||"OCR could not be started.",response.status);} const body=await response.json() as {id:number;pages:Array<{id:number;extractionId:number;text:string;confidence:number;status:OcrPage["status"]}>}; return {documentId:body.id,pages:body.pages.map(p=>({pageId:p.id,extractionId:p.extractionId,text:p.text,confidence:p.confidence,status:p.status}))}; }
+
+export async function createOcrDocument(input:{classId:number;studentId:number;worksheetId:number;worksheetQuestionId?:number;pages:UploadPage[]}):Promise<SubmissionDocument>{
+  if (!Number.isSafeInteger(input.classId) || input.classId <= 0 || !Number.isSafeInteger(input.studentId) || input.studentId <= 0 || !Number.isSafeInteger(input.worksheetId) || input.worksheetId <= 0 || !input.pages.length) throw new SubmissionApiError("Submission details are invalid.",400);
+  const form=new FormData(); form.append("studentId",String(input.studentId)); form.append("worksheetId",String(input.worksheetId)); form.append("classId",String(input.classId)); if(input.worksheetQuestionId)form.append("worksheetQuestionId",String(input.worksheetQuestionId)); input.pages.forEach(p=>form.append("files",p.file));
+  const response=await fetch(`${gradingUrl}/api/grading/submission-documents`,{method:"POST",headers:headers(),body:form}); if(!response.ok){const b=await response.json().catch(()=>null) as {error?:string}|null;throw new SubmissionApiError(b?.error||"OCR could not be started.",response.status);}
+  return parseSubmissionDocument(await response.json());
+}
+
+export async function fetchSubmissionDocument(documentId: number): Promise<SubmissionDocument> {
+  if (!Number.isSafeInteger(documentId) || documentId <= 0) throw new SubmissionApiError("The submission ID is invalid.", 400);
+  const response = await fetch(`${gradingUrl}/api/grading/submission-documents/${documentId}`, { headers: headers() });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { error?: string } | null;
+    throw new SubmissionApiError(body?.error || "Submission document could not be loaded.", response.status);
+  }
+  return parseSubmissionDocument(await response.json());
+}
 export async function correctOcrExtraction(extractionId:number,correctedText:string):Promise<OcrPage>{const response=await fetch(`${gradingUrl}/api/grading/ocr-extractions/${extractionId}`,{method:"PATCH",headers:{...headers(),"Content-Type":"application/json"},body:JSON.stringify({correctedText})});if(!response.ok)throw new SubmissionApiError("OCR correction could not be saved.",response.status);const b=await response.json() as {id:number;text:string;confidence:number;status:OcrPage["status"]};return {pageId:0,extractionId:b.id,text:b.text,confidence:b.confidence,status:b.status};}
 
 export type MarkingReviewStatus = "PENDING_REVIEW" | "FLAGGED" | "APPROVED";

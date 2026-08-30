@@ -234,6 +234,17 @@ class DataAccessAuthorizationIntegrationTest {
     }
 
     @Test
+    void submissionDocumentCreationRejectsAMissingFileBeforeAuthorisation() throws Exception {
+        mockMvc.perform(multipart("/api/grading/submission-documents")
+                .header(HttpHeaders.AUTHORIZATION, bearer("TUTOR", UNRELATED_TUTOR_USER_ID))
+                .param("classId", "301")
+                .param("studentId", "901")
+                .param("worksheetId", "401"))
+            .andExpect(status().isBadRequest());
+        learningServer.verify();
+    }
+
+    @Test
     void authorizedStudentUploadPersistsThePageBeforeItsOcrExtraction() throws Exception {
         learningServer.expect(once(), requestTo("http://localhost:8083/api/learning/internal/submission-authorization"))
             .andRespond(withStatus(HttpStatus.NO_CONTENT));
@@ -265,6 +276,55 @@ class DataAccessAuthorizationIntegrationTest {
         createdExtractionId = extractionIdValue.longValue();
         org.junit.jupiter.api.Assertions.assertTrue(documents.existsById(documentId));
         org.junit.jupiter.api.Assertions.assertTrue(extractions.existsById(createdExtractionId));
+    }
+
+    @Test
+    void tutorUploadPersistsItsClassStudentWorksheetAndOwnerAndCanBeReloadedForOcr() throws Exception {
+        learningServer.expect(once(), requestTo("http://localhost:8083/api/learning/internal/submission-authorization"))
+            .andRespond(withStatus(HttpStatus.NO_CONTENT));
+        learningServer.expect(once(), requestTo("http://localhost/ai-test"))
+            .andRespond(withSuccess("""
+                {"choices":[{"message":{"content":"water evaporates"}}]}
+                """, MediaType.APPLICATION_JSON));
+
+        MvcResult result = mockMvc.perform(multipart("/api/grading/submission-documents")
+                .file(new MockMultipartFile("files", "water.png", "image/png", pngBytes("water")))
+                .header(HttpHeaders.AUTHORIZATION, bearer("TUTOR", UNRELATED_TUTOR_USER_ID))
+                .param("classId", "301")
+                .param("studentId", "901")
+                .param("worksheetId", "401")
+                .param("worksheetQuestionId", "601"))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.classId").value(301))
+            .andExpect(jsonPath("$.studentId").value(901))
+            .andExpect(jsonPath("$.worksheetId").value(401))
+            .andExpect(jsonPath("$.uploadedByTutorId").value(UNRELATED_TUTOR_USER_ID))
+            .andExpect(jsonPath("$.status").value("READY"))
+            .andReturn();
+        learningServer.verify();
+
+        Number documentIdValue = JsonPath.read(result.getResponse().getContentAsString(), "$.id");
+        Number extractionIdValue = JsonPath.read(result.getResponse().getContentAsString(), "$.pages[0].extractionId");
+        createdDocumentId = documentIdValue.longValue();
+        createdExtractionId = extractionIdValue.longValue();
+        SubmissionDocument persisted = documents.findById(createdDocumentId).orElseThrow();
+        org.junit.jupiter.api.Assertions.assertEquals(301L, persisted.getClassId());
+        org.junit.jupiter.api.Assertions.assertEquals(901L, persisted.getStudentId());
+        org.junit.jupiter.api.Assertions.assertEquals(401L, persisted.getWorksheetId());
+        org.junit.jupiter.api.Assertions.assertEquals(UNRELATED_TUTOR_USER_ID, persisted.getOwnerUserId());
+
+        mockMvc.perform(get("/api/grading/submission-documents/{id}", createdDocumentId)
+                .header(HttpHeaders.AUTHORIZATION, bearer("TUTOR", UNRELATED_TUTOR_USER_ID)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.id").value(createdDocumentId))
+            .andExpect(jsonPath("$.pages[0].text").value("water evaporates"));
+        mockMvc.perform(get("/api/grading/submission-documents/{id}", createdDocumentId)
+                .header(HttpHeaders.AUTHORIZATION, bearer("TUTOR", OWNER_STUDENT_USER_ID)))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.code").value("SUBMISSION_DOCUMENT_NOT_FOUND"));
+        mockMvc.perform(get("/api/grading/submission-documents/{id}", createdDocumentId)
+                .header(HttpHeaders.AUTHORIZATION, bearer("STUDENT", OWNER_STUDENT_USER_ID)))
+            .andExpect(status().isForbidden());
     }
 
     @Test
