@@ -100,7 +100,7 @@ Exact versions below come from `frontend/package-lock.json`.
 
 | Package | Locked version | Purpose |
 | --- | ---: | --- |
-| `next` | 16.2.6 | Web framework and standalone server build. |
+| `next` | 16.3.3 | Web framework and standalone server build. |
 | `react` | 19.2.4 | UI runtime. |
 | `react-dom` | 19.2.4 | DOM renderer. |
 | `@mui/material` | 9.1.1 | Component and styling framework. |
@@ -119,7 +119,7 @@ Exact versions below come from `frontend/package-lock.json`.
 | `@types/react` | 19.2.14 | React types. |
 | `@types/react-dom` | 19.2.3 | React DOM types. |
 | `eslint` | 9.39.4 | Lint runner. |
-| `eslint-config-next` | 16.2.6 | Next.js lint rules. |
+| `eslint-config-next` | 16.3.3 | Next.js lint rules, pinned to the same release as Next.js. |
 | `vitest` | 4.1.11 | Unit and integration test runner. |
 | `@vitest/coverage-v8` | 4.1.11 | Test coverage provider. |
 | `@vitejs/plugin-react` | 5.2.0 | React transform for Vitest/Vite. |

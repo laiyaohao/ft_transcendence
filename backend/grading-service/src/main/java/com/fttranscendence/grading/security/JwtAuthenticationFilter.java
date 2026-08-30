@@ -8,7 +8,9 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
@@ -57,11 +59,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
       String role = claims.get("role", String.class);
       Number userIdClaim = claims.get("userId", Number.class);
 
+      Authentication existingAuthentication = SecurityContextHolder.getContext().getAuthentication();
       if (StringUtils.hasText(subject)
           && ALLOWED_ROLES.contains(role)
           && userIdClaim != null
           && userIdClaim.longValue() > 0
-          && SecurityContextHolder.getContext().getAuthentication() == null) {
+          // Spring Security 7 may install an anonymous principal before this
+          // filter. A valid bearer token must replace it, while a real prior
+          // authentication remains authoritative.
+          && (existingAuthentication == null || existingAuthentication instanceof AnonymousAuthenticationToken)) {
         AuthenticatedUser principal = new AuthenticatedUser(
             userIdClaim.longValue(), subject, role);
         var authentication = new UsernamePasswordAuthenticationToken(

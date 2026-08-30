@@ -5,6 +5,7 @@ import com.fttranscendence.grading.ocr.OcrExtraction;
 import com.fttranscendence.grading.repository.OcrExtractionRepository;
 import com.fttranscendence.grading.repository.SubmissionDocumentRepository;
 import com.fttranscendence.grading.storage.DocumentStorage;
+import com.jayway.jsonpath.JsonPath;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
@@ -19,6 +20,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.web.client.RestTemplate;
 
 import java.nio.charset.StandardCharsets;
@@ -215,6 +218,40 @@ class DataAccessAuthorizationIntegrationTest {
             .andExpect(status().isForbidden())
             .andExpect(jsonPath("$.code").value("SUBMISSION_FORBIDDEN"));
         learningServer.verify();
+    }
+
+    @Test
+    void authorizedStudentUploadPersistsThePageBeforeItsOcrExtraction() throws Exception {
+        learningServer.expect(once(), requestTo("http://localhost:8083/api/learning/internal/submission-authorization"))
+            .andRespond(withStatus(HttpStatus.NO_CONTENT));
+        learningServer.expect(once(), requestTo("http://localhost/ai-test"))
+            .andRespond(withSuccess("""
+                {"choices":[{"message":{"content":"answer"}}]}
+                """, MediaType.APPLICATION_JSON));
+
+        MvcResult result = mockMvc.perform(multipart("/api/grading/submission-documents")
+                .file(new MockMultipartFile("files", "answer.png", "image/png", pngBytes("answer")))
+                .header(HttpHeaders.AUTHORIZATION, bearer("STUDENT", OWNER_STUDENT_USER_ID))
+                .param("studentId", "501")
+                .param("worksheetId", "401")
+                .param("worksheetQuestionId", "601"))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.id").isNumber())
+            .andExpect(jsonPath("$.pages[0].id").isNumber())
+            .andExpect(jsonPath("$.pages[0].extractionId").isNumber())
+            .andExpect(jsonPath("$.pages[0].text").value("answer"))
+            .andExpect(jsonPath("$.pages[0].status").value("REQUIRES_REVIEW"))
+            .andReturn();
+        learningServer.verify();
+
+        Number documentIdValue = JsonPath.read(result.getResponse().getContentAsString(), "$.id");
+        Number extractionIdValue = JsonPath.read(
+            result.getResponse().getContentAsString(), "$.pages[0].extractionId");
+        long documentId = documentIdValue.longValue();
+        createdDocumentId = documentId;
+        createdExtractionId = extractionIdValue.longValue();
+        org.junit.jupiter.api.Assertions.assertTrue(documents.existsById(documentId));
+        org.junit.jupiter.api.Assertions.assertTrue(extractions.existsById(createdExtractionId));
     }
 
     @Test

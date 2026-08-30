@@ -13,7 +13,7 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
-import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -71,10 +71,15 @@ public class SecurityConfig {
                     .hasAnyRole("TUTOR", "STUDENT")
                 .requestMatchers(HttpMethod.PATCH, "/api/grading/ocr-extractions/**")
                     .hasAnyRole("TUTOR", "STUDENT")
-                .requestMatchers(HttpMethod.POST, "/api/grading/submission-documents")
+                // The controller accepts only POST. Matching the canonical path
+                // here keeps its role boundary stable across multipart dispatch.
+                .requestMatchers("/api/grading/submission-documents")
                     .hasAnyRole("TUTOR", "STUDENT")
                 .anyRequest().denyAll())
-        .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+        // The JWT filter must run after Spring Security has loaded this request's
+        // context; otherwise SecurityContextHolderFilter can replace the bearer
+        // authentication with its empty stateless context later in the chain.
+        .addFilterAfter(jwtAuthenticationFilter, SecurityContextHolderFilter.class);
 
     return http.build();
   }

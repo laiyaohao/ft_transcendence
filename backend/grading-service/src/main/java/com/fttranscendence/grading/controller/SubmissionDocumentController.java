@@ -73,7 +73,10 @@ public class SubmissionDocumentController {
             studentId,
             pdf ? SubmissionDocument.SourceType.PDF : SubmissionDocument.SourceType.IMAGES
         );
-        documents.saveAndFlush(document);
+        // Repository.save may merge and return a different managed aggregate.
+        // Keep that instance so subsequent OCR extractions always reference
+        // persisted SubmissionPage records rather than detached transient pages.
+        document = documents.saveAndFlush(document);
         for (MultipartFile file : files) {
             document.addPage(storage.store(
                 user.userId(),
@@ -82,7 +85,7 @@ public class SubmissionDocumentController {
                 file.getBytes()
             ));
         }
-        documents.saveAndFlush(document);
+        document = documents.saveAndFlush(document);
 
         List<OcrExtraction> extractions = new ArrayList<>();
         for (SubmissionPage page : document.getPages()) {

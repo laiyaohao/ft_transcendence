@@ -6,7 +6,7 @@ test("submission upload uses offline OCR and exposes the real OCR review state",
   await login(page, scenario.student.email, scenario.student.password, /\/student\/dashboard/);
   await page.goto(`/upload?ws=${scenario.worksheetId}&studentId=${scenario.studentId}`);
   await page.getByRole("button", { name: /continue/i }).click();
-  await page.locator('input[type="file"]').setInputFiles({
+  await page.getByLabel("Choose files").setInputFiles({
     name: "handwritten-answer.png",
     mimeType: "image/png",
     // A tiny valid PNG is sufficient because the offline OCR provider returns
@@ -15,5 +15,6 @@ test("submission upload uses offline OCR and exposes the real OCR review state",
   });
   await page.getByRole("button", { name: /review submission/i }).click();
   await page.getByRole("button", { name: /submit for ai marking/i }).click();
-  await expect(page.getByText(/review the extracted text/i)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Review extracted text" })).toBeVisible();
+  await expect(page.getByLabel("Page 1 text")).toHaveValue(/Fixture OCR transcription/);
 });

@@ -164,6 +164,10 @@ class MigrationIntegrationTest {
         assertRequiredPlaceholder(properties, "spring.datasource.password", "${LEARNING_DB_PASSWORD}");
         assertEquals(
             "${LEARNING_DB_SCHEMA:learning}",
+            properties.getProperty("spring.datasource.hikari.schema")
+        );
+        assertEquals(
+            "${LEARNING_DB_SCHEMA:learning}",
             properties.getProperty("spring.jpa.properties.hibernate.default_schema")
         );
         assertEquals(

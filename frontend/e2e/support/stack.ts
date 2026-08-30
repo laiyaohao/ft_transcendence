@@ -29,6 +29,9 @@ export async function login(page: Page, email: string, password: string, home: R
   await page.goto("/login");
   await page.getByLabel(/email/i).fill(email);
   await page.getByLabel(/password/i).fill(password);
-  await page.getByRole("button", { name: /sign in|login/i }).click();
+  // The login page also offers provider buttons (for example, "Sign in with
+  // Google").  Match the credential form's explicit submit label so this
+  // helper never selects a provider flow.
+  await page.getByRole("button", { name: "Sign In", exact: true }).click();
   await expect(page).toHaveURL(home);
 }
