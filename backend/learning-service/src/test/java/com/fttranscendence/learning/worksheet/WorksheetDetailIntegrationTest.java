@@ -135,6 +135,31 @@ class WorksheetDetailIntegrationTest {
     }
 
     @Test
+    void listsOnlyWorksheetsSubmittableForTheExactTutorClassAndStudent() throws Exception {
+        long selectedClass = tutorClass(OWNER_ID, "Submission class");
+        long otherClass = tutorClass(OWNER_ID, "Other submission class");
+        long enrolledStudent = student(OWNER_ID, 7001L, "Enrolled learner");
+        long otherStudent = student(OWNER_ID, 7002L, "Other learner");
+        membership(enrolledStudent, OWNER_ID, selectedClass);
+        membership(otherStudent, OWNER_ID, otherClass);
+        long included = worksheet(OWNER_ID, "WS-SUBMISSION-INCLUDED", "APPROVED");
+        long excluded = worksheet(OWNER_ID, "WS-SUBMISSION-EXCLUDED", "APPROVED");
+        jdbcTemplate.update("INSERT INTO worksheet_assignments (worksheet_id, tutor_id, assignment_type, target_id, class_id, assigned_at) VALUES (?, ?, 'CLASS', ?, ?, CURRENT_TIMESTAMP)", included, OWNER_ID, selectedClass, selectedClass);
+        jdbcTemplate.update("INSERT INTO worksheet_assignments (worksheet_id, tutor_id, assignment_type, target_id, class_id, assigned_at) VALUES (?, ?, 'CLASS', ?, ?, CURRENT_TIMESTAMP)", excluded, OWNER_ID, otherClass, otherClass);
+
+        mockMvc.perform(get("/api/learning/tutor/classes/{classId}/students/{studentId}/submission-worksheets", selectedClass, enrolledStudent)
+                .header(HttpHeaders.AUTHORIZATION, bearer("TUTOR", OWNER_ID)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.length()").value(1))
+            .andExpect(jsonPath("$[0].code").value("WS-SUBMISSION-INCLUDED"));
+
+        mockMvc.perform(get("/api/learning/tutor/classes/{classId}/students/{studentId}/submission-worksheets", selectedClass, otherStudent)
+                .header(HttpHeaders.AUTHORIZATION, bearer("TUTOR", OWNER_ID)))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.code").value("WORKSHEET_RESOURCE_NOT_FOUND"));
+    }
+
+    @Test
     void protectsPdfDownloadsByRoleOwnershipAndApprovedState() throws Exception {
         long approved = worksheet(OWNER_ID, "WS-PDF-HTTP-2", "APPROVED");
         addQuestion(approved, "PDF-QUESTION-2", "Explain condensation.", 0);
@@ -178,6 +203,15 @@ class WorksheetDetailIntegrationTest {
         jdbcTemplate.update("INSERT INTO tutor_classes (tutor_id, class_name, normalized_class_name, subject, class_level, status) VALUES (?, ?, ?, ?, ?, 'ACTIVE')",
             tutorId, name, name.toLowerCase(), "Science", "P5");
         return jdbcTemplate.queryForObject("SELECT id FROM tutor_classes WHERE tutor_id = ? AND normalized_class_name = ?", Long.class, tutorId, name.toLowerCase());
+    }
+
+    private long student(long tutorId, long loginUserId, String name) {
+        jdbcTemplate.update("INSERT INTO student_profiles (tutor_id, login_user_id, full_name) VALUES (?, ?, ?)", tutorId, loginUserId, name);
+        return jdbcTemplate.queryForObject("SELECT id FROM student_profiles WHERE login_user_id = ?", Long.class, loginUserId);
+    }
+
+    private void membership(long studentId, long tutorId, long classId) {
+        jdbcTemplate.update("INSERT INTO class_memberships (student_profile_id, tutor_id, class_id) VALUES (?, ?, ?)", studentId, tutorId, classId);
     }
 
     private String bearer(String role, long userId) {

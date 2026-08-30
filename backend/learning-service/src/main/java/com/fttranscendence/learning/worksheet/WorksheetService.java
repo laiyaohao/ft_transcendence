@@ -121,6 +121,26 @@ public class WorksheetService {
     }
 
     /**
+     * Returns only approved worksheets which may be submitted for this exact
+     * Tutor class and enrolled student.  A direct student worksheet retains
+     * the class from its generation request; a class worksheet must be
+     * assigned to the selected class itself.
+     */
+    @Transactional(readOnly = true)
+    public List<WorksheetRequests.WorksheetResponse> listSubmissionWorksheets(long tutorId, long classId, long studentId) {
+        requireClass(tutorId, classId);
+        StudentProfile student = students.findByIdAndTutorId(studentId, tutorId).orElseThrow(WorksheetNotFoundException::new);
+        if (student.getMemberships().stream().noneMatch(membership -> Long.valueOf(classId).equals(membership.getClassId()))) {
+            throw new WorksheetNotFoundException();
+        }
+        return worksheets.findAllByTutorIdWithAssignments(tutorId).stream()
+            .filter(worksheet -> worksheet.getStatus() == Worksheet.Status.APPROVED)
+            .filter(worksheet -> isSubmittableFor(worksheet, student, classId))
+            .map(WorksheetRequests.WorksheetResponse::from)
+            .toList();
+    }
+
+    /**
      * Lists only the authenticated Student's approved assignments.  Completion
      * and scores are based exclusively on protected Tutor-approved projections;
      * the service never reads AI suggestions or raw answers from grading.
@@ -314,6 +334,15 @@ public class WorksheetService {
     private List<Worksheet> classWorksheets(long tutorId, long classId) {
         requireClass(tutorId, classId);
         return worksheets.findClassAssignedWorksheetsByTutorId(tutorId, classId);
+    }
+    private boolean isSubmittableFor(Worksheet worksheet, StudentProfile student, long classId) {
+        boolean classAssignment = worksheet.getAssignments().stream().anyMatch(assignment ->
+            assignment.getAssignmentType() == Worksheet.AudienceType.CLASS
+                && Long.valueOf(classId).equals(assignment.getClassId()));
+        boolean directAssignment = worksheet.getAssignments().stream().anyMatch(assignment ->
+            assignment.getAssignmentType() == Worksheet.AudienceType.STUDENT
+                && student.getId().equals(assignment.getStudentProfileId()));
+        return classAssignment || (directAssignment && Long.valueOf(classId).equals(worksheet.getSourceClassId()));
     }
     private TutorClass ownedClass(long tutorId, long classId) {
         return classes.findByIdAndTutorId(classId, tutorId).orElseThrow(ClassNotFoundException::new);

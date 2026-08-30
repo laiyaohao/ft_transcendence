@@ -78,6 +78,13 @@ public class WorksheetController {
         return worksheets.listWorksheets(user.userId(), classId);
     }
 
+    @GetMapping("/tutor/classes/{classId}/students/{studentId}/submission-worksheets")
+    public java.util.List<WorksheetRequests.WorksheetResponse> submissionWorksheets(
+            @AuthenticationPrincipal AuthenticatedUser user, @PathVariable @Positive long classId,
+            @PathVariable @Positive long studentId) {
+        return worksheets.listSubmissionWorksheets(user.userId(), classId, studentId);
+    }
+
     @GetMapping(value = "/tutor/worksheets/{worksheetId}/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
     public ResponseEntity<byte[]> worksheetPdf(@AuthenticationPrincipal AuthenticatedUser user,
             @PathVariable @Positive long worksheetId) {

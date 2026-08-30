@@ -437,6 +437,15 @@ public class Worksheet {
         return generationRequest == null ? null : generationRequest.getId();
     }
 
+    /** The class that supplied this generated worksheet's target context. */
+    public Long getSourceClassId() {
+        if (generationRequest != null) {
+            return generationRequest.getClassId();
+        }
+        return assignments.stream().map(WorksheetAssignment::getClassId)
+            .filter(java.util.Objects::nonNull).findFirst().orElse(null);
+    }
+
     public void setGenerationRequest(WorksheetGenerationRequest generationRequest) {
         this.generationRequest = generationRequest;
     }

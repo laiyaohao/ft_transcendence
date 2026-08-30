@@ -98,6 +98,36 @@ class DataAccessAuthorizationIntegrationTest {
             .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("SUBMISSION_AUTHORIZATION_FORBIDDEN"));
     }
 
+    @Test
+    void validatesTutorUploadAgainstTheExactClassStudentAndWorksheetRelationship() throws Exception {
+        long selectedClass = tutorClass(101, "Tutor upload class");
+        long otherClass = tutorClass(101, "Other tutor class");
+        long student = student(101, 9001, "Assigned learner");
+        jdbc.update("INSERT INTO class_memberships (student_profile_id, tutor_id, class_id) VALUES (?, ?, ?)", student, 101, selectedClass);
+        long worksheet = approvedClassWorksheet(101, selectedClass, "CLASS-ASSIGNED-1");
+        long otherWorksheet = approvedClassWorksheet(101, otherClass, "CLASS-ASSIGNED-2");
+        String body = """
+            {"actorUserId":101,"actorRole":"TUTOR","studentId":%d,"worksheetId":%d,"classId":%d}
+            """.formatted(student, worksheet, selectedClass);
+
+        mvc.perform(post("/api/learning/internal/submission-authorization")
+                .header("X-Learning-Integration-Key", "test-learning-marking-sync-key")
+                .contentType(APPLICATION_JSON).content(body))
+            .andExpect(status().isNoContent());
+        mvc.perform(post("/api/learning/internal/submission-authorization")
+                .header("X-Learning-Integration-Key", "test-learning-marking-sync-key")
+                .contentType(APPLICATION_JSON).content(body.replace("\"classId\":%d".formatted(selectedClass), "\"classId\":%d".formatted(otherClass))))
+            .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("SUBMISSION_CONTEXT_NOT_FOUND"));
+        mvc.perform(post("/api/learning/internal/submission-authorization")
+                .header("X-Learning-Integration-Key", "test-learning-marking-sync-key")
+                .contentType(APPLICATION_JSON).content(body.replace(",\"classId\":%d".formatted(selectedClass), "")))
+            .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("SUBMISSION_CONTEXT_NOT_FOUND"));
+        mvc.perform(post("/api/learning/internal/submission-authorization")
+                .header("X-Learning-Integration-Key", "test-learning-marking-sync-key")
+                .contentType(APPLICATION_JSON).content(body.replace("\"worksheetId\":%d".formatted(worksheet), "\"worksheetId\":%d".formatted(otherWorksheet))))
+            .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("SUBMISSION_CONTEXT_NOT_FOUND"));
+    }
+
     private long student(long tutorId, long loginUserId, String name) {
         jdbc.update("INSERT INTO student_profiles (tutor_id, login_user_id, full_name) VALUES (?, ?, ?)", tutorId, loginUserId, name);
         return jdbc.queryForObject("SELECT id FROM student_profiles WHERE login_user_id = ?", Long.class, loginUserId);
@@ -114,6 +144,15 @@ class DataAccessAuthorizationIntegrationTest {
         long worksheetId = jdbc.queryForObject("SELECT id FROM worksheets WHERE tutor_id = ? AND code = ?", Long.class, tutorId, code);
         jdbc.update("INSERT INTO worksheet_assignments (worksheet_id, tutor_id, assignment_type, target_id, student_profile_id) VALUES (?, ?, 'STUDENT', ?, ?)",
             worksheetId, tutorId, studentId, studentId);
+        return worksheetId;
+    }
+
+    private long approvedClassWorksheet(long tutorId, long classId, String code) {
+        jdbc.update("INSERT INTO worksheets (tutor_id, code, title, audience_type, status, approved_at) VALUES (?, ?, ?, 'CLASS', 'APPROVED', CURRENT_TIMESTAMP)",
+            tutorId, code, "Assigned worksheet");
+        long worksheetId = jdbc.queryForObject("SELECT id FROM worksheets WHERE tutor_id = ? AND code = ?", Long.class, tutorId, code);
+        jdbc.update("INSERT INTO worksheet_assignments (worksheet_id, tutor_id, assignment_type, target_id, class_id) VALUES (?, ?, 'CLASS', ?, ?)",
+            worksheetId, tutorId, classId, classId);
         return worksheetId;
     }
 

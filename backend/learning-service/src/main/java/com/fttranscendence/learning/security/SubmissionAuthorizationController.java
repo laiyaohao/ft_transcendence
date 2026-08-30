@@ -41,7 +41,7 @@ public class SubmissionAuthorizationController {
         DomainAuthorizationService.ActorRole role;
         try { role = DomainAuthorizationService.ActorRole.valueOf(request.actorRole()); }
         catch (RuntimeException exception) { throw new DomainAuthorizationService.ResourceNotFoundException(); }
-        authorization.requireSubmissionContext(request.actorUserId(), role, request.studentId(), request.worksheetId(), request.worksheetQuestionId());
+        authorization.requireSubmissionContext(request.actorUserId(), role, request.studentId(), request.worksheetId(), request.worksheetQuestionId(), request.classId());
         return ResponseEntity.noContent().build();
     }
 
@@ -63,7 +63,8 @@ public class SubmissionAuthorizationController {
         return ResponseEntity.status(status).body(new ApiError(code, message));
     }
 
-    record SubmissionContext(long actorUserId, String actorRole, long studentId, long worksheetId, Long worksheetQuestionId) { }
+    record SubmissionContext(long actorUserId, String actorRole, long studentId, long worksheetId,
+                             Long worksheetQuestionId, Long classId) { }
     record ApiError(String code, String message) { }
     static class IntegrationForbiddenException extends RuntimeException { }
 }

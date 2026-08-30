@@ -56,7 +56,7 @@ public class DomainAuthorizationService {
      */
     @Transactional(readOnly = true)
     public void requireSubmissionContext(long actorUserId, ActorRole actorRole, long studentId,
-                                         long worksheetId, Long worksheetQuestionId) {
+                                         long worksheetId, Long worksheetQuestionId, Long classId) {
         requirePositive(actorUserId, "Actor id");
         requirePositive(studentId, "Student id");
         requirePositive(worksheetId, "Worksheet id");
@@ -65,19 +65,32 @@ public class DomainAuthorizationService {
             if (!Long.valueOf(actorUserId).equals(student.getLoginUserId())) throw new ResourceNotFoundException();
         } else if (actorRole == ActorRole.TUTOR) {
             if (!Long.valueOf(actorUserId).equals(student.getTutorId())) throw new ResourceNotFoundException();
+            if (classId == null || classId <= 0
+                || classes.findByIdAndTutorId(classId, actorUserId).isEmpty()
+                || student.getMemberships().stream().noneMatch(membership -> classId.equals(membership.getClassId()))) {
+                throw new ResourceNotFoundException();
+            }
         } else {
             throw new ResourceNotFoundException();
         }
         Worksheet worksheet = worksheets.findById(worksheetId).orElseThrow(ResourceNotFoundException::new);
         if (worksheet.getStatus() != Worksheet.Status.APPROVED
             || !student.getTutorId().equals(worksheet.getTutorId())
-            || !isAssignedTo(worksheet, student)
+            || !isAssignedTo(worksheet, student, classId)
             || !containsQuestion(worksheet, worksheetQuestionId)) {
             throw new ResourceNotFoundException();
         }
     }
 
-    private boolean isAssignedTo(Worksheet worksheet, StudentProfile student) {
+    private boolean isAssignedTo(Worksheet worksheet, StudentProfile student, Long classId) {
+        if (classId != null) {
+            boolean classAssignment = worksheet.getAssignments().stream().anyMatch(assignment ->
+                assignment.getAssignmentType() == Worksheet.AudienceType.CLASS && classId.equals(assignment.getClassId()));
+            boolean directAssignment = worksheet.getAssignments().stream().anyMatch(assignment ->
+                assignment.getAssignmentType() == Worksheet.AudienceType.STUDENT
+                    && student.getId().equals(assignment.getStudentProfileId()));
+            return classAssignment || (directAssignment && classId.equals(worksheet.getSourceClassId()));
+        }
         return worksheet.getAssignments().stream().anyMatch(assignment ->
             (assignment.getAssignmentType() == Worksheet.AudienceType.STUDENT
                 && student.getId().equals(assignment.getStudentProfileId()))

@@ -201,6 +201,7 @@ class DataAccessAuthorizationIntegrationTest {
                 .header(HttpHeaders.AUTHORIZATION, bearer("TUTOR", UNRELATED_TUTOR_USER_ID))
                 .param("studentId", "901")
                 .param("worksheetId", "401")
+                .param("classId", "301")
                 .file("files", pngBytes("cross-tutor")))
             .andExpect(status().isForbidden())
             .andExpect(jsonPath("$.code").value("SUBMISSION_FORBIDDEN"));
@@ -217,6 +218,18 @@ class DataAccessAuthorizationIntegrationTest {
                 .file("files", pngBytes("cross-student")))
             .andExpect(status().isForbidden())
             .andExpect(jsonPath("$.code").value("SUBMISSION_FORBIDDEN"));
+        learningServer.verify();
+    }
+
+    @Test
+    void tutorDocumentCreationRequiresAnExplicitClassContext() throws Exception {
+        mockMvc.perform(multipart("/api/grading/submission-documents")
+                .header(HttpHeaders.AUTHORIZATION, bearer("TUTOR", UNRELATED_TUTOR_USER_ID))
+                .param("studentId", "901")
+                .param("worksheetId", "401")
+                .file("files", pngBytes("missing-class")))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value("INVALID_SUBMISSION_DOCUMENT"));
         learningServer.verify();
     }
 

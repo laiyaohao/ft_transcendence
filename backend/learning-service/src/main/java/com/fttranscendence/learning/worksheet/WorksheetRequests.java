@@ -85,13 +85,13 @@ public final class WorksheetRequests {
     public record WorksheetResponse(Long id, String code, String title, String instructions,
                                     String subject, Worksheet.WorksheetType worksheetType,
                                     Worksheet.AudienceType audienceType, Worksheet.Status status,
-                                    Long generationRequestId, List<QuestionSummary> questions,
+                                    Long generationRequestId, Long sourceClassId, List<QuestionSummary> questions,
                                     List<AssignmentSummary> assignments) {
         static WorksheetResponse from(Worksheet worksheet) {
             return new WorksheetResponse(worksheet.getId(), worksheet.getCode(), worksheet.getTitle(),
                 worksheet.getInstructions(), worksheet.getSubject(), worksheet.getWorksheetType(),
                 worksheet.getAudienceType(), worksheet.getStatus(),
-                worksheet.getGenerationRequestId(), worksheet.getQuestions().stream().map(item -> {
+                worksheet.getGenerationRequestId(), worksheet.getSourceClassId(), worksheet.getQuestions().stream().map(item -> {
                     Question question = item.getQuestion();
                     return new QuestionSummary(question.getId(),
                         item.getQuestionCodeSnapshot() == null ? question.getCode() : item.getQuestionCodeSnapshot(),

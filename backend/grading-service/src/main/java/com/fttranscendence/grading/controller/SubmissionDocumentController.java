@@ -52,12 +52,16 @@ public class SubmissionDocumentController {
         @RequestParam long studentId,
         @RequestParam long worksheetId,
         @RequestParam(required = false) Long worksheetQuestionId,
+        @RequestParam(required = false) Long classId,
         @RequestParam("files") List<MultipartFile> files
     ) throws Exception {
         // Students must resolve to themselves; Tutors must resolve to a student
         // in their own learning-service scope.  The grading service never trusts
         // a client-supplied studentId without this check.
-        authorization.assertCanSubmit(user, studentId, worksheetId, worksheetQuestionId);
+        if ("TUTOR".equals(user.role()) && (classId == null || classId <= 0)) {
+            throw new IllegalArgumentException("Tutors must select the student's class.");
+        }
+        authorization.assertCanSubmit(user, studentId, worksheetId, worksheetQuestionId, classId);
         if (files.isEmpty()) {
             throw new IllegalArgumentException("At least one page is required.");
         }

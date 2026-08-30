@@ -27,7 +27,7 @@ describe("StudentProfile", () => {
     expect(screen.getByText("Tutor records")).toBeVisible();
     expect(screen.getByText("Adaptation practice")).toBeVisible();
     expect(screen.getByRole("link", { name: "Edit student" })).toHaveAttribute("href", "/students/31/edit");
-    expect(screen.getByRole("link", { name: "Upload completed worksheet" })).toHaveAttribute("href", "/upload?studentId=31");
+    expect(screen.getByRole("link", { name: "Upload completed worksheet" })).toHaveAttribute("href", "/upload?studentId=31&classId=12");
     expect(screen.getByRole("link", { name: "Generate worksheet" })).toHaveAttribute("href", "/tutor/worksheets/new?classId=12&studentId=31");
     expect(screen.getByText("WORKSHEETS WITH APPROVED RESULTS")).toBeVisible();
     expect(screen.getByText("One worksheet has an approved result")).toBeVisible();

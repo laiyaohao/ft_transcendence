@@ -32,7 +32,7 @@ public class LearningAuthorizationClient {
         this.rest = rest;
     }
 
-    public void assertCanSubmit(AuthenticatedUser user, long studentId, long worksheetId, Long worksheetQuestionId) {
+    public void assertCanSubmit(AuthenticatedUser user, long studentId, long worksheetId, Long worksheetQuestionId, Long classId) {
         if (user == null || (!"STUDENT".equals(user.role()) && !"TUTOR".equals(user.role()))) {
             throw new Forbidden();
         }
@@ -49,6 +49,7 @@ public class LearningAuthorizationClient {
             request.put("studentId", studentId);
             request.put("worksheetId", worksheetId);
             request.put("worksheetQuestionId", worksheetQuestionId);
+            request.put("classId", classId);
             ResponseEntity<Void> response = rest.exchange(
                 base + "/api/learning/internal/submission-authorization",
                 HttpMethod.POST,

@@ -160,7 +160,7 @@ export default function TutorWorksheetDetail({ worksheet, approve = approveWorks
         </>}
         {approved && <>
           <Button component={Link} href={`/tutor/worksheets/${current.id}/results/new`} sx={{ border: "1px solid #E4DCD0", color: "#2A2622", textTransform: "none", bgcolor: "#FFFDFA" }}>Enter result manually</Button>
-          <Button component={Link} href={`/upload?worksheetId=${current.id}`} sx={{ border: "1px solid #E4DCD0", color: "#2A2622", textTransform: "none", bgcolor: "#FFFDFA" }}>Upload student work</Button>
+          <Button component={Link} href={`/upload?worksheetId=${current.id}${current.sourceClassId ? `&classId=${current.sourceClassId}` : ""}`} sx={{ border: "1px solid #E4DCD0", color: "#2A2622", textTransform: "none", bgcolor: "#FFFDFA" }}>Upload student work</Button>
           <Button onClick={() => void exportPdf()} disabled={busy} sx={{ bgcolor: "#9E3A24", color: "#FFFDFA", textTransform: "none", "&:hover": { bgcolor: "#8A3120" } }}>Download PDF</Button>
         </>}
       </Stack>

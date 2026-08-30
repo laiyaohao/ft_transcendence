@@ -34,6 +34,8 @@ export interface TutorWorksheet {
   targetMode: WorksheetTargetMode;
   status: WorksheetStatus;
   generationRequestId: number | null;
+  /** The class which supplied this worksheet's target context, when known. */
+  sourceClassId?: number | null;
   dueAt: string | null;
   questions: WorksheetQuestion[];
   assignments: WorksheetAssignment[];
@@ -281,6 +283,7 @@ export function parseTutorWorksheet(payload: unknown): TutorWorksheet {
     || !(payload.worksheetType === undefined || isWorksheetType(payload.worksheetType))
     || (payload.audienceType !== "CLASS" && payload.audienceType !== "STUDENT")
     || !isWorksheetStatus(payload.status) || !(payload.generationRequestId === null || positiveId(payload.generationRequestId))
+    || !(payload.sourceClassId === undefined || payload.sourceClassId === null || positiveId(payload.sourceClassId))
     || !Array.isArray(payload.questions) || !Array.isArray(payload.assignments)) {
     throw new Error("The learning service returned an invalid worksheet. Please try again.");
   }
@@ -295,6 +298,7 @@ export function parseTutorWorksheet(payload: unknown): TutorWorksheet {
     targetMode: payload.audienceType === "CLASS" ? "CLASS" : "STUDENTS",
     status: payload.status,
     generationRequestId: payload.generationRequestId,
+    sourceClassId: payload.sourceClassId === undefined ? null : payload.sourceClassId,
     dueAt: assignments.find((assignment) => assignment.dueAt !== null)?.dueAt ?? null,
     questions: payload.questions.map(parseQuestion),
     assignments,
@@ -392,6 +396,21 @@ export async function fetchTutorWorksheets(classId?: number): Promise<TutorWorks
   const suffix = classId === undefined ? "" : `?classId=${classId}`;
   const payload = await json(await fetch(`${base}/api/learning/tutor/worksheets${suffix}`, { headers: headers() }));
   if (!Array.isArray(payload)) throw new Error("The learning service returned an invalid worksheet list. Please try again.");
+  return payload.map(parseTutorWorksheet);
+}
+
+/**
+ * Lists approved worksheets that the current Tutor may submit for one exact
+ * class/student membership. The server enforces the relationship.
+ */
+export async function fetchSubmissionWorksheets(classId: number, studentId: number): Promise<TutorWorksheet[]> {
+  requireId(classId, "Class reference is invalid.");
+  requireId(studentId, "Student reference is invalid.");
+  const payload = await json(await fetch(
+    `${base}/api/learning/tutor/classes/${classId}/students/${studentId}/submission-worksheets`,
+    { headers: headers() },
+  ));
+  if (!Array.isArray(payload)) throw new Error("The learning service returned an invalid submission worksheet list. Please try again.");
   return payload.map(parseTutorWorksheet);
 }
 
