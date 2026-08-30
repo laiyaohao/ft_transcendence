@@ -11,6 +11,10 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     globals: true,
+    // Browser workflows are executed by Playwright through `test:e2e`; limit
+    // Vitest to source tests so it does not collect browser specs or dependency
+    // fixture tests during the PR unit suite.
+    include: ["src/**/*.{test,spec}.{ts,tsx}"],
     // MUI interaction tests run concurrently and can exceed Vitest's five-second
     // default on developer and container hosts without indicating a deadlock.
     testTimeout: 15_000,

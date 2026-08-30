@@ -19,7 +19,7 @@ Class/student HTTP APIs and screens, worksheet generation, grading approval orch
 
 ## Prerequisites
 
-For the container workflow, install Docker Desktop/Engine with Compose v2. For direct local builds, install Node.js 20, npm, and a complete JDK 17 containing `javac`; a Java runtime alone cannot compile the backend. The full inventory is in [DEPENDENCIES.md](DEPENDENCIES.md).
+For the container workflow, install Docker Desktop/Engine with Compose v2. For direct local builds, install Node.js 20, npm, and a complete JDK 17 containing `javac`; a Java runtime alone cannot compile the backend. The full inventory and evaluator-facing library rationale are in [DEPENDENCIES.md](DEPENDENCIES.md). Commands that need a Docker daemon, public registry, VM, provider key, or GitHub Actions—together with expected outputs and result fields—are in [the sandbox validation runbook](docs/SANDBOX-VALIDATION-RUNBOOK.md).
 
 ## Configure and run
 
@@ -30,11 +30,14 @@ cp .env.example .env
 Replace every `change-me` value in `.env`. `JWT_SECRET` must contain at least 32 random bytes. Then validate and start the whole stack:
 
 ```bash
-docker compose config --quiet
-docker compose up --build
+make compose-config
+make compose-up
+make compose-ps
 ```
 
 Open the frontend at `http://localhost:3000`, Adminer at `http://localhost:8080`, and health probes at ports 8081–8083 under `/actuator/health`.
+
+Follow service logs with `make compose-logs`; stop the stack while preserving its database and upload volumes with `make compose-down`. `make compose-reset` intentionally deletes those disposable development volumes and must not be used for data you need to keep. Run `make help` for every available local, VM-only, CI-equivalent, and offline-E2E command.
 
 There are no shared default login credentials for ordinary local development. Student accounts are created through `/signup`. To provision the first Tutor, set all three `BOOTSTRAP_TUTOR_*` values for one startup; the password is validated and BCrypt-hashed, existing Tutor credentials are never reset, and public signup still rejects `TUTOR`. Clear the bootstrap values after the account has been created.
 
@@ -59,6 +62,7 @@ following from the repository root:
 docker compose version
 git status --short
 cp .env.production.example .env.production
+make help
 ```
 
 The copied `.env.production` contains no secrets. It configures the local
@@ -147,9 +151,7 @@ Run all Compose commands from the repository root:
 ```bash
 make production-config
 make production-up
-
-docker compose --env-file ./.env.production --env-file ../secrets.txt \
-  -f ./compose.yaml -f ./compose.production.yaml ps
+make production-ps
 ```
 
 Wait until every required service reports healthy, then verify the edge from
@@ -168,8 +170,7 @@ The last command must return an HTTP-to-HTTPS redirect. Open
 runtime logs with:
 
 ```bash
-docker compose --env-file ./.env.production --env-file ../secrets.txt \
-  -f ./compose.yaml -f ./compose.production.yaml logs -f nginx auth-service grading-service learning-service frontend
+make production-logs
 ```
 
 ### 6. VM test accounts
@@ -202,8 +203,7 @@ If the Tutor bootstrap account already exists, changing the password in
 entire stack and database volumes, then start again:
 
 ```bash
-docker compose --env-file ./.env.production --env-file ../secrets.txt \
-  -f ./compose.yaml -f ./compose.production.yaml down --volumes --remove-orphans
+make production-reset
 make production-up
 ```
 
@@ -224,8 +224,7 @@ volume-reset command above instead.
 ### 7. Stop the VM stack
 
 ```bash
-docker compose --env-file ./.env.production --env-file ../secrets.txt \
-  -f ./compose.yaml -f ./compose.production.yaml down
+make production-down
 ```
 
 This stops containers while preserving PostgreSQL and upload volumes. See
@@ -237,23 +236,48 @@ certificate, HSTS, CORS, and provider rollout requirements.
 Install locked JavaScript dependencies:
 
 ```bash
-npm ci
-npm --prefix frontend ci
+make deps
 ```
 
 Run all checks:
 
 ```bash
-npm run verify
+make ci
 ```
 
-Individual commands are available as `npm run lint`, `npm run typecheck`, `npm test`, `npm run test:integration`, and `npm run build`. PostgreSQL Testcontainers checks run when Docker is available and are skipped explicitly when it is not; deterministic H2 migration tests always run.
+`make ci` matches the pull-request quality gates: frontend lint, TypeScript, unit tests and build; a high/critical production-dependency audit; Maven verification for auth, grading and learning; Compose validation; and application image builds. Use the smaller targets when investigating a failure: `make frontend-lint`, `make frontend-typecheck`, `make frontend-test`, `make frontend-build`, `make security-audit`, `make backend-auth-test`, `make backend-grading-test`, `make backend-learning-test`, and `make test-integration`. PostgreSQL Testcontainers checks run when Docker is available and are skipped explicitly when it is not; deterministic H2 migration tests always run.
 
-To validate Compose without copying a real environment file:
+To validate the normal Compose file without copying a real environment file:
 
 ```bash
-npm run compose:config
+make ci-compose
 ```
+
+## Offline Compose browser tests
+
+The browser workflow suite runs against a clean, Docker Compose fixture stack: PostgreSQL, the three services, the frontend, deterministic AI/OCR mock, and a disposable seed service. It needs no OpenAI/DeepSeek key, external network service, or production secrets.
+
+After installing the frontend dependencies above, install the Chrome channel if your machine does not already have current stable Chrome, then validate the fixture configuration and run it locally:
+
+```bash
+make e2e-chrome
+make e2e-config
+make e2e
+```
+
+On Linux, use `make e2e-chrome-linux` instead of `make e2e-chrome` to install
+the native browser libraries used by CI.
+
+`make e2e` always removes the fixture containers and E2E database volume when the test finishes, including after a failure. To run each phase separately use `make e2e-up`, `make e2e-test`, and `make e2e-down`; use `make e2e-reset` to explicitly delete a failed fixture stack and its volume. The seed accounts are `e2e.tutor@example.test` / `E2eTutor!Pass123` and `e2e.student@example.test` / `E2eStudent!Pass123`, and are valid only inside this disposable fixture environment.
+
+## Continuous integration
+
+GitHub Actions uses two CI tiers:
+
+- Every pull request runs `Frontend checks`, including the high/critical production-dependency audit; the three expanded `Backend checks` entries (`auth-service`, `grading-service`, and `learning-service`); and `Compose configuration and images`. These are the recommended branch-protection required checks once they have completed successfully on the repository.
+- Pushes to `main`, the nightly scheduled run, and manual workflow dispatch also run `Offline E2E`. It starts the offline fixture stack, runs the Chrome Playwright suite, retains failure screenshots/traces/video and Compose logs for 14 days, and then deletes the stack and volumes. It is deliberately not a pull-request required check until hosted-runner timing and reliability are measured.
+
+The current offline suite verifies its existing seeded browser workflows. It is not a claim that every future MVP workflow has E2E coverage; add the remaining deterministic fixture scenarios before promoting `Offline E2E` to a required pull-request check. An intentional failing test should make its corresponding GitHub Action job fail; use that in a test pull request to verify repository branch protection after enabling the checks.
 
 ## Database ownership
 

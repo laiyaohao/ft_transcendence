@@ -25,6 +25,7 @@
     "test:integration:auth": "./backend/auth-service/mvnw -f backend/auth-service/pom.xml verify -DskipUnitTests=true",
     "test:integration:grading": "./backend/grading-service/mvnw -f backend/grading-service/pom.xml verify -DskipUnitTests=true",
     "test:integration:learning": "./backend/auth-service/mvnw -f backend/learning-service/pom.xml verify -DskipUnitTests=true",
+    "test:e2e": "npm --prefix frontend run test:e2e",
     "lint": "npm --prefix frontend run lint",
     "typecheck": "npm --prefix frontend run typecheck",
     "build": "npm run build:frontend && npm run build:auth && npm run build:grading && npm run build:learning",
@@ -34,6 +35,8 @@
     "build:learning": "./backend/auth-service/mvnw -f backend/learning-service/pom.xml package -DskipTests",
     "verify": "npm run lint && npm run typecheck && npm test && npm run build",
     "compose:config": "docker compose --env-file .env.example config --quiet",
+    "compose:e2e:config": "docker compose --env-file compose.e2e.env -f compose.yaml -f compose.e2e.yaml --profile e2e config --quiet",
+    "security:audit": "npm --prefix frontend audit --omit=dev --audit-level=high",
     "prepare": "husky"
   },
   "devDependencies": {

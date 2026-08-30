@@ -80,8 +80,17 @@ The grading and learning services use the same Maven/JDK 17 build image and Temu
 | --- | --- | --- |
 | PostgreSQL | `postgres:18-alpine` | Runtime database and `pg_isready` health check; the volume mounts the PostgreSQL 18 parent data directory. |
 | Adminer | `adminer` | Optional database administration UI. Pin a tested image version before deployment. |
+| Nginx edge | `nginx:1.27-alpine` | Production-only TLS/reverse-proxy edge. Its health check uses Alpine’s built-in BusyBox `wget`, so it does not rely on an uninstalled `curl` binary. |
+| E2E AI/OCR mock and seed | `node:22-alpine` | Disposable offline fixture services. They use only Node’s built-in HTTP/fetch APIs and have no npm package manifest. |
 
 No standalone OCR executable is currently required. OCR and grading are HTTP calls to the configured external AI provider.
+
+### Browser-test host dependency
+
+Playwright runs from the host/CI runner rather than inside Compose. Install its
+Chrome channel after frontend dependencies with `make e2e-chrome` on macOS or
+Windows, or use `make e2e-chrome-linux` on Linux. The latter installs the
+native system libraries required by Playwright and is the command used in CI.
 
 ## 4. Frontend direct dependencies
 
@@ -118,8 +127,43 @@ Exact versions below come from `frontend/package-lock.json`.
 | `@testing-library/react` | 16.3.2 | React component testing. |
 | `@testing-library/jest-dom` | 6.9.1 | DOM assertions. |
 | `@testing-library/user-event` | 14.6.6 | User interaction simulation. |
+| `@playwright/test` | 1.62.1 | Chrome end-to-end test runner for the disposable Compose fixture stack. |
 
 The repository root also installs `husky` 9.1.7 for local Git hooks. Husky is not required in production images.
+
+### Evaluator-facing frontend library rationale
+
+These are framework, styling, development, and testing primitives. None
+implements Tutor/Student workflows, grading, OCR decisions, worksheet
+generation, authentication policy, or learning logic for this project.
+
+| Package | Purpose and repository evidence | Why it is allowed | What to tell an evaluator |
+| --- | --- | --- | --- |
+| `next` | Routing, layouts, server rendering, and builds in `frontend/src/app`, `src/proxy.ts`, and `next.config.ts`. | Web framework only. | “Next.js provides routing and rendering. We implement pages, access rules, API calls, and application logic.” |
+| `react`, `react-dom` | Components, hooks, contexts, and browser rendering throughout `.tsx` files. `react-dom` is mounted by Next.js. | UI runtime primitives only. | “React renders components; React DOM connects them to the browser. Our screens and interactions are our own code.” |
+| `@mui/material`, `@mui/icons-material` | General buttons, forms, cards, dialogs, layout, theming, and static icons. | Presentation primitives; no education or workflow behaviour. | “MUI supplies visual building blocks and icons. We compose them and implement validation, navigation, and business rules.” |
+| `@mui/material-nextjs`, `@emotion/cache`, `@emotion/react`, `@emotion/styled` | MUI/Next style integration and CSS generation, including the project’s styled components. | Styling infrastructure and required peer/runtime support. | “These packages make our own theme and component CSS render consistently; they implement no product feature.” |
+| `husky` | Runs the repository’s own Git hook through the root `prepare` script. | Local development tooling only; absent from runtime images. | “Husky runs our commit-message check and is not application functionality.” |
+| `typescript`, `@types/node`, `@types/react`, `@types/react-dom` | Source type checking and type declarations. | Compiler/static-analysis tooling only. | “These packages check code and provide type information; they add no runtime feature.” |
+| `eslint`, `eslint-config-next` | Linting through `npm run lint` and `frontend/eslint.config.mjs`. | Code-quality tooling and rules only. | “ESLint checks our code for consistency and mistakes.” |
+| `vitest`, `@vitejs/plugin-react`, `@vitest/coverage-v8`, `jsdom` | Unit/integration test execution, React transformation, coverage, and simulated DOM. | Test infrastructure only. | “They execute and measure tests we wrote; they do not implement the application.” |
+| `@testing-library/react`, `@testing-library/jest-dom`, `@testing-library/user-event` | Component rendering, assertions, typing, clicks, and keyboard tests. | Test helpers only. | “They simulate users against behaviour implemented in our code.” |
+| `@playwright/test` | Chrome browser automation for `frontend/e2e` against the disposable Compose fixture stack. | Test runner only; not bundled into the deployed application. | “Playwright verifies browser workflows against our application; it does not provide the workflows.” |
+
+#### Potential evaluator questions
+
+| Item | Risk | Resolution |
+| --- | --- | --- |
+| Official 42 subject/specification is not stored in this repository. | Exact version-specific library restrictions cannot be checked here. | Compare this inventory against the exact evaluation subject before submission. This is an audit limitation, not evidence that a package is forbidden. |
+| `@emotion/*` and `react-dom` have few or no direct imports. | They may appear unused. | Keep them: they are direct peer/runtime requirements of MUI, `@mui/material-nextjs`, and Next.js, making the Docker build reproducible. |
+| `next` and `@mui/material` are large packages. | An evaluator may ask whether they provide assessed features. | Point to `frontend/src/app`, `src/lib/auth.ts`, `src/proxy.ts`, navigation components, and forms: they contain the project’s access, data, and workflow code. |
+
+**Conclusion:** the direct npm dependencies are limited to frontend rendering,
+styling, type checking, linting, tests, browser tests, and Git hooks. No direct
+npm dependency provides a complete authentication system, 2FA, chat,
+tournament, matchmaking, Pong/game engine, grading workflow, worksheet flow,
+or education feature. This is a feature-library compliance explanation, not a
+live CVE audit; `make security-audit` performs the separate dependency audit.
 
 ## 5. Auth-service Java dependencies
 
@@ -249,13 +293,21 @@ The Issue 01–07 container foundation is complete. Later deployment work should
 ## 11. Verification commands
 
 ```bash
-docker compose --env-file .env.example config
-npm ci
-npm --prefix frontend ci
-npm test
-npm run lint
-npm run typecheck
-npm run build
-docker compose --env-file .env.example config --quiet
-docker compose --env-file .env.example build
+make deps
+make frontend-lint
+make frontend-typecheck
+make frontend-test
+make frontend-build
+make backend-test
+make ci-compose
+make e2e-config
 ```
+
+The learning service deliberately reuses the checked-in auth-service Maven
+Wrapper (`backend/auth-service/mvnw -f backend/learning-service/pom.xml`)
+because its POM is the source of dependency resolution. This is documented in
+the Makefile and CI; Maven itself is present in every backend build image.
+
+For tests and commands that require Docker daemon access, public registries,
+external providers, a VM, or GitHub Actions, see
+[SANDBOX-VALIDATION-RUNBOOK.md](docs/SANDBOX-VALIDATION-RUNBOOK.md).

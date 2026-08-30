@@ -85,7 +85,8 @@ services:
         read_only: true
     networks: [application]
     healthcheck:
-      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1/healthz"]
+      # nginx:alpine provides BusyBox wget but does not guarantee curl.
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1/healthz"]
       interval: 10s
       timeout: 5s
       retries: 12
