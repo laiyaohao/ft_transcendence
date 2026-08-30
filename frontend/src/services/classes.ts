@@ -291,6 +291,36 @@ function isClassWorksheet(value: unknown): value is ClassWorksheet {
     && isOptionalDateTime(candidate.assignedAt);
 }
 
+/**
+ * Spring omits null record fields from JSON. The client model deliberately
+ * represents those missing learning values as null so every UI consumer has a
+ * stable value without treating a valid empty class as a malformed response.
+ */
+function normalizeTutorClassDetail(payload: unknown): unknown {
+  if (typeof payload !== "object" || payload === null) return payload;
+  const detail = payload as Record<string, unknown>;
+  return {
+    ...detail,
+    students: Array.isArray(detail.students)
+      ? detail.students.map((student) => typeof student === "object" && student !== null
+        ? { ...(student as Record<string, unknown>), overallMastery: (student as Record<string, unknown>).overallMastery ?? null }
+        : student)
+      : detail.students,
+    mastery: typeof detail.mastery === "object" && detail.mastery !== null
+      ? { ...(detail.mastery as Record<string, unknown>), averageScore: (detail.mastery as Record<string, unknown>).averageScore ?? null }
+      : detail.mastery,
+    worksheets: Array.isArray(detail.worksheets)
+      ? detail.worksheets.map((worksheet) => typeof worksheet === "object" && worksheet !== null
+        ? {
+            ...(worksheet as Record<string, unknown>),
+            assignedAt: (worksheet as Record<string, unknown>).assignedAt ?? null,
+            dueAt: (worksheet as Record<string, unknown>).dueAt ?? null,
+          }
+        : worksheet)
+      : detail.worksheets,
+  };
+}
+
 function isTutorClassDetail(value: unknown): value is TutorClassDetail {
   if (!isTutorClass(value)) return false;
   const candidate = value as unknown as Record<string, unknown>;
@@ -305,11 +335,12 @@ function isTutorClassDetail(value: unknown): value is TutorClassDetail {
 }
 
 export function parseTutorClassDetail(payload: unknown): TutorClassDetail {
-  if (!isTutorClassDetail(payload)) {
+  const normalized = normalizeTutorClassDetail(payload);
+  if (!isTutorClassDetail(normalized)) {
     throw new Error("The learning service returned invalid class details. Please try again.");
   }
 
-  return payload;
+  return normalized;
 }
 
 export function parseTutorClassInsights(payload: unknown): ClassInsightSnapshot {

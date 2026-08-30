@@ -120,6 +120,11 @@ public class ClassController {
         return error(HttpStatus.NOT_FOUND, "CLASS_NOT_FOUND", exception.getMessage(), Map.of());
     }
 
+    @ExceptionHandler(ClassService.ClassAccessDeniedException.class)
+    ResponseEntity<ApiError> accessDenied(ClassService.ClassAccessDeniedException exception) {
+        return error(HttpStatus.FORBIDDEN, "CLASS_ACCESS_FORBIDDEN", exception.getMessage(), Map.of());
+    }
+
     @ExceptionHandler(StudentService.ClassNotFoundException.class)
     ResponseEntity<ApiError> membershipClassNotFound(StudentService.ClassNotFoundException exception) {
         return error(HttpStatus.NOT_FOUND, "CLASS_NOT_FOUND", exception.getMessage(), Map.of());

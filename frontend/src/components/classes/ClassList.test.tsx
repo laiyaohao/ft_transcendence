@@ -37,6 +37,7 @@ describe("ClassList", () => {
     expect(screen.getByTestId("class-list-skeleton")).toBeVisible();
     resolve(classes);
     expect(await screen.findByRole("link", { name: "Open Primary 5 Science" })).toHaveAttribute("href", "/classes/12");
+    expect(screen.getByRole("link", { name: "Open Primary 6 Maths" })).toHaveAttribute("href", "/classes/20");
   });
 
   it("renders supplied classes, schedules, and a responsive card grid", async () => {

@@ -13,6 +13,8 @@ public interface TutorClassRepository extends Repository<TutorClass, Long> {
 
     <S extends TutorClass> S save(S tutorClass);
 
+    Optional<TutorClass> findById(Long id);
+
     Optional<TutorClass> findByIdAndTutorId(Long id, Long tutorId);
 
     List<TutorClass> findAllByTutorIdAndStatusOrderByClassNameAsc(

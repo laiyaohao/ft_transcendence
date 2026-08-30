@@ -2,7 +2,7 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ClassInsightSnapshot, TutorClassDetail } from "@/services/classes";
+import { ClassApiError, type ClassInsightSnapshot, type TutorClassDetail } from "@/services/classes";
 
 import ClassDetail from "./ClassDetail";
 
@@ -48,6 +48,7 @@ describe("ClassDetail", () => {
   it("renders students, mastery, weak areas, persisted insight evidence, worksheets, and responsive sections", async () => {
     render(<ClassDetail classId={12} loadClass={async () => detail} loadInsights={async () => insights} />);
     expect(await screen.findByText("Bella Tan")).toBeVisible();
+    expect(screen.getByText("Tutor account #7")).toBeVisible();
     expect(screen.getAllByText("68%")).toHaveLength(2);
     expect(screen.getAllByText("Adaptation")).toHaveLength(2);
     expect(screen.getByRole("heading", { name: "Class insight" })).toBeVisible();
@@ -75,11 +76,25 @@ describe("ClassDetail", () => {
     expect(screen.getByText("No regular schedule yet")).toBeVisible();
   });
 
-  it("shows a retryable missing or wrong-owner error", async () => {
-    const loadClass = vi.fn().mockRejectedValueOnce(new Error("Class 12 was not found for this tutor")).mockResolvedValueOnce(detail);
+  it("shows an actionable not-found state for a missing class", async () => {
+    render(<ClassDetail classId={12} loadClass={async () => { throw new ClassApiError("Class 12 was not found", 404); }} loadInsights={async () => insights} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Class not found");
+    expect(screen.getByText(/no longer exists/i)).toBeVisible();
+    expect(screen.getByRole("link", { name: "Back to classes" })).toHaveAttribute("href", "/classes");
+  });
+
+  it("shows an access-denied state for a class owned by another Tutor", async () => {
+    render(<ClassDetail classId={12} loadClass={async () => { throw new ClassApiError("Class access is forbidden", 403); }} loadInsights={async () => insights} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("You do not have access to this class");
+    expect(screen.getByText(/Only the Tutor who owns this class/i)).toBeVisible();
+    expect(screen.getByRole("link", { name: "Back to classes" })).toHaveAttribute("href", "/classes");
+  });
+
+  it("shows a retryable server failure without presenting it as a missing class", async () => {
+    const loadClass = vi.fn().mockRejectedValueOnce(new ClassApiError("Database unavailable", 503)).mockResolvedValueOnce(detail);
     const user = userEvent.setup();
     render(<ClassDetail classId={12} loadClass={loadClass} loadInsights={async () => insights} />);
-    expect(await screen.findByRole("alert")).toHaveTextContent("not found for this tutor");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Class service is unavailable");
     await user.click(screen.getByRole("button", { name: "Retry loading class" }));
     expect(await screen.findByText("Bella Tan")).toBeVisible();
   });

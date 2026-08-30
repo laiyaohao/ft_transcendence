@@ -129,6 +129,14 @@ describe("tutor class service", () => {
     await expect(fetchTutorClassDetail(12)).rejects.toMatchObject({ status: 404, message: "Class 12 was not found for this tutor" });
   });
 
+  it("preserves an explicit forbidden detail response", async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
+      code: "CLASS_FORBIDDEN", message: "Class access is forbidden", fields: {},
+    }), { status: 403, headers: { "content-type": "application/json" } }));
+
+    await expect(fetchTutorClassDetail(12)).rejects.toMatchObject({ status: 403, message: "Class access is forbidden" });
+  });
+
   it("retrieves the server-filtered eligible Student account list", async () => {
     localStorage.setItem("jwt_token", "stored-token");
     vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify(eligibleStudents), { status: 200 }));
@@ -180,6 +188,16 @@ describe("tutor class service", () => {
       weakAreas: [],
       worksheets: [],
     })).toMatchObject({ students: [], weakAreas: [], worksheets: [] });
+    expect(parseTutorClassDetail({
+      ...detail,
+      students: [{ id: 80, fullName: "No Mastery", masteryRecordCount: 0 }],
+      mastery: { recordCount: 0, studentsWithMastery: 0 },
+      worksheets: [{ id: 31, title: "No due date", status: "APPROVED" }],
+    })).toMatchObject({
+      students: [{ overallMastery: null }],
+      mastery: { averageScore: null },
+      worksheets: [{ assignedAt: null, dueAt: null }],
+    });
     expect(() => parseTutorClassDetail({ ...detail, insight: { status: "READY", message: "No" } })).toThrow("invalid class details");
     expect(() => parseTutorClassDetail({ ...detail, weakAreas: [{ ...detail.weakAreas[0], averageScore: 101 }] })).toThrow("invalid class details");
   });

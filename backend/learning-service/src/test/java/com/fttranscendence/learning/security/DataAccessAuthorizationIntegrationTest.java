@@ -22,7 +22,7 @@ import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/** Verifies role gates and non-enumerating owner-scoped lookups at the HTTP boundary. */
+/** Verifies role gates and owner-scoped lookups at the HTTP boundary. */
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
@@ -68,7 +68,7 @@ class DataAccessAuthorizationIntegrationTest {
         mvc.perform(get("/api/learning/tutor/students/{id}/mastery-map", 999999L).header("Authorization", bearer("TUTOR", 101)))
             .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("MASTERY_NOT_FOUND"));
         mvc.perform(get("/api/learning/tutor/classes/{id}", foreignClass).header("Authorization", bearer("TUTOR", 101)))
-            .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("CLASS_NOT_FOUND"));
+            .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("CLASS_ACCESS_FORBIDDEN"));
         mvc.perform(get("/api/learning/student/mastery-map").header("Authorization", bearer("STUDENT", 9001)))
             .andExpect(status().isOk()).andExpect(jsonPath("$.studentId").value(ownedStudent));
         mvc.perform(get("/api/learning/student/mastery-map").header("Authorization", bearer("STUDENT", 9002)))

@@ -70,8 +70,11 @@ public class ClassService {
     @Transactional(readOnly = true)
     public ClassDetailResponse getOwnedClassDetail(long tutorId, long classId) {
         requireTutor(tutorId);
-        TutorClass tutorClass = repository.findByIdAndTutorId(classId, tutorId)
+        TutorClass tutorClass = repository.findById(classId)
             .orElseThrow(() -> new ClassNotFoundException(classId));
+        if (!Long.valueOf(tutorId).equals(tutorClass.getTutorId())) {
+            throw new ClassAccessDeniedException(classId);
+        }
 
         List<StudentProfile> students = studentRepository
             .findAllByTutorIdAndClassIdOrderByFullNameAsc(tutorId, classId);
@@ -316,6 +319,12 @@ public class ClassService {
     public static class ClassNotFoundException extends RuntimeException {
         public ClassNotFoundException(long classId) {
             super("Class " + classId + " was not found for this tutor");
+        }
+    }
+
+    public static class ClassAccessDeniedException extends RuntimeException {
+        public ClassAccessDeniedException(long classId) {
+            super("You are not authorized to access class " + classId);
         }
     }
 

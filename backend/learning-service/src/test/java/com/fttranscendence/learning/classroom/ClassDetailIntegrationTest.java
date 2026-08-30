@@ -50,8 +50,11 @@ class ClassDetailIntegrationTest {
             classId, "MONDAY", "15:00", "16:30");
         long firstStudent = insertStudent(OWNER_ID, "Amelia Tan");
         long secondStudent = insertStudent(OWNER_ID, "Ben Lim");
+        long otherClassId = insertClass(OWNER_ID, "P5 Science extension", "p5 science extension");
+        long otherClassStudent = insertStudent(OWNER_ID, "Other Class Learner");
         insertMembership(firstStudent, classId, OWNER_ID);
         insertMembership(secondStudent, classId, OWNER_ID);
+        insertMembership(otherClassStudent, otherClassId, OWNER_ID);
         long waterTopic = topicId("SCI_P5_CYCLES_MATTER_WATER_WATER");
         long plantTopic = topicId("SCI_P5_CYCLES_PLANTS_ANIMALS_REPRODUCTION");
         insertMastery(firstStudent, waterTopic, 40);
@@ -66,6 +69,7 @@ class ClassDetailIntegrationTest {
             .andExpect(jsonPath("$.schedules[0].dayOfWeek").value("MONDAY"))
             .andExpect(jsonPath("$.students.length()").value(2))
             .andExpect(jsonPath("$.students[0].fullName").value("Amelia Tan"))
+            .andExpect(jsonPath("$.students[?(@.fullName == 'Other Class Learner')]").isEmpty())
             .andExpect(jsonPath("$.students[0].overallMastery").value(50.00))
             .andExpect(jsonPath("$.mastery.recordCount").value(3))
             .andExpect(jsonPath("$.mastery.studentsWithMastery").value(2))
@@ -102,7 +106,7 @@ class ClassDetailIntegrationTest {
     }
 
     @Test
-    void hidesMissingAndForeignClassesAndRequiresTutorAuthentication() throws Exception {
+    void distinguishesMissingAndForeignClassesAndRequiresTutorAuthentication() throws Exception {
         long foreignClassId = insertClass(202L, "Other Tutor", "other tutor");
         String ownerToken = token("TUTOR", OWNER_ID);
 
@@ -112,8 +116,8 @@ class ClassDetailIntegrationTest {
             .andExpect(jsonPath("$.code").value("CLASS_NOT_FOUND"));
         mockMvc.perform(get("/api/learning/tutor/classes/{classId}", foreignClassId)
                 .header("Authorization", "Bearer " + ownerToken))
-            .andExpect(status().isNotFound())
-            .andExpect(jsonPath("$.code").value("CLASS_NOT_FOUND"));
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.code").value("CLASS_ACCESS_FORBIDDEN"));
         mockMvc.perform(get("/api/learning/tutor/classes/{classId}", foreignClassId))
             .andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/learning/tutor/classes/{classId}", foreignClassId)

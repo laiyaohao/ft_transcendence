@@ -16,6 +16,7 @@ import Typography from "@mui/material/Typography";
 import Link from "next/link";
 
 import {
+  ClassApiError,
   fetchTutorClassDetail,
   fetchTutorClassInsights,
   type ClassInsightAvailability,
@@ -53,6 +54,35 @@ function ClassDetailSkeleton() {
     <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(168px, 1fr))", gap: 1.75 }}>{[0, 1, 2].map((item) => <Skeleton key={item} variant="rounded" height={116} sx={{ borderRadius: "14px", bgcolor: "#F0EAE0" }} />)}</Box>
     <Skeleton variant="rounded" height={250} sx={{ borderRadius: "14px", bgcolor: "#F0EAE0" }} />
   </Box>;
+}
+
+function classDetailErrorCopy(error: Error) {
+  if (error instanceof ClassApiError && error.status === 404) {
+    return {
+      title: "Class not found",
+      message: "This class no longer exists, or its link is no longer valid.",
+      retryLabel: "Back to classes",
+    };
+  }
+  if (error instanceof ClassApiError && error.status === 403) {
+    return {
+      title: "You do not have access to this class",
+      message: "Only the Tutor who owns this class can open its detail and roster.",
+      retryLabel: "Back to classes",
+    };
+  }
+  if (error instanceof ClassApiError && error.status >= 500) {
+    return {
+      title: "Class service is unavailable",
+      message: "The class service could not respond. Please try again shortly.",
+      retryLabel: "Retry loading class",
+    };
+  }
+  return {
+    title: "Class details could not be loaded",
+    message: "The class detail request could not be completed. Check your connection and try again.",
+    retryLabel: "Retry loading class",
+  };
 }
 
 function EmptySection({ title, children }: { title: string; children: React.ReactNode }) {
@@ -148,7 +178,7 @@ function ClassInsightPanel({
 
 export default function ClassDetail({ classId, loadClass = fetchTutorClassDetail, loadInsights = fetchTutorClassInsights }: ClassDetailProps) {
   const [detail, setDetail] = React.useState<TutorClassDetail | null>(null);
-  const [error, setError] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<Error | null>(null);
   const [insight, setInsight] = React.useState<ClassInsightSnapshot | null>(null);
   const [insightError, setInsightError] = React.useState<string | null>(null);
   const [insightLoading, setInsightLoading] = React.useState(false);
@@ -178,7 +208,7 @@ export default function ClassDetail({ classId, loadClass = fetchTutorClassDetail
     setDetail(null); setError(null);
     void loadClass(classId).then(
       (loaded) => { if (requestId.current === currentRequest) setDetail(loaded); },
-      (reason: unknown) => { if (requestId.current === currentRequest) setError(reason instanceof Error ? reason.message : "Class details could not be loaded. Please try again."); },
+      (reason: unknown) => { if (requestId.current === currentRequest) setError(reason instanceof Error ? reason : new Error("The class detail request could not be completed.")); },
     );
     void refreshInsights();
   }, [classId, loadClass, refreshInsights, validClassId]);
@@ -190,12 +220,13 @@ export default function ClassDetail({ classId, loadClass = fetchTutorClassDetail
   }, [load, validClassId]);
 
   const heading = detail?.className ?? "Class details";
+  const detailError = error ? classDetailErrorCopy(error) : null;
   return <Box sx={{ minHeight: "100vh", bgcolor: "#F7F4EF", px: { xs: 2.5, sm: 3.75 }, py: 3.75, color: "#2A2622" }}>
     <Box sx={{ maxWidth: 1420, mx: "auto", animation: "fadeUp .35s ease both" }}>
       <Box component={Link} href="/classes" sx={{ display: "inline-flex", alignItems: "center", gap: 0.9, color: "#A09488", fontSize: 10.5, fontWeight: 600, letterSpacing: ".13em", textDecoration: "none", mb: 2.5, "&:hover": { color: "#B4573F" }, "&:focus-visible": { outline: "3px solid #E08A72", outlineOffset: 3, borderRadius: 1 } }}><ArrowBackIcon aria-hidden="true" sx={{ fontSize: 14 }} />ALL CLASSES</Box>
-      {!validClassId ? <Card component="section" role="alert" variant="outlined" sx={{ ...card, maxWidth: 620, p: 3, borderLeft: "3px solid #B4573F" }}><Typography component="h1" sx={{ fontFamily: serif, fontSize: 24, fontWeight: 500, mb: 0.75 }}>Class cannot be opened</Typography><Typography sx={{ color: "#5A544C", fontSize: 13.5, lineHeight: 1.6 }}>This class reference is invalid. Return to your classes and choose a class to open.</Typography></Card> : error ? <Card component="section" role="alert" variant="outlined" sx={{ ...card, maxWidth: 620, p: 3, borderLeft: "3px solid #B4573F" }}><Typography component="h1" sx={{ fontFamily: serif, fontSize: 24, fontWeight: 500, mb: 0.75 }}>Class details could not be loaded</Typography><Typography sx={{ color: "#5A544C", fontSize: 13.5, lineHeight: 1.6, mb: 2 }}>{error}</Typography><Button onClick={() => void load()} variant="outlined" sx={secondaryButton}>Retry loading class</Button></Card> : !detail ? <ClassDetailSkeleton /> : <>
+      {!validClassId ? <Card component="section" role="alert" variant="outlined" sx={{ ...card, maxWidth: 620, p: 3, borderLeft: "3px solid #B4573F" }}><Typography component="h1" sx={{ fontFamily: serif, fontSize: 24, fontWeight: 500, mb: 0.75 }}>Class cannot be opened</Typography><Typography sx={{ color: "#5A544C", fontSize: 13.5, lineHeight: 1.6 }}>This class reference is invalid. Return to your classes and choose a class to open.</Typography></Card> : detailError ? <Card component="section" role="alert" variant="outlined" sx={{ ...card, maxWidth: 620, p: 3, borderLeft: "3px solid #B4573F" }}><Typography component="h1" sx={{ fontFamily: serif, fontSize: 24, fontWeight: 500, mb: 0.75 }}>{detailError.title}</Typography><Typography sx={{ color: "#5A544C", fontSize: 13.5, lineHeight: 1.6, mb: 2 }}>{detailError.message}</Typography>{detailError.retryLabel === "Back to classes" ? <Button component={Link} href="/classes" variant="outlined" sx={secondaryButton}>Back to classes</Button> : <Button onClick={() => void load()} variant="outlined" sx={secondaryButton}>{detailError.retryLabel}</Button>}</Card> : !detail ? <ClassDetailSkeleton /> : <>
         <Box sx={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "flex-end", gap: 2, mb: 3 }}>
-          <Box><Typography sx={{ color: "#A09488", fontSize: 10.5, fontWeight: 600, letterSpacing: ".13em", mb: 0.75 }}>CLASS SUMMARY</Typography><Typography component="h1" sx={{ fontFamily: serif, fontSize: { xs: 32, sm: 38 }, fontWeight: 500, lineHeight: 1.1, letterSpacing: "-.02em", textWrap: "pretty" }}>{heading}</Typography><Typography sx={{ color: "#6F675E", fontSize: 14, mt: 0.8 }}>{detail.level} · {detail.subject} · {detail.status.toLowerCase()}</Typography></Box>
+          <Box><Typography sx={{ color: "#A09488", fontSize: 10.5, fontWeight: 600, letterSpacing: ".13em", mb: 0.75 }}>CLASS SUMMARY</Typography><Typography component="h1" sx={{ fontFamily: serif, fontSize: { xs: 32, sm: 38 }, fontWeight: 500, lineHeight: 1.1, letterSpacing: "-.02em", textWrap: "pretty" }}>{heading}</Typography><Typography sx={{ color: "#6F675E", fontSize: 14, mt: 0.8 }}>{detail.level} · {detail.subject} · {detail.status.toLowerCase()}</Typography><Typography sx={{ color: "#8B837A", fontSize: 11.5, mt: 0.55 }}>Tutor account #{detail.tutorId}</Typography></Box>
           <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}><Button component={Link} href={`/classes/${detail.id}/edit`} startIcon={<EditOutlinedIcon />} variant="outlined" sx={secondaryButton}>Edit class</Button><Button component={Link} href={`/students?classId=${detail.id}`} startIcon={<GroupsOutlinedIcon />} variant="outlined" sx={secondaryButton}>View students</Button><Button component={Link} href={`/tutor/worksheets?classId=${detail.id}`} startIcon={<MenuBookOutlinedIcon />} variant="outlined" sx={secondaryButton}>View worksheets</Button></Box>
         </Box>
         <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(168px, 1fr))", gap: 1.75, mb: 2.5 }}>
