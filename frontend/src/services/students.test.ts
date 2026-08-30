@@ -7,12 +7,14 @@ import {
   deleteTutorNote,
   fetchTutorNotes,
   fetchTutorStudents,
+  fetchAvailableStudentAccounts,
   fetchTutorStudentProfile,
   fetchStudentSelfProfile,
   parseTutorStudent,
   parseTutorStudentProfile,
   parseStudentSelfProfile,
   parseTutorStudents,
+  parseAvailableStudentAccounts,
   parseTutorNote,
   parseTutorNotes,
   updateTutorNote,
@@ -71,6 +73,20 @@ describe("tutor student service", () => {
       "http://localhost:8083/api/learning/tutor/students",
       expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer stored-token" }) }),
     );
+  });
+
+  it("searches available Student accounts by a server-side query and validates their safe projection", async () => {
+    localStorage.setItem("jwt_token", "stored-token");
+    const accounts = [{ id: 71, fullName: "Bella Tan", email: "bella.tan@email.com", level: "Primary 6" }];
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify(accounts), { status: 200 }));
+
+    await expect(fetchAvailableStudentAccounts("bella@")) .resolves.toEqual(accounts);
+    expect(fetch).toHaveBeenCalledWith(
+      "http://localhost:8083/api/learning/tutor/student-accounts?search=bella%40",
+      expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer stored-token" }) }),
+    );
+    expect(parseAvailableStudentAccounts(accounts)).toEqual(accounts);
+    expect(() => parseAvailableStudentAccounts([{ id: 0, fullName: "Bella", email: "bella@example.com", level: null }])).toThrow("invalid Student account list");
   });
 
   it("rejects failed owner-scoped requests with the server message", async () => {

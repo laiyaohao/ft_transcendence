@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import Alert from "@mui/material/Alert";
+import Autocomplete from "@mui/material/Autocomplete";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
@@ -12,6 +14,8 @@ import Link from "next/link";
 import { fetchTutorClasses, type TutorClass } from "@/services/classes";
 import {
   StudentApiError,
+  fetchAvailableStudentAccounts,
+  type AvailableStudentAccount,
   type StudentMutationRequest,
   type TutorStudent,
 } from "@/services/students";
@@ -25,6 +29,7 @@ export interface StudentFormProps {
   submitStudent: (request: StudentMutationRequest) => Promise<TutorStudent>;
   onComplete: (student: TutorStudent) => void;
   loadClasses?: () => Promise<TutorClass[]>;
+  loadStudentAccounts?: (search: string) => Promise<AvailableStudentAccount[]>;
   cancelHref?: string;
 }
 
@@ -46,14 +51,19 @@ function valuesFor(student?: TutorStudent): FormValues {
   };
 }
 
-export function validateStudentForm(values: FormValues): FieldErrors {
+export function validateStudentForm(
+  values: FormValues,
+  mode: StudentFormProps["mode"],
+  selectedAccount: AvailableStudentAccount | null,
+): FieldErrors {
   const errors: FieldErrors = {};
   const name = values.fullName.trim();
-  if (!name) errors.fullName = "Student name is required.";
-  else if (name.length > 120) errors.fullName = "Student name must be 120 characters or fewer.";
-
-  if (values.loginUserId.trim() && (!/^\d+$/.test(values.loginUserId.trim()) || Number(values.loginUserId) <= 0 || !Number.isSafeInteger(Number(values.loginUserId)))) {
-    errors.loginUserId = "Student login ID must be a positive whole number.";
+  if (mode === "create") {
+    if (!selectedAccount) errors.studentAccount = "Select an existing Student account.";
+  } else if (!name) {
+    errors.fullName = "Student name is required.";
+  } else if (name.length > 120) {
+    errors.fullName = "Student name must be 120 characters or fewer.";
   }
   if (new Set(values.classIds).size !== values.classIds.length) {
     errors.classIds = "Each class can be selected only once.";
@@ -61,11 +71,11 @@ export function validateStudentForm(values: FormValues): FieldErrors {
   return errors;
 }
 
-function requestFor(values: FormValues): StudentMutationRequest {
+function requestFor(values: FormValues, mode: StudentFormProps["mode"], selectedAccount: AvailableStudentAccount | null): StudentMutationRequest {
   const loginUserId = values.loginUserId.trim();
   return {
-    fullName: values.fullName.trim(),
-    loginUserId: loginUserId ? Number(loginUserId) : null,
+    fullName: mode === "create" ? selectedAccount!.fullName : values.fullName.trim(),
+    loginUserId: mode === "create" ? selectedAccount!.id : loginUserId ? Number(loginUserId) : null,
     classIds: [...new Set(values.classIds)],
   };
 }
@@ -102,20 +112,52 @@ function MembershipPicker({
   );
 }
 
-export default function StudentForm({ mode, initialStudent, submitStudent, onComplete, loadClasses = fetchTutorClasses, cancelHref = "/students" }: StudentFormProps) {
+export default function StudentForm({ mode, initialStudent, submitStudent, onComplete, loadClasses = fetchTutorClasses, loadStudentAccounts = fetchAvailableStudentAccounts, cancelHref = "/students" }: StudentFormProps) {
   const [values, setValues] = React.useState<FormValues>(() => valuesFor(initialStudent));
   const [errors, setErrors] = React.useState<FieldErrors>({});
   const [submitError, setSubmitError] = React.useState<string | null>(null);
   const [classes, setClasses] = React.useState<TutorClass[] | null>(null);
   const [classesError, setClassesError] = React.useState<string | null>(null);
+  const [studentAccounts, setStudentAccounts] = React.useState<AvailableStudentAccount[]>([]);
+  const [studentSearch, setStudentSearch] = React.useState("");
+  const [selectedAccount, setSelectedAccount] = React.useState<AvailableStudentAccount | null>(null);
+  const [accountsLoading, setAccountsLoading] = React.useState(mode === "create");
+  const [accountsError, setAccountsError] = React.useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const submissionInFlight = React.useRef(false);
+  const accountRequestSequence = React.useRef(0);
 
   const loadMembershipClasses = React.useCallback(async () => {
     setClasses(null); setClassesError(null);
     try { setClasses(await loadClasses()); }
     catch (reason) { setClassesError(reason instanceof Error ? reason.message : "Your classes could not be loaded. Please try again."); }
   }, [loadClasses]);
+
+  const loadAccounts = React.useCallback(async (search: string) => {
+    const requestSequence = ++accountRequestSequence.current;
+    setAccountsLoading(true);
+    setAccountsError(null);
+    try {
+      const accounts = await loadStudentAccounts(search);
+      if (requestSequence === accountRequestSequence.current) {
+        setStudentAccounts(accounts);
+      }
+    } catch (reason) {
+      if (requestSequence === accountRequestSequence.current) {
+        setAccountsError(reason instanceof Error ? reason.message : "Student accounts could not be loaded. Please try again.");
+      }
+    } finally {
+      if (requestSequence === accountRequestSequence.current) {
+        setAccountsLoading(false);
+      }
+    }
+  }, [loadStudentAccounts]);
+
+  React.useEffect(() => {
+    if (mode !== "create") return;
+    const timer = window.setTimeout(() => { void loadAccounts(studentSearch); }, 180);
+    return () => window.clearTimeout(timer);
+  }, [loadAccounts, mode, studentSearch]);
 
   React.useEffect(() => {
     let current = true;
@@ -143,14 +185,18 @@ export default function StudentForm({ mode, initialStudent, submitStudent, onCom
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (submissionInFlight.current) return;
-    const validation = validateStudentForm(values);
+    const validation = validateStudentForm(values, mode, selectedAccount);
     if (Object.keys(validation).length) { setErrors(validation); setSubmitError(null); return; }
 
     submissionInFlight.current = true;
     setIsSubmitting(true); setErrors({}); setSubmitError(null);
-    try { onComplete(await submitStudent(requestFor(values))); }
+    try { onComplete(await submitStudent(requestFor(values, mode, selectedAccount))); }
     catch (reason) {
-      if (reason instanceof StudentApiError) { setErrors(reason.fields); setSubmitError(reason.message); }
+      if (reason instanceof StudentApiError) {
+        const fields = { ...reason.fields };
+        if (fields.loginUserId) { fields.studentAccount = fields.loginUserId; delete fields.loginUserId; }
+        setErrors(fields); setSubmitError(reason.message);
+      }
       else setSubmitError(reason instanceof Error ? reason.message : "Your student could not be saved. Please try again.");
     } finally { submissionInFlight.current = false; setIsSubmitting(false); }
   };
@@ -161,8 +207,25 @@ export default function StudentForm({ mode, initialStudent, submitStudent, onCom
   return (
     <Card component="form" noValidate onSubmit={handleSubmit} variant="outlined" sx={{ maxWidth: 880, p: { xs: 2.25, sm: 3 }, borderRadius: "14px", bgcolor: "#FFFDFA", borderColor: "#EBE4D9", boxShadow: "none" }}>
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "minmax(0, 1fr) minmax(0, 1fr)" }, gap: 2 }}>
-        <TextField required fullWidth label="Student name" value={values.fullName} onChange={(event) => updateValue("fullName", event.target.value)} slotProps={{ htmlInput: { maxLength: 120, "aria-label": "Student name" } }} error={Boolean(errors.fullName)} helperText={errors.fullName || "Use the name families recognise."} sx={{ ...fieldSx, gridColumn: { sm: "1 / -1" } }} />
-        <TextField fullWidth label="Student login ID" value={values.loginUserId} onChange={(event) => updateValue("loginUserId", event.target.value)} inputMode="numeric" error={Boolean(errors.loginUserId)} helperText={errors.loginUserId || "Optional. Link an existing student account when available."} slotProps={{ htmlInput: { "aria-label": "Student login ID" } }} sx={fieldSx} />
+        {mode === "create" ? <Box sx={{ gridColumn: { sm: "1 / -1" } }}>
+          <Autocomplete
+            fullWidth
+            options={studentAccounts}
+            value={selectedAccount}
+            loading={accountsLoading}
+            inputValue={studentSearch}
+            onInputChange={(_, value) => { setStudentSearch(value); setSelectedAccount(null); setErrors((current) => { const next = { ...current }; delete next.studentAccount; return next; }); }}
+            onChange={(_, account) => { setSelectedAccount(account); setErrors((current) => { const next = { ...current }; delete next.studentAccount; return next; }); }}
+            getOptionLabel={(account) => `${account.fullName} — ${account.email}`}
+            isOptionEqualToValue={(left, right) => left.id === right.id}
+            noOptionsText={accountsLoading ? "Loading Student accounts…" : "No available students found."}
+            renderOption={(props, account) => <Box component="li" {...props} key={account.id} sx={{ display: "block !important", py: "10px !important" }}><Typography sx={{ fontWeight: 600, fontSize: 14 }}>{account.fullName}</Typography><Typography sx={{ color: "#6F675E", fontSize: 12.5 }}>{account.level ? `${account.level} · ` : ""}{account.email}</Typography></Box>}
+            renderInput={(params) => <TextField {...params} required label="Student" placeholder="Search students..." error={Boolean(errors.studentAccount)} helperText={errors.studentAccount || "Search by student name or email/login."} sx={fieldSx} />}
+          />
+          {accountsLoading ? <Typography role="status" aria-label="Loading Student accounts" sx={{ mt: 1, color: "#6F675E", fontSize: 12.5 }}>Loading Student accounts…</Typography> : null}
+          {accountsError ? <Alert role="alert" severity="error" sx={{ mt: 1.25 }} action={<Button color="inherit" size="small" onClick={() => void loadAccounts(studentSearch)}>Retry</Button>}>{accountsError}</Alert> : null}
+          {!accountsLoading && !accountsError && studentAccounts.length === 0 ? <Typography role="status" sx={{ mt: 1, color: "#6F675E", fontSize: 12.5 }}>No available students found.</Typography> : null}
+        </Box> : <TextField required fullWidth label="Student name" value={values.fullName} onChange={(event) => updateValue("fullName", event.target.value)} slotProps={{ htmlInput: { maxLength: 120, "aria-label": "Student name" } }} error={Boolean(errors.fullName)} helperText={errors.fullName || "Use the name families recognise."} sx={{ ...fieldSx, gridColumn: { sm: "1 / -1" } }} />}
       </Box>
 
       <Box component="section" aria-labelledby="student-class-memberships" sx={{ mt: 3, pt: 2.5, borderTop: "1px solid #F0EAE0" }}>

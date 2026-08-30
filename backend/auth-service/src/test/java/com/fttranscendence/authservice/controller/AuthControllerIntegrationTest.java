@@ -91,7 +91,7 @@ class AuthControllerIntegrationTest {
   }
 
   @Test
-  void tutorDirectoryReturnsOnlyStudentAccountsAndRejectsOtherCallers() throws Exception {
+    void tutorDirectoryReturnsOnlyStudentAccountsAndRejectsOtherCallers() throws Exception {
     userRepository.save(user("student.two@example.com", "Another Student", UserRole.STUDENT));
     String tutorToken = login("tutor@example.com", UserRole.TUTOR);
     String studentToken = login("student@example.com", UserRole.STUDENT);
@@ -103,6 +103,18 @@ class AuthControllerIntegrationTest {
         .andExpect(jsonPath("$[0].fullName").value("Another Student"))
         .andExpect(jsonPath("$[1].email").value("student@example.com"))
         .andExpect(jsonPath("$[?(@.email == 'tutor@example.com')]").isEmpty());
+
+    mockMvc.perform(get("/api/auth/tutor/students")
+            .header("Authorization", "Bearer " + tutorToken)
+            .param("search", "ANOTHER"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[0].email").value("student.two@example.com"))
+        .andExpect(jsonPath("$.length()").value(1));
+    mockMvc.perform(get("/api/auth/tutor/students")
+            .header("Authorization", "Bearer " + tutorToken)
+            .param("search", "student.two@"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[0].fullName").value("Another Student"));
 
     mockMvc.perform(get("/api/auth/tutor/students"))
         .andExpect(status().isUnauthorized());

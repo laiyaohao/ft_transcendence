@@ -14,6 +14,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import jakarta.validation.constraints.Size;
 
 import java.util.List;
 
@@ -35,7 +37,8 @@ public class AuthController {
 
   /** Tutor-only directory used by learning-service to validate enrolment. */
   @GetMapping("/tutor/students")
-  public ResponseEntity<List<StudentDirectoryResponse>> studentDirectory() {
-    return ResponseEntity.ok(authService.listStudentAccounts());
+  public ResponseEntity<List<StudentDirectoryResponse>> studentDirectory(
+      @RequestParam(required = false) @Size(max = 120) String search) {
+    return ResponseEntity.ok(authService.listStudentAccounts(search));
   }
 }

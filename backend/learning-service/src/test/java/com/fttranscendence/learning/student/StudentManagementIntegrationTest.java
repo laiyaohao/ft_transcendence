@@ -19,7 +19,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Date;
+import java.util.List;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -37,12 +40,21 @@ class StudentManagementIntegrationTest {
 
     @Autowired private MockMvc mockMvc;
     @Autowired private JdbcTemplate jdbcTemplate;
+    @MockitoBean private AuthStudentDirectoryClient studentDirectory;
 
     @BeforeEach
     void clearStudentData() {
         jdbcTemplate.update("DELETE FROM class_memberships");
         jdbcTemplate.update("DELETE FROM student_profiles");
         jdbcTemplate.update("DELETE FROM tutor_classes");
+        List<AuthStudentDirectoryClient.StudentAccount> accounts = List.of(
+            account(9001L, "Ada Learner", "ada.learner@example.com"),
+            account(9002L, "Duplicate Membership", "duplicate@example.com"),
+            account(9003L, "Foreign Membership", "foreign@example.com"),
+            account(9004L, "Stable Student", "stable@example.com")
+        );
+        when(studentDirectory.listStudents(anyString())).thenReturn(accounts);
+        when(studentDirectory.listStudents(anyString(), any())).thenReturn(accounts);
     }
 
     @Test
@@ -116,21 +128,21 @@ class StudentManagementIntegrationTest {
         mockMvc.perform(post("/api/learning/tutor/students")
                 .header("Authorization", "Bearer " + tutorToken)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(studentJson("Duplicate Membership", null, ownClass, ownClass)))
+                .content(studentJson("Duplicate Membership", 9002L, ownClass, ownClass)))
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.code").value("DUPLICATE_MEMBERSHIP"));
 
         mockMvc.perform(post("/api/learning/tutor/students")
                 .header("Authorization", "Bearer " + tutorToken)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(studentJson("Foreign Membership", null, foreignClass)))
+                .content(studentJson("Foreign Membership", 9003L, foreignClass)))
             .andExpect(status().isNotFound())
             .andExpect(jsonPath("$.code").value("CLASS_NOT_FOUND"));
 
         String created = mockMvc.perform(post("/api/learning/tutor/students")
                 .header("Authorization", "Bearer " + tutorToken)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(studentJson("Stable Student", null, ownClass)))
+                .content(studentJson("Stable Student", 9004L, ownClass)))
             .andExpect(status().isCreated())
             .andReturn().getResponse().getContentAsString();
         long studentId = ((Number) JsonPath.read(created, "$.id")).longValue();
@@ -192,6 +204,11 @@ class StudentManagementIntegrationTest {
     void rejectsUnauthenticatedWrongRoleMalformedAndMissingStudentRequests() throws Exception {
         mockMvc.perform(get("/api/learning/tutor/students"))
             .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/learning/tutor/student-accounts"))
+            .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/learning/tutor/student-accounts")
+                .header("Authorization", "Bearer " + token("STUDENT", 201L)))
+            .andExpect(status().isForbidden());
         mockMvc.perform(post("/api/learning/tutor/students")
                 .header("Authorization", "Bearer " + token("STUDENT", 201L))
                 .contentType(MediaType.APPLICATION_JSON)
@@ -205,6 +222,48 @@ class StudentManagementIntegrationTest {
             .andExpect(jsonPath("$.code").value("INVALID_STUDENT_REQUEST"));
         mockMvc.perform(get("/api/learning/tutor/students/{studentId}", 999999L)
                 .header("Authorization", "Bearer " + token("TUTOR", 101L)))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.code").value("STUDENT_NOT_FOUND"));
+    }
+
+    @Test
+    void searchableStudentDirectoryUsesOnlyAvailableStudentAccounts() throws Exception {
+        String tutorToken = token("TUTOR", 101L);
+
+        mockMvc.perform(get("/api/learning/tutor/student-accounts")
+                .header("Authorization", "Bearer " + tutorToken)
+                .param("search", "ada"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].id").value(9001))
+            .andExpect(jsonPath("$[0].fullName").value("Ada Learner"));
+        mockMvc.perform(get("/api/learning/tutor/student-accounts")
+                .header("Authorization", "Bearer " + tutorToken)
+                .param("search", "stable@example"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].id").value(9004));
+
+        mockMvc.perform(post("/api/learning/tutor/students")
+                .header("Authorization", "Bearer " + tutorToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(studentJson("Browser supplied name", 9001L)))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.fullName").value("Ada Learner"));
+        mockMvc.perform(get("/api/learning/tutor/student-accounts")
+                .header("Authorization", "Bearer " + tutorToken)
+                .param("search", "ada"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$").isEmpty());
+
+        mockMvc.perform(post("/api/learning/tutor/students")
+                .header("Authorization", "Bearer " + tutorToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(studentJson("Attempt duplicate", 9001L)))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.code").value("LOGIN_IDENTITY_CONFLICT"));
+        mockMvc.perform(post("/api/learning/tutor/students")
+                .header("Authorization", "Bearer " + tutorToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(studentJson("Non-student", 9999L)))
             .andExpect(status().isNotFound())
             .andExpect(jsonPath("$.code").value("STUDENT_NOT_FOUND"));
     }
@@ -231,6 +290,10 @@ class StudentManagementIntegrationTest {
         String login = loginUserId == null ? "null" : loginUserId.toString();
         return "{\"fullName\":\"%s\",\"loginUserId\":%s,\"classIds\":[%s]}"
             .formatted(fullName, login, ids);
+    }
+
+    private AuthStudentDirectoryClient.StudentAccount account(long id, String fullName, String email) {
+        return new AuthStudentDirectoryClient.StudentAccount(id, fullName, email);
     }
 
     private String token(String role, long userId) {
@@ -265,6 +328,20 @@ class StudentManagementDatabaseFailureIntegrationTest {
             .andExpect(status().isServiceUnavailable())
             .andExpect(jsonPath("$.code").value("STUDENT_DATABASE_UNAVAILABLE"))
             .andExpect(jsonPath("$.message").value("Student data is temporarily unavailable"));
+    }
+
+    @Test
+    void returnsStructuredStudentDirectoryError() throws Exception {
+        when(studentService.listAvailableStudentAccounts(org.mockito.ArgumentMatchers.eq(101L), anyString(), any()))
+            .thenThrow(new StudentService.StudentDirectoryUnavailableException(
+                new IllegalStateException("auth service unavailable")
+            ));
+
+        mockMvc.perform(get("/api/learning/tutor/student-accounts")
+                .header("Authorization", "Bearer " + token("TUTOR", 101L)))
+            .andExpect(status().isServiceUnavailable())
+            .andExpect(jsonPath("$.code").value("STUDENT_DIRECTORY_UNAVAILABLE"))
+            .andExpect(jsonPath("$.message").value("Student accounts are temporarily unavailable"));
     }
 
     private String token(String role, long userId) {

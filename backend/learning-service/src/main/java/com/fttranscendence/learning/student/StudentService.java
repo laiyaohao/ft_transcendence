@@ -29,6 +29,7 @@ import java.util.Set;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
+import java.util.Locale;
 
 @Service
 public class StudentService {
@@ -93,6 +94,41 @@ public class StudentService {
         return accounts.stream()
             .filter(account -> isEligibleForClass(profilesByLogin.get(account.id()), tutorId, classId))
             .map(ClassStudentResponse.EligibleStudentResponse::from)
+            .toList();
+    }
+
+    /**
+     * Searchable account directory for creating a Tutor-owned student profile.
+     * Auth-service filters by the STUDENT role; profiles already claimed by any
+     * Tutor are withheld to prevent duplicate or cross-Tutor relationships.
+     */
+    @Transactional(readOnly = true)
+    public List<StudentAccountResponse> listAvailableStudentAccounts(
+        long tutorId,
+        String bearerToken,
+        String search
+    ) {
+        requireTutor(tutorId);
+        List<AuthStudentDirectoryClient.StudentAccount> accounts = studentDirectory.listStudents(bearerToken, search);
+        if (accounts.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, StudentProfile> profilesByLogin = students
+            .findAllByLoginUserIdInWithMemberships(accounts.stream()
+                .map(AuthStudentDirectoryClient.StudentAccount::id).toList())
+            .stream().collect(java.util.stream.Collectors.toMap(StudentProfile::getLoginUserId, profile -> profile));
+        String normalizedSearch = search == null ? "" : search.trim().toLowerCase(Locale.ROOT);
+        return accounts.stream()
+            .filter(account -> {
+                StudentProfile profile = profilesByLogin.get(account.id());
+                return profile == null || profile.getTutorId() == null;
+            })
+            // Keep the learning API search behaviour correct even if an older
+            // auth-service instance has not yet applied its query filter.
+            .filter(account -> normalizedSearch.isEmpty()
+                || account.fullName().toLowerCase(Locale.ROOT).contains(normalizedSearch)
+                || account.email().toLowerCase(Locale.ROOT).contains(normalizedSearch))
+            .map(StudentAccountResponse::from)
             .toList();
     }
 
@@ -214,19 +250,25 @@ public class StudentService {
     }
 
     @Transactional
-    public StudentRequest.StudentResponse create(long tutorId, StudentRequest request) {
+    public StudentRequest.StudentResponse create(long tutorId, StudentRequest request, String bearerToken) {
         requireTutor(tutorId);
         validateRequest(request);
+        if (request.loginUserId() == null) {
+            throw new InvalidStudentRequestException("Select an existing Student account.");
+        }
+        AuthStudentDirectoryClient.StudentAccount account = requireStudentAccount(request.loginUserId(), bearerToken);
         Map<Long, TutorClass> requestedClasses = resolveRequestedClasses(tutorId, request.classIds());
-        StudentProfile student = request.loginUserId() == null ? null : students.findByLoginUserId(request.loginUserId())
-            .filter(existing -> existing.getTutorId() == null)
-            .orElse(null);
+        StudentProfile student = students.findByLoginUserId(account.id()).orElse(null);
+        if (student != null && student.getTutorId() != null) {
+            throw new LoginIdentityConflictException(account.id());
+        }
         if (student == null) {
-            ensureLoginIdentityAvailable(request.loginUserId(), null);
             student = new StudentProfile();
         }
         student.setTutorId(tutorId);
-        apply(student, request, requestedClasses);
+        // Full name and login identity are always re-derived from the Student
+        // account selected in auth-service, never trusted from browser input.
+        apply(student, new StudentRequest(account.fullName(), account.id(), request.classIds()), requestedClasses);
         try {
             StudentProfile saved = students.save(student);
             entityManager.flush();

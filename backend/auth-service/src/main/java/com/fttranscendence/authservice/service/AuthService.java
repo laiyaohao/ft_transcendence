@@ -90,8 +90,12 @@ public class AuthService {
    * Account-role filtering remains in the service that owns identities. This
    * intentionally exposes no credentials or broader user-directory fields.
    */
-  public List<StudentDirectoryResponse> listStudentAccounts() {
+  public List<StudentDirectoryResponse> listStudentAccounts(String search) {
+    String normalizedSearch = search == null ? "" : search.trim().toLowerCase(Locale.ROOT);
     return userRepository.findAllByRoleOrderByFullnameAscEmailAsc(UserRole.STUDENT).stream()
+        .filter(user -> normalizedSearch.isEmpty()
+            || user.getFullName().toLowerCase(Locale.ROOT).contains(normalizedSearch)
+            || user.getEmail().toLowerCase(Locale.ROOT).contains(normalizedSearch))
         .map(StudentDirectoryResponse::from)
         .toList();
   }

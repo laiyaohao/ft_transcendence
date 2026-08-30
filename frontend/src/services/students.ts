@@ -23,6 +23,14 @@ export interface StudentMutationRequest {
   classIds: number[];
 }
 
+/** Existing auth-service Student account available for a Tutor to claim. */
+export interface AvailableStudentAccount {
+  id: number;
+  fullName: string;
+  email: string;
+  level: string | null;
+}
+
 export type MasteryStatus = "MASTERED" | "IMPROVING" | "PRACTISING" | "LEARNING" | "NEEDS_REVISION";
 
 export interface StudentProfileClass {
@@ -213,6 +221,15 @@ function isTutorStudent(value: unknown): value is TutorStudent {
     && isDateTime(candidate.updatedAt);
 }
 
+function isAvailableStudentAccount(value: unknown): value is AvailableStudentAccount {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return isPositiveNumber(candidate.id)
+    && isNonEmptyString(candidate.fullName)
+    && isNonEmptyString(candidate.email)
+    && (candidate.level === null || isNonEmptyString(candidate.level));
+}
+
 function isStudentProfileClass(value: unknown): value is StudentProfileClass {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
@@ -354,6 +371,13 @@ export function parseTutorStudents(payload: unknown): TutorStudent[] {
   return payload;
 }
 
+export function parseAvailableStudentAccounts(payload: unknown): AvailableStudentAccount[] {
+  if (!Array.isArray(payload) || !payload.every(isAvailableStudentAccount)) {
+    throw new Error("The learning service returned an invalid Student account list. Please try again.");
+  }
+  return payload;
+}
+
 export function parseTutorStudentProfile(payload: unknown): TutorStudentProfile {
   if (!isTutorStudentProfile(payload)) {
     throw new Error("The learning service returned an invalid student profile. Please try again.");
@@ -419,6 +443,15 @@ export async function fetchTutorStudents(classId?: number): Promise<TutorStudent
   const response = await fetch(`${LEARNING_API_URL}${STUDENT_LIST_PATH}${suffix}`, { headers: authHeaders() });
   if (!response.ok) throw await responseError(response);
   return parseTutorStudents(await response.json());
+}
+
+/** Searches real STUDENT-role accounts that are not already claimed by a Tutor. */
+export async function fetchAvailableStudentAccounts(search = ""): Promise<AvailableStudentAccount[]> {
+  const query = search.trim();
+  const suffix = query ? `?search=${encodeURIComponent(query)}` : "";
+  const response = await fetch(`${LEARNING_API_URL}/api/learning/tutor/student-accounts${suffix}`, { headers: authHeaders() });
+  if (!response.ok) throw await responseError(response);
+  return parseAvailableStudentAccounts(await response.json());
 }
 
 export async function fetchTutorStudent(studentId: number): Promise<TutorStudent> {

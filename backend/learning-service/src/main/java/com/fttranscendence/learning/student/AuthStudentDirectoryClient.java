@@ -7,6 +7,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.web.util.UriComponentsBuilder;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.List;
@@ -33,11 +34,20 @@ public class AuthStudentDirectoryClient {
     }
 
     public List<StudentAccount> listStudents(String bearerToken) {
+        return listStudents(bearerToken, null);
+    }
+
+    public List<StudentAccount> listStudents(String bearerToken, String search) {
         try {
             HttpHeaders headers = new HttpHeaders();
             headers.set(HttpHeaders.AUTHORIZATION, bearerToken);
             ResponseEntity<List<StudentAccount>> response = rest.exchange(
-                baseUrl + "/api/auth/tutor/students",
+                UriComponentsBuilder.fromUriString(baseUrl)
+                    .path("/api/auth/tutor/students")
+                    .queryParamIfPresent("search", java.util.Optional.ofNullable(search)
+                        .map(String::trim)
+                        .filter(value -> !value.isEmpty()))
+                    .toUriString(),
                 HttpMethod.GET,
                 new HttpEntity<>(headers),
                 STUDENT_LIST

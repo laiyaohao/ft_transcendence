@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
@@ -48,6 +49,15 @@ public class StudentController {
         return studentService.listOwnedStudents(user.userId(), classId);
     }
 
+    @GetMapping("/api/learning/tutor/student-accounts")
+    public List<StudentAccountResponse> availableAccounts(
+        @AuthenticationPrincipal AuthenticatedUser user,
+        @RequestHeader("Authorization") String bearerToken,
+        @RequestParam(required = false) @jakarta.validation.constraints.Size(max = 120) String search
+    ) {
+        return studentService.listAvailableStudentAccounts(user.userId(), bearerToken, search);
+    }
+
     @GetMapping("/api/learning/tutor/students/{studentId}")
     public StudentRequest.StudentResponse detail(
         @AuthenticationPrincipal AuthenticatedUser user,
@@ -59,9 +69,10 @@ public class StudentController {
     @PostMapping(value = "/api/learning/tutor/students", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<StudentRequest.StudentResponse> create(
         @AuthenticationPrincipal AuthenticatedUser user,
+        @RequestHeader("Authorization") String bearerToken,
         @Valid @RequestBody StudentRequest request
     ) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(studentService.create(user.userId(), request));
+        return ResponseEntity.status(HttpStatus.CREATED).body(studentService.create(user.userId(), request, bearerToken));
     }
 
     @PutMapping(value = "/api/learning/tutor/students/{studentId}", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -156,6 +167,12 @@ public class StudentController {
     @ExceptionHandler(StudentService.InvalidStudentRequestException.class)
     ResponseEntity<ClassController.ApiError> invalid(StudentService.InvalidStudentRequestException error) {
         return error(HttpStatus.BAD_REQUEST, "INVALID_STUDENT_REQUEST", error.getMessage(), Map.of());
+    }
+
+    @ExceptionHandler(StudentService.StudentDirectoryUnavailableException.class)
+    ResponseEntity<ClassController.ApiError> directoryUnavailable(StudentService.StudentDirectoryUnavailableException error) {
+        return error(HttpStatus.SERVICE_UNAVAILABLE, "STUDENT_DIRECTORY_UNAVAILABLE",
+            "Student accounts are temporarily unavailable", Map.of());
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
