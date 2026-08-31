@@ -1,306 +1,265 @@
 *This project was created as part of the 42 curriculum by lkoh, lwin, pzaw, tyingchu, and ylai.*
 
-# ft_transcendence
+# ft_transcendence — Lumina
 
-An education platform foundation for shared Tutor and Student workflows. The current codebase contains a Next.js frontend, Spring Boot authentication, grading/OCR, and learning-data services, plus PostgreSQL migrations for users, classes, schedules, canonical student profiles, and class memberships.
+## Overview
 
-## Current foundation (Issues 01–07)
+Lumina is a Tutor-and-Student learning platform. Tutors organise classes, enrol
+existing Student accounts, create taxonomy-backed questions and worksheets,
+review uploaded completed work, and approve marking outcomes. Students receive
+assigned work, upload it, correct low-confidence OCR text, and follow progress.
 
-- Email/password authentication with BCrypt, signed JWTs, and distinct `TUTOR`/`STUDENT` authorities.
-- Public Student registration; clients cannot self-assign the Tutor role.
-- Role-aware protected frontend shell with logout and responsive navigation.
-- Flyway-managed, service-isolated PostgreSQL schemas; Hibernate validates and never mutates production tables.
-- Tutor-owned class and canonical student-profile entities, constraints, repositories, and migration tests.
-- Grading and learning services independently verify auth-service identity claims.
-- Unit, integration, security, H2 migration, and optional real-PostgreSQL Testcontainers coverage.
-- A complete Compose topology for frontend, three backend services, PostgreSQL, and Adminer.
+The application uses a Next.js frontend, Spring Boot services, PostgreSQL, and
+Docker Compose. Live AI/OCR calls use an operator-provided OpenAI-compatible
+provider key; no provider key is committed.
 
-Class/student HTTP APIs and screens, worksheet generation, grading approval orchestration, and later product workflows are intentionally outside Issues 01–07. See [service boundaries](docs/architecture/service-boundaries.md) before adding them.
+## Features and evidence
+
+| Capability | Implementation | Automated evidence |
+| --- | --- | --- |
+| Account registration, login, JWT roles, and Tutor bootstrap | [auth-service](backend/auth-service) | [AuthControllerIntegrationTest](backend/auth-service/src/test/java/com/fttranscendence/authservice/controller/AuthControllerIntegrationTest.java) |
+| Tutor classes, schedules, and existing-Student memberships | [classroom package](backend/learning-service/src/main/java/com/fttranscendence/learning/classroom) | [ClassStudentMembershipIntegrationTest](backend/learning-service/src/test/java/com/fttranscendence/learning/classroom/ClassStudentMembershipIntegrationTest.java) |
+| P5/P6 taxonomy-backed question bank and worksheets | [question package](backend/learning-service/src/main/java/com/fttranscendence/learning/question) | [P6ScienceQuestionBankSeedIntegrationTest](backend/learning-service/src/test/java/com/fttranscendence/learning/question/P6ScienceQuestionBankSeedIntegrationTest.java) |
+| Student worksheet library and PDF route | [worksheet pages](frontend/src/app/%28main%29/worksheets) | [StudentWorksheetLibraryIntegrationTest](backend/learning-service/src/test/java/com/fttranscendence/learning/worksheet/StudentWorksheetLibraryIntegrationTest.java) |
+| Submission pages, OCR correction, and Tutor review | [submission controller](backend/grading-service/src/main/java/com/fttranscendence/grading/controller/SubmissionDocumentController.java) | [OcrSubmissionFinalizationIntegrationTest](backend/grading-service/src/test/java/com/fttranscendence/grading/controller/OcrSubmissionFinalizationIntegrationTest.java) |
+| Mastery, subject-profile insight, reports, and alerts | [insight package](backend/learning-service/src/main/java/com/fttranscendence/learning/insight) | [SubjectProfileIntegrationTest](backend/learning-service/src/test/java/com/fttranscendence/learning/insight/SubjectProfileIntegrationTest.java) |
+| Responsive and keyboard-accessible browser UI | [shared UI components](frontend/src/components) | [responsive-accessibility.spec.ts](frontend/e2e/responsive-accessibility.spec.ts) |
+| Offline Compose browser checks | [fixture Compose overlay](compose.e2e.yaml) | [CI workflow](.github/workflows/ci.yml) |
+
+## Architecture
+
+The complete topology, trust boundaries, and core workflow are in
+[docs/architecture.md](docs/architecture.md).
+
+~~~mermaid
+flowchart LR
+  Browser --> Frontend[Next.js frontend]
+  Frontend --> Auth[auth-service]
+  Frontend --> Learning[learning-service]
+  Frontend --> Grading[grading-service]
+  Auth --> PostgreSQL[(PostgreSQL / auth)]
+  Learning --> PostgreSQL2[(PostgreSQL / learning)]
+  Grading --> PostgreSQL3[(PostgreSQL / grading)]
+~~~
+
+Each application service owns its Flyway migrations. Cross-service identity
+references use stable user IDs rather than shared application tables.
+
+## Database schema
+
+[docs/database-schema.md](docs/database-schema.md) diagrams the main entities,
+links them to executable migrations, and describes cross-schema boundaries.
+Migration integration tests remain the database source of truth.
 
 ## Prerequisites
 
-For the container workflow, install Docker Desktop/Engine with Compose v2. For direct local builds, install Node.js 20, npm, and a complete JDK 17 containing `javac`; a Java runtime alone cannot compile the backend. The full inventory and evaluator-facing library rationale are in [DEPENDENCIES.md](DEPENDENCIES.md). Commands that need a Docker daemon, public registry, VM, provider key, or GitHub Actions—together with expected outputs and result fields—are in [the sandbox validation runbook](docs/SANDBOX-VALIDATION-RUNBOOK.md).
+Install Docker Desktop/Engine with Compose v2 and Git for the container
+workflow. Direct local checks also need Node.js 20, npm, and a complete JDK 17
+with <code>javac</code>. The inventory and evaluator-facing dependency rationale
+are in [DEPENDENCIES.md](DEPENDENCIES.md).
 
-## Configure and run
+Commands that require a Docker daemon, hosted CI, provider key, or VM are
+recorded with expected output in
+[docs/SANDBOX-VALIDATION-RUNBOOK.md](docs/SANDBOX-VALIDATION-RUNBOOK.md).
 
-```bash
+## Clean-checkout quick start
+
+~~~bash
+git clone https://github.com/laiyaohao/ft_transcendence.git
+cd ft_transcendence
 cp .env.example .env
-```
+~~~
 
-Replace every `change-me` value in `.env`. `JWT_SECRET` must contain at least 32 random bytes. Then validate and start the whole stack:
+Before continuing, replace every <code>change-me</code> value in <code>.env</code>
+with a real local secret. Use the same database password in all database
+variables, a JWT secret of at least 32 random bytes, and a separate high-entropy
+<code>LEARNING_MARKING_SYNC_KEY</code>.
 
-```bash
+~~~bash
+make deps
 make compose-config
 make compose-up
 make compose-ps
-```
+~~~
 
-Open the frontend at `http://localhost:3000`, Adminer at `http://localhost:8080`, and health probes at ports 8081–8083 under `/actuator/health`.
+Expected result: <code>postgres</code>, <code>auth-service</code>,
+<code>grading-service</code>, <code>learning-service</code>, and
+<code>frontend</code> become healthy. Open <http://localhost:3000>; Adminer is
+at <http://localhost:8080>. Use <code>make compose-logs</code> to investigate,
+<code>make compose-down</code> to preserve volumes, and
+<code>make compose-reset</code> only for disposable data.
 
-Follow service logs with `make compose-logs`; stop the stack while preserving its database and upload volumes with `make compose-down`. `make compose-reset` intentionally deletes those disposable development volumes and must not be used for data you need to keep. Run `make help` for every available local, VM-only, CI-equivalent, and offline-E2E command.
+## Configuration
 
-There are no shared default login credentials for ordinary local development. Student accounts are created through `/signup`. To provision the first Tutor, set all three `BOOTSTRAP_TUTOR_*` values for one startup; the password is validated and BCrypt-hashed, existing Tutor credentials are never reset, and public signup still rejects `TUTOR`. Clear the bootstrap values after the account has been created.
+[.env.example](.env.example) is the complete development variable template. It
+must never be committed as <code>.env</code>.
 
-The Compose database volume is persistent. Because the service schemas were isolated during the Issue 03 foundation, reset only disposable pre-migration development data before first use if an older database volume contains tables in `public`.
+| Variable | Purpose |
+| --- | --- |
+| <code>POSTGRES_*</code> | Local PostgreSQL account and database. |
+| <code>JWT_SECRET</code> | Server-side signing key shared by services. |
+| <code>LEARNING_MARKING_SYNC_KEY</code> | Private grading-to-learning hand-off key. |
+| <code>AI_ENGINE_URL</code>, <code>AI_ENGINE_MODEL</code>, <code>AI_VISION_MODEL</code>, <code>AI_ENGINE_API_KEY</code> | OpenAI-compatible marking and OCR provider settings. |
+| <code>NEXT_PUBLIC_*_API_URL</code> | Browser-visible development API origins. |
+| <code>FRONTEND_ALLOWED_ORIGINS</code> | Browser origins permitted by backend CORS. |
 
-## Tutor completed-work upload
+Normal Compose is a development topology and publishes diagnostic service ports.
+The production-shaped overlay exposes only Nginx and reads secrets from
+<code>../secrets.txt</code>.
 
-Tutors upload completed work through `/upload`. The page resolves a real
-Tutor-owned class, an enrolled student, and an approved worksheet before it
-accepts files; it never invents a class, student, worksheet, or page preview.
-Choose JPG, PNG, or one PDF (up to 20 MB per file). Multiple image pages can be
-previewed, removed, reordered, or replaced before submission.
+## Test accounts
 
-Submitting creates one durable grading submission document containing the class,
-student, worksheet, Tutor, original file metadata, stored page bytes, OCR
-extractions, timestamps, and status. The browser then opens `/ocr` using that
-saved submission ID, so a refresh reloads the same server-authorised OCR review
-rather than temporary browser state. Only the Tutor who uploaded the document
-can retrieve that OCR review; the grading service independently validates the
-class/student/worksheet relationship with learning-service before accepting it.
+Ordinary local development has no committed credentials. Create a Student at
+<code>/signup</code>. To create the first Tutor, set all three
+<code>BOOTSTRAP_TUTOR_*</code> values for one clean startup; existing Tutor
+credentials are never reset.
 
-## VM-only HTTPS Docker Compose runbook
-
-This procedure starts the production-shaped Compose overlay on a virtual
-machine without public DNS. It uses `lumina.sg` only as a local test hostname,
-a temporary hosts-file entry, and a 30-day self-signed certificate. It is not a
-public deployment procedure.
-
-The production overlay publishes only Nginx on ports 80 and 443. PostgreSQL,
-Adminer, the frontend, and all APIs remain private to the Compose network.
-
-### 1. Prerequisites
-
-Install Docker Engine/Desktop with Docker Compose v2 on the VM. Run the
-following from the repository root:
-
-```bash
-docker compose version
-git status --short
-cp .env.production.example .env.production
-make help
-```
-
-The copied `.env.production` contains no secrets. It configures the local
-browser origin as `https://lumina.sg`, uses the OpenAI-compatible API endpoint,
-and keeps HSTS disabled for the self-signed VM certificate.
-
-### 2. Create and update the external secrets file
-
-Secrets live one directory above the repository, at `../secrets.txt`. They are
-loaded at container runtime by Docker Compose and are never copied into a
-Docker image or committed to Git.
-
-On a fresh VM, create the file once:
-
-```bash
-make production-secrets
-chmod 600 ../secrets.txt
-```
-
-The generator refuses to overwrite an existing file. Open it locally and set
-these values; do not paste any API key into source code, a browser, or chat:
-
-```dotenv
-# One OpenAI or DeepSeek server-side API key. Replace the generated placeholder.
-AI_ENGINE_API_KEY=PASTE_YOUR_PROVIDER_KEY_HERE
-
-# VM-only Tutor account. The bootstrap runs only for a fresh database and never
-# resets an existing account password.
-BOOTSTRAP_TUTOR_EMAIL=teacher@lumina.sg
-BOOTSTRAP_TUTOR_PASSWORD=Demoteacher123!
-BOOTSTRAP_TUTOR_FULL_NAME=Demo Teacher
-```
-
-OpenAI uses one API key for both text marking and image OCR in this application.
-The default `.env.production` profile uses OpenAI's Chat Completions endpoint
-and `gpt-4.1-mini` for both operations. To use DeepSeek instead, replace the
-non-secret endpoint/model values in `.env.production` with the commented
-DeepSeek profile, then paste the DeepSeek key into the same
-`AI_ENGINE_API_KEY` line. Only one provider is active at a time.
-
-### 3. Create VM-only TLS files
-
-Create the self-signed certificate and private key outside the repository:
-
-```bash
-make vm-tls
-openssl x509 -in ../tls/fullchain.pem -noout -subject -ext subjectAltName
-```
-
-The result must include `DNS:lumina.sg`. The private key is owner-readable only.
-The script refuses to replace an existing certificate or key.
-
-### 4. Route `lumina.sg` to the VM and trust the local certificate
-
-On the machine running Chrome, replace `<VM_IP>` with the VM's reachable IP.
-For macOS or Linux, add a temporary hosts-file entry:
-
-```bash
-sudo sh -c 'printf "%s\\n" "<VM_IP> lumina.sg" >> /etc/hosts'
-getent hosts lumina.sg 2>/dev/null || dscacheutil -q host -a name lumina.sg
-```
-
-Trust the self-signed certificate on that same browser machine. On macOS, when
-the repository and `../tls` directory are local to the Mac:
-
-```bash
-sudo security add-trusted-cert -d -r trustRoot \
-  -k /Library/Keychains/System.keychain "$(cd .. && pwd)/tls/fullchain.pem"
-```
-
-On Debian/Ubuntu Linux:
-
-```bash
-sudo install -m 644 ../tls/fullchain.pem /usr/local/share/ca-certificates/lumina-vm.crt
-sudo update-ca-certificates
-```
-
-Do not use this self-signed certificate or its trust setting for an Internet
-deployment. HSTS remains disabled in the VM profile so the browser does not pin
-the temporary certificate.
-
-### 5. Validate and start the stack
-
-Run all Compose commands from the repository root:
-
-```bash
-make production-config
-make production-up
-make production-ps
-```
-
-Wait until every required service reports healthy, then verify the edge from
-the browser machine:
-
-```bash
-curl --resolve lumina.sg:443:<VM_IP> --cacert ../tls/fullchain.pem \
-  -I https://lumina.sg/login
-curl --resolve lumina.sg:443:<VM_IP> --cacert ../tls/fullchain.pem \
-  -fsS https://lumina.sg/healthz
-curl --resolve lumina.sg:80:<VM_IP> -I http://lumina.sg/
-```
-
-The last command must return an HTTP-to-HTTPS redirect. Open
-`https://lumina.sg` in Chrome only after the certificate is trusted. View
-runtime logs with:
-
-```bash
-make production-logs
-```
-
-### 6. VM test accounts
-
-The Tutor account is created automatically on the first startup of a fresh
-database from `../secrets.txt`:
+The disposable offline E2E environment seeds only these temporary accounts:
 
 | Role | Email | Password |
 | --- | --- | --- |
-| Tutor | `teacher@lumina.sg` | `Demoteacher123!` |
+| Tutor | <code>e2e.tutor@example.test</code> | <code>E2eTutor!Pass123</code> |
+| Student | <code>e2e.student@example.test</code> | <code>E2eStudent!Pass123</code> |
 
-Sign in at `https://lumina.sg/login`.
+## Development commands
 
-Create the Student through the public signup page once the stack is running:
+| Command | Outcome |
+| --- | --- |
+| <code>make deps</code> | Installs locked root and frontend JavaScript dependencies. |
+| <code>make compose-config</code> | Validates <code>.env</code> and development Compose configuration. |
+| <code>make compose-up</code> / <code>make compose-down</code> | Starts / stops the development stack. |
+| <code>make compose-ps</code> / <code>make compose-logs</code> | Shows health status / follows logs. |
+| <code>make frontend-lint</code>, <code>make frontend-typecheck</code>, <code>make frontend-test</code> | Runs frontend checks. |
+| <code>make backend-test</code> | Runs Maven verification for all services. |
+| <code>make ci</code> | Runs the local pull-request-equivalent suite. |
 
-| Role | Email | Password | Full name |
-| --- | --- | --- | --- |
-| Student | `student@lumina.sg` | `Demostudent123!` | `Demo Student` |
+Run <code>make help</code> for every target.
 
-1. Open `https://lumina.sg/signup`.
-2. Enter the Student details from the table and submit.
-3. The application signs the Student in and provisions a minimal Student
-   profile on the first learning-service request. No Tutor/class membership is
-   assigned automatically.
-4. Log out, sign in as the Tutor, then sign back in as the Student to confirm
-   the role-specific dashboards and access controls.
+## Testing and validation
 
-If the Tutor bootstrap account already exists, changing the password in
-`../secrets.txt` does not reset it. For a disposable VM test only, reset the
-entire stack and database volumes, then start again:
-
-```bash
-make production-reset
-make production-up
-```
-
-This command permanently deletes the VM's PostgreSQL and uploaded-document
-volumes. Never use it against data you need to keep.
-
-### Troubleshooting an existing local database
-
-PostgreSQL applies `POSTGRES_PW` only when its data volume is first created.
-After the first successful start, keep the same `POSTGRES_PW` in
-`../secrets.txt`; do not regenerate that file for an existing database. If an
-older local volume and a newly generated secrets file are combined, auth-service
-will report `password authentication failed for user "lumina"` even though
-PostgreSQL itself is healthy. Restore the password used when that volume was
-created to preserve its data. For a disposable VM test, use the explicit
-volume-reset command above instead.
-
-### 7. Stop the VM stack
-
-```bash
-make production-down
-```
-
-This stops containers while preserving PostgreSQL and upload volumes. See
-[production transport notes](docs/production-transport.md) for the production
-certificate, HSTS, CORS, and provider rollout requirements.
-
-## Build and test locally
-
-Install locked JavaScript dependencies:
-
-```bash
-make deps
-```
-
-Run all checks:
-
-```bash
+~~~bash
+npm run test:readme
+npm run verify:readme
+make frontend-lint
+make frontend-typecheck
+make test
 make ci
-```
+~~~
 
-`make ci` matches the pull-request quality gates: frontend lint, TypeScript, unit tests and build; a high/critical production-dependency audit; Maven verification for auth, grading and learning; Compose validation; and application image builds. Use the smaller targets when investigating a failure: `make frontend-lint`, `make frontend-typecheck`, `make frontend-test`, `make frontend-build`, `make security-audit`, `make backend-auth-test`, `make backend-grading-test`, `make backend-learning-test`, and `make test-integration`. PostgreSQL Testcontainers checks run when Docker is available and are skipped explicitly when it is not; deterministic H2 migration tests always run.
-
-To validate the normal Compose file without copying a real environment file:
-
-```bash
-make ci-compose
-```
+<code>npm run test:readme</code> tests the documentation verifier itself.
+<code>npm run verify:readme</code> validates headings, local evidence links,
+placeholder-free prose, module-table arithmetic, and quick-start command parity.
+It does not award module points. <code>make ci</code> needs Docker and registry
+access for its Compose stage. Use <code>git diff --check</code> before committing.
 
 ## Offline Compose browser tests
 
-The browser workflow suite runs against a clean, Docker Compose fixture stack: PostgreSQL, the three services, the frontend, deterministic AI/OCR mock, and a disposable seed service. It needs no OpenAI/DeepSeek key, external network service, or production secrets.
+The browser suite uses deterministic local AI/OCR mock and seed services; it
+does not use an OpenAI or DeepSeek key.
 
-After installing the frontend dependencies above, install the Chrome channel if your machine does not already have current stable Chrome, then validate the fixture configuration and run it locally:
-
-```bash
+~~~bash
 make e2e-chrome
 make e2e-config
 make e2e
-```
+~~~
 
-On Linux, use `make e2e-chrome-linux` instead of `make e2e-chrome` to install
-the native browser libraries used by CI.
+On Linux use <code>make e2e-chrome-linux</code>. <code>make e2e</code> creates
+a clean fixture stack, waits for healthy services, runs Playwright, and removes
+its E2E containers and volume even after failure. Use <code>make e2e-up</code>,
+<code>make e2e-test</code>, and <code>make e2e-down</code> to inspect stages.
 
-`make e2e` always removes the fixture containers and E2E database volume when the test finishes, including after a failure. To run each phase separately use `make e2e-up`, `make e2e-test`, and `make e2e-down`; use `make e2e-reset` to explicitly delete a failed fixture stack and its volume. The seed accounts are `e2e.tutor@example.test` / `E2eTutor!Pass123` and `e2e.student@example.test` / `E2eStudent!Pass123`, and are valid only inside this disposable fixture environment.
+## Deployment
+
+The VM-only production-shaped deployment uses <code>lumina.sg</code> as a
+temporary hosts-file name and a self-signed certificate. It is not a public
+Internet deployment. Only the Nginx edge is published on ports 80 and 443.
+
+~~~bash
+cp .env.production.example .env.production
+make production-secrets
+chmod 600 ../secrets.txt
+make vm-tls
+make production-config
+make production-up
+make production-ps
+~~~
+
+Set the provider key only in <code>../secrets.txt</code>. OpenAI and DeepSeek
+use the same <code>AI_ENGINE_API_KEY</code> variable; choose their endpoint and
+model in <code>.env.production</code>. The complete VM-only procedure is in
+[docs/production-transport.md](docs/production-transport.md).
+
+## Security and privacy
+
+- APIs enforce roles, resource ownership, validation, CORS, and response headers;
+  see [learning hardening tests](backend/learning-service/src/test/java/com/fttranscendence/learning/security/SecurityHardeningIntegrationTest.java).
+- Keep <code>.env</code>, <code>../secrets.txt</code>, provider keys, JWT
+  secrets, and TLS private keys outside version control.
+- Browser token storage remains a future hardening target; consider an HttpOnly,
+  Secure, SameSite-cookie session design before an Internet launch.
+- User-facing disclosures: [Privacy Policy](frontend/src/app/privacy/page.tsx)
+  and [Terms](frontend/src/app/terms/page.tsx). Review them against the
+  deployed provider and retention policy before public release.
 
 ## Continuous integration
 
-GitHub Actions uses two CI tiers:
+[.github/workflows/ci.yml](.github/workflows/ci.yml) has two tiers:
 
-- Every pull request runs `Frontend checks`, including the high/critical production-dependency audit; the three expanded `Backend checks` entries (`auth-service`, `grading-service`, and `learning-service`); and `Compose configuration and images`. These are the recommended branch-protection required checks once they have completed successfully on the repository.
-- Pushes to `main`, the nightly scheduled run, and manual workflow dispatch also run `Offline E2E`. It starts the offline fixture stack, runs the Chrome Playwright suite, retains failure screenshots/traces/video and Compose logs for 14 days, and then deletes the stack and volumes. It is deliberately not a pull-request required check until hosted-runner timing and reliability are measured.
+- Pull requests run <code>Frontend checks</code>, three <code>Backend checks</code>
+  matrix entries, and <code>Compose configuration and images</code>.
+- <code>main</code>, nightly, and manual runs execute <code>Offline E2E</code>,
+  retaining failure artefacts and Compose logs for 14 days.
 
-The current offline suite verifies its existing seeded browser workflows. It is not a claim that every future MVP workflow has E2E coverage; add the remaining deterministic fixture scenarios before promoting `Offline E2E` to a required pull-request check. An intentional failing test should make its corresponding GitHub Action job fail; use that in a test pull request to verify repository branch protection after enabling the checks.
+Make the first four check names branch-protection requirements only after they
+have successfully run. Keep <code>Offline E2E</code> post-merge until hosted
+runner timing and reliability are measured.
 
-## Database ownership
+## Module evidence
 
-The services share one PostgreSQL instance while owning separate schemas:
+**Module catalogue status:** BLOCKED
 
-- `auth`: accounts and role identity.
-- `grading`: submissions, OCR, and advisory marking data.
-- `learning`: classes, schedules, student profiles, and memberships.
+The exact official 42 subject/module catalogue for this evaluation is not
+checked into this repository. Therefore no point claim is made. This is a
+ready-to-map feature inventory, not an assertion that it earns a module in
+another subject version. See the
+[module catalogue blocker log](docs/module-catalogue-blocker.md).
 
-Flyway owns every schema change and stores independent history in each service schema. Cross-service relationships use stable auth `userId` values rather than unsafe database foreign keys between services.
+<!-- MODULE_SCORECARD_START -->
+| Catalogue ID | Claim | Points | Implementation | Test | Status |
+| --- | --- | ---: | --- | --- | --- |
+| N/A | Exact evaluation catalogue is unavailable | 0 | [blocker log](docs/module-catalogue-blocker.md) | N/A | BLOCKED |
+<!-- MODULE_SCORECARD_END -->
+
+**Verified module total:** 0 / 14
+
+After the official catalogue is added, replace the blocked row with one row per
+claim, cite the official ID and point value, link implementation and passing
+automated evidence, then run:
+
+~~~bash
+npm run verify:modules
+~~~
+
+The command fails until the documented verified total is at least 14; it cannot
+turn a feature inventory into evaluation points by itself.
+
+## Known limitations
+
+- The official, versioned module catalogue is absent, so the requested 14-point
+  assessment cannot yet be verified.
+- VM-only TLS uses a self-signed certificate and temporary hosts-file entry.
+- Provider-dependent OCR/marking needs a real key and deployment smoke test;
+  offline E2E uses deterministic fixtures instead.
+- Development Compose publishes diagnostic ports; use the production overlay
+  for private service networking.
+
+## Contributors
+
+The repository header records the project contributors: lkoh, lwin, pzaw,
+tyingchu, and ylai. Use normal pull requests, run relevant checks, and keep
+feature documentation linked to implementation and tests.
+
+## Licence
+
+The root package metadata currently declares the ISC licence. Confirm the
+team's intended distribution licence before publishing or public deployment.
