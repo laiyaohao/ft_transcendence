@@ -135,6 +135,7 @@ describe("TutorDashboard", () => {
     await screen.findByText("Primary 5 Science");
     await user.click(screen.getAllByRole("button", { name: "Generate Worksheet" })[0]);
     await user.click(screen.getByRole("button", { name: "Upload worksheet" }));
+    await user.click(screen.getByRole("button", { name: /Pending review/ }));
     await user.click(screen.getByRole("button", { name: /Primary 5 Science/ }));
     await user.click(screen.getByRole("button", { name: "Open student: Adaptation needs attention" }));
     await user.click(screen.getByRole("button", { name: "Open review: Marking review requested" }));
@@ -142,6 +143,7 @@ describe("TutorDashboard", () => {
 
     expect(go).toHaveBeenCalledWith("/tutor/worksheets/new");
     expect(go).toHaveBeenCalledWith("/upload");
+    expect(go).toHaveBeenCalledWith("/tutor/reviews");
     expect(go).toHaveBeenCalledWith("/classes/8");
     expect(go).toHaveBeenCalledWith("/students/7");
     expect(go).toHaveBeenCalledWith("/tutor/reviews/91");

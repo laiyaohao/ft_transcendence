@@ -143,7 +143,7 @@ export default function TutorDashboard({
   const metrics = [
     { label: "Active classes", value: dashboard.metrics.activeClassCount, context: "Classes teaching this term", href: "/classes", tone: "#2A2622" },
     { label: "Students", value: dashboard.metrics.studentCount, context: "Students in your roster", href: "/students", tone: "#2A2622" },
-    { label: "Pending review", value: dashboard.metrics.pendingReviewCount, context: "Marking decisions awaiting you", href: "/tutor/alerts", tone: "#B4573F" },
+    { label: "Pending review", value: dashboard.metrics.pendingReviewCount, context: "Marking decisions awaiting you", href: "/tutor/reviews", tone: "#B4573F" },
     { label: "Needs attention", value: dashboard.metrics.needsAttentionStudentCount, context: "Students with an active alert", href: "/tutor/alerts", tone: "#B4573F" },
     { label: "Reports ready", value: dashboard.metrics.reportsReadyCount, context: "Finalised progress reports", href: "/students", tone: "#2A2622" },
   ];
