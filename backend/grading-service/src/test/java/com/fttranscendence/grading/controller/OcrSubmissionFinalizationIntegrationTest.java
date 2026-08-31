@@ -36,6 +36,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 @Transactional
 class OcrSubmissionFinalizationIntegrationTest {
     private static final AuthenticatedUser STUDENT = new AuthenticatedUser(701L, "student@example.test", "STUDENT");
+    private static final AuthenticatedUser TUTOR = new AuthenticatedUser(101L, "tutor@example.test", "TUTOR");
 
     @Autowired private MarkingReviewService service;
     @Autowired private SubmissionDocumentRepository documents;
@@ -105,6 +106,41 @@ class OcrSubmissionFinalizationIntegrationTest {
             () -> service.submitOcrForTutorReview(STUDENT, document.getId(), request));
         assertThrows(MarkingReviewService.ReviewNotFound.class,
             () -> service.submitOcrForTutorReview(new AuthenticatedUser(702L, "other@example.test", "STUDENT"), document.getId(), request));
+    }
+
+    @Test
+    void tutorOwnedOcrDocumentUsesTheSameCanonicalTutorQueue() {
+        SubmissionDocument document = new SubmissionDocument(TUTOR.userId(), SubmissionDocument.OwnerRole.TUTOR,
+            301L, 201L, 401L, SubmissionDocument.SourceType.IMAGES);
+        document.addPage(new DocumentStorage.StoredFile("101/tutor-page.png", "tutor-page.png", "image/png", 32, "c".repeat(64)));
+        document.markReady();
+        document = documents.saveAndFlush(document);
+        OcrExtraction extraction = extractions.saveAndFlush(new OcrExtraction(document.getPages().get(0), null,
+            "Metal conducts heat.", .98, "mock"));
+
+        server.expect(once(), requestTo("http://localhost/learning/api/learning/internal/submission-authorization/marking-context"))
+            .andExpect(header("X-Learning-Integration-Key", "test-sync-key"))
+            .andExpect(jsonPath("$.actorUserId").value(101))
+            .andExpect(jsonPath("$.actorRole").value("TUTOR"))
+            .andExpect(jsonPath("$.studentId").value(201))
+            .andExpect(jsonPath("$.worksheetId").value(301))
+            .andExpect(jsonPath("$.classId").value(401))
+            .andRespond(withSuccess(markingContext(), MediaType.APPLICATION_JSON));
+        server.expect(once(), requestTo("http://localhost/ai-test"))
+            .andRespond(withSuccess(providerResult(), MediaType.APPLICATION_JSON));
+
+        MarkingReviewService.SubmissionForTutorReviewResponse result = service.submitOcrForTutorReview(TUTOR,
+            document.getId(), new MarkingReviewService.OcrSubmissionRequest(java.util.List.of(
+                new MarkingReviewService.OcrAnswerMapping(extraction.getId(), 501L)
+            )));
+
+        assertEquals("PENDING_REVIEW", result.status());
+        assertEquals(1, result.submissionIds().size());
+        assertEquals(Submission.ReviewStatus.PENDING_REVIEW,
+            submissions.findById(result.submissionIds().get(0)).orElseThrow().getReviewStatus());
+        assertEquals(SubmissionDocument.Status.SUBMITTED_FOR_REVIEW,
+            documents.findById(document.getId()).orElseThrow().getStatus());
+        server.verify();
     }
 
     private SubmissionDocument readyStudentDocument() {

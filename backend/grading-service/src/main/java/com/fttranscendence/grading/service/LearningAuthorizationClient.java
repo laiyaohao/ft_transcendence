@@ -116,7 +116,14 @@ public class LearningAuthorizationClient {
                 }
             }
             return new SubmissionMarkingContext(tutor.longValue(), Map.copyOf(questions));
-        } catch (Forbidden | SubmissionMarkingContextUnavailable exception) {
+        } catch (HttpClientErrorException.NotFound exception) {
+            // Learning deliberately uses a non-enumerating absent response for
+            // a missing or foreign worksheet assignment. It is a context
+            // error, not a transient dependency outage.
+            throw new SubmissionMarkingContextNotFound();
+        } catch (HttpClientErrorException.Forbidden exception) {
+            throw new Forbidden();
+        } catch (Forbidden | SubmissionMarkingContextNotFound | SubmissionMarkingContextUnavailable exception) {
             throw exception;
         } catch (Exception exception) {
             throw new SubmissionMarkingContextUnavailable();
@@ -524,6 +531,7 @@ public class LearningAuthorizationClient {
     public static class QuestionUnavailable extends RuntimeException { }
     public static class QuestionNotFound extends RuntimeException { }
     public static class ManualResultContextNotFound extends RuntimeException { }
+    public static class SubmissionMarkingContextNotFound extends RuntimeException { }
     public static class SubmissionMarkingContextUnavailable extends RuntimeException { }
     public static class MistakeHistoryNotFound extends RuntimeException { }
     public static class StudentWorksheetNotFound extends RuntimeException { }

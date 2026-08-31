@@ -19,7 +19,7 @@ import {
   submitOcrForTutorReview,
   type SubmissionDocument,
 } from "@/services/submissions";
-import { fetchStudentWorksheet, type StudentWorksheetDetail } from "@/services/worksheets";
+import { fetchStudentWorksheet, fetchTutorWorksheet, type WorksheetQuestion } from "@/services/worksheets";
 
 function submissionId(value: string | null): number | null {
   if (!value || !/^\d+$/.test(value)) return null;
@@ -35,7 +35,7 @@ function OcrPage() {
   const returnPath = isStudent ? "/worksheets" : "/upload";
   const completionPath = isStudent ? "/worksheets" : "/tutor/worksheets";
   const [document, setDocument] = React.useState<SubmissionDocument | null>(null);
-  const [worksheet, setWorksheet] = React.useState<StudentWorksheetDetail | null>(null);
+  const [questions, setQuestions] = React.useState<WorksheetQuestion[]>([]);
   const [error, setError] = React.useState<string | null>(id === null ? "Choose a saved submission before reviewing OCR." : null);
   const [loading, setLoading] = React.useState(id !== null);
   const [reload, setReload] = React.useState(0);
@@ -48,15 +48,15 @@ function OcrPage() {
         setLoading(true);
         setError(null);
         setDocument(null);
-        setWorksheet(null);
+        setQuestions([]);
       }
     });
     void fetchSubmissionDocument(id)
       .then(async (loaded) => {
-        if (isStudent) {
-          const detail = await fetchStudentWorksheet(loaded.worksheetId);
-          if (active) setWorksheet(detail);
-        }
+        const detail = isStudent
+          ? await fetchStudentWorksheet(loaded.worksheetId)
+          : await fetchTutorWorksheet(loaded.worksheetId);
+        if (active) setQuestions(detail.questions);
         if (active) setDocument(loaded);
       })
       .catch((reason: unknown) => {
@@ -82,15 +82,15 @@ function OcrPage() {
           <Typography>Class #{document.classId} · Student #{document.studentId} · Worksheet #{document.worksheetId}</Typography>
           <Typography sx={{ fontSize: 13, color: "#6F675E", mt: .5 }}>{document.pages.length} uploaded page{document.pages.length === 1 ? "" : "s"} · {document.status}</Typography>
         </Card>
-        {document.status === "SUBMITTED_FOR_REVIEW" && isStudent ? <Card role="status" variant="outlined" sx={{ p: 2, borderColor: "#87A878", bgcolor: "#F7FBF4" }}><Typography sx={{ fontWeight: 700 }}>Submitted for Tutor Review</Typography><Typography sx={{ color: "#506348", mt: .5 }}>Your OCR answers are saved and waiting for Tutor review.</Typography><Button component={Link} href={`/worksheets/${document.worksheetId}/results`} sx={{ mt: 1 }}>View worksheet status</Button></Card> : <OcrReview pages={document.pages} questions={worksheet?.questions.map((question) => ({ id: question.id, prompt: question.prompt }))} onCorrect={async (extractionId, text) => {
+        {document.status === "SUBMITTED_FOR_REVIEW" ? <Card role="status" variant="outlined" sx={{ p: 2, borderColor: "#87A878", bgcolor: "#F7FBF4" }}><Typography sx={{ fontWeight: 700 }}>Submitted for Tutor Review</Typography><Typography sx={{ color: "#506348", mt: .5 }}>{isStudent ? "Your OCR answers are saved and waiting for Tutor review." : "The confirmed answers are saved in the Tutor review queue."}</Typography><Button component={Link} href={isStudent ? `/worksheets/${document.worksheetId}/results` : "/tutor/worksheets"} sx={{ mt: 1 }}>{isStudent ? "View worksheet status" : "Open worksheet reviews"}</Button></Card> : <OcrReview pages={document.pages} questions={questions.map((question) => ({ id: question.id, prompt: question.prompt }))} onCorrect={async (extractionId, text) => {
           const corrected = await correctOcrExtraction(extractionId, text);
           setDocument((current) => current === null ? current : {
             ...current,
             pages: current.pages.map((page) => page.extractionId === extractionId ? { ...page, ...corrected, pageId: page.pageId } : page),
           });
-        }} onSubmitForReview={isStudent && worksheet ? async (answers) => {
-          await submitOcrForTutorReview(document.id, answers);
-          router.replace(`/worksheets/${document.worksheetId}/results`);
+        }} onSubmitForReview={questions.length > 0 ? async (answers) => {
+          const result = await submitOcrForTutorReview(document.id, answers);
+          router.replace(isStudent ? `/worksheets/${document.worksheetId}/results` : `/tutor/reviews/${result.submissionIds[0]}`);
         } : undefined} />}
         <Stack direction="row" justifyContent="flex-end" sx={{ mt: 3 }}><Button component={Link} href={isStudent ? "/worksheets" : completionPath} sx={!isStudent ? { bgcolor: "#9E3A24", color: "#FFFDFA", "&:hover": { bgcolor: "#8A3120" } } : undefined}>{isStudent ? "Return to My Worksheets" : "Continue to worksheets"}</Button></Stack>
       </> : null}

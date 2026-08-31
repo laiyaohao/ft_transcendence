@@ -35,9 +35,11 @@ describe("route proxy", () => {
     expect(proxy(request("/tutor/worksheets/new", "STUDENT")).headers.get("location")).toBe("http://localhost:3000/student/dashboard");
   });
 
-  it("protects the durable OCR review route as Tutor-only", () => {
+  it("allows both roles to use the protected answer-capture routes", () => {
     expect(proxy(request("/ocr?submissionId=10", "TUTOR")).status).toBe(200);
     expect(proxy(request("/ocr?submissionId=10", "STUDENT")).status).toBe(200);
+    expect(proxy(request("/manual-answers?worksheetId=10", "TUTOR")).status).toBe(200);
+    expect(proxy(request("/manual-answers?worksheetId=10", "STUDENT")).status).toBe(200);
   });
 
   it("allows the Student dashboard while preventing Tutor access", () => {

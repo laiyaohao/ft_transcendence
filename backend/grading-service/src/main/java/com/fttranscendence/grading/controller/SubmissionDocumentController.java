@@ -169,6 +169,29 @@ public class SubmissionDocumentController {
         return ResponseEntity.status(HttpStatus.CREATED).body(markingReviews.submitOcrForTutorReview(user, documentId, request));
     }
 
+    /**
+     * Captures typed answers using the same Submission records as OCR.  The
+     * selected student and worksheet are independently authorized by Learning
+     * before a draft is read or written.
+     */
+    @PostMapping(value = "/manual-answers", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<MarkingReviewService.ManualAnswerResponse> saveManualAnswers(
+        @AuthenticationPrincipal AuthenticatedUser user,
+        @org.springframework.web.bind.annotation.RequestBody MarkingReviewService.ManualAnswerRequest request
+    ) {
+        return ResponseEntity.status(HttpStatus.OK).body(markingReviews.saveManualAnswers(user, request));
+    }
+
+    @GetMapping("/manual-answers")
+    public MarkingReviewService.ManualAnswerResponse loadManualAnswers(
+        @AuthenticationPrincipal AuthenticatedUser user,
+        @org.springframework.web.bind.annotation.RequestParam long studentId,
+        @org.springframework.web.bind.annotation.RequestParam long worksheetId,
+        @org.springframework.web.bind.annotation.RequestParam(required = false) Long classId
+    ) {
+        return markingReviews.loadManualAnswers(user, studentId, worksheetId, classId);
+    }
+
     public record PageResponse(
         long id,
         int pageNumber,
@@ -257,6 +280,12 @@ public class SubmissionDocumentController {
     ResponseEntity<Map<String, String>> markingContextUnavailable() {
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
             .body(Map.of("code", "SUBMISSION_MARKING_CONTEXT_UNAVAILABLE", "error", "The worksheet marking context is temporarily unavailable."));
+    }
+
+    @ExceptionHandler(LearningAuthorizationClient.SubmissionMarkingContextNotFound.class)
+    ResponseEntity<Map<String, String>> markingContextNotFound() {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+            .body(Map.of("code", "SUBMISSION_MARKING_CONTEXT_NOT_FOUND", "error", "This worksheet submission could not be loaded. Please try again."));
     }
 
     @ExceptionHandler(MarkingReviewService.InvalidReviewRequest.class)

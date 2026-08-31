@@ -35,6 +35,7 @@ import java.util.Objects;
 public class Submission {
 
     public enum ReviewStatus {
+        DRAFT,
         PENDING_REVIEW,
         FLAGGED,
         APPROVED
@@ -200,6 +201,23 @@ public class Submission {
         return submission;
     }
 
+    /** A typed answer remains private until its owner explicitly submits it. */
+    public static Submission createDraftAnswer(
+        SubmissionDocument submissionDocument,
+        Long worksheetQuestionId,
+        Long questionBankId,
+        String extractedAnswer,
+        String modelAnswerSnapshot,
+        BigDecimal maxMarks,
+        Long syllabusTopicId,
+        String syllabusTopicCode
+    ) {
+        Submission submission = createAnswer(submissionDocument, worksheetQuestionId, questionBankId,
+            extractedAnswer, modelAnswerSnapshot, maxMarks, syllabusTopicId, syllabusTopicCode);
+        submission.reviewStatus = ReviewStatus.DRAFT;
+        return submission;
+    }
+
     public void recordAiSuggestion(
         BigDecimal suggestedMarks,
         String suggestedOutcome,
@@ -208,7 +226,7 @@ public class Submission {
         String suggestedFeedback
     ) {
         requireCanonicalAnswer();
-        if (reviewStatus != ReviewStatus.PENDING_REVIEW || !reviews.isEmpty()) {
+        if (!isUnreviewed() || !reviews.isEmpty()) {
             throw new IllegalStateException("AI suggestion cannot replace a tutor-reviewed result");
         }
         this.aiSuggestedMarks = normalizeScore(suggestedMarks, "AI suggested marks");
@@ -216,6 +234,37 @@ public class Submission {
         this.aiErrorCategory = normalizeOptional(errorCategory);
         this.missingKeywords = normalizeKeywords(missingKeywords);
         this.aiSuggestedFeedback = requireText(suggestedFeedback, "AI suggested feedback");
+    }
+
+    /**
+     * Replaces a draft answer before it has been reviewed by a Tutor.  Both
+     * OCR confirmation and manual entry persist through this aggregate, so a
+     * browser retry/edit must update the existing canonical answer rather
+     * than create another row for the same worksheet question.
+     */
+    public void replacePendingAnswer(String answer) {
+        requireCanonicalAnswer();
+        if (!isUnreviewed() || !reviews.isEmpty()) {
+            throw new IllegalStateException("A tutor-reviewed answer cannot be edited");
+        }
+        this.extractedAnswer = normalizeAnswer(answer);
+        this.aiSuggestedMarks = null;
+        this.aiSuggestedOutcome = null;
+        this.aiErrorCategory = null;
+        this.aiSuggestedFeedback = null;
+        this.missingKeywords.clear();
+    }
+
+    /** Makes an already-persisted manual draft visible to the Tutor review queue. */
+    public void submitForTutorReview() {
+        requireCanonicalAnswer();
+        if (reviewStatus == ReviewStatus.DRAFT) {
+            reviewStatus = ReviewStatus.PENDING_REVIEW;
+            return;
+        }
+        if (reviewStatus != ReviewStatus.PENDING_REVIEW || !reviews.isEmpty()) {
+            throw new IllegalStateException("A tutor-reviewed answer cannot be resubmitted");
+        }
     }
 
     public void approve(Long reviewerUserId, BigDecimal marks, String feedback) {
@@ -456,7 +505,7 @@ public class Submission {
             normalizeScore(aiSuggestedMarks, "AI suggested marks");
         }
         switch (reviewStatus) {
-            case PENDING_REVIEW -> {
+            case DRAFT, PENDING_REVIEW -> {
                 if (approvedMarks != null
                     || approvedFeedback != null
                     || reviewedByUserId != null
@@ -481,6 +530,10 @@ public class Submission {
                 }
             }
         }
+    }
+
+    private boolean isUnreviewed() {
+        return reviewStatus == ReviewStatus.DRAFT || reviewStatus == ReviewStatus.PENDING_REVIEW;
     }
 
     private BigDecimal normalizeScore(BigDecimal marks, String fieldName) {

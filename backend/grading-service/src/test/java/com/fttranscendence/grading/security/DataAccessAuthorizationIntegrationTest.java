@@ -101,6 +101,11 @@ class DataAccessAuthorizationIntegrationTest {
         mockMvc.perform(multipart("/api/grading/ocr")
                 .file("file", pngBytes("page")))
             .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(post("/api/grading/submission-documents/manual-answers")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"studentId\":1,\"worksheetId\":1,\"answers\":[{\"questionBankId\":1,\"answer\":\"answer\"}],\"submit\":false}"))
+            .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -120,6 +125,20 @@ class DataAccessAuthorizationIntegrationTest {
                 .header(HttpHeaders.AUTHORIZATION, bearer("STUDENT", OWNER_STUDENT_USER_ID))
                 .file("file", pngBytes("retired")))
             .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void manualAnswersUseAuthoritativeWorksheetScopeAndReturnNotFoundRatherThanAFalseOutage() throws Exception {
+        learningServer.expect(once(), requestTo("http://localhost:8083/api/learning/internal/submission-authorization/marking-context"))
+            .andRespond(withStatus(HttpStatus.NOT_FOUND));
+
+        mockMvc.perform(post("/api/grading/submission-documents/manual-answers")
+                .header(HttpHeaders.AUTHORIZATION, bearer("STUDENT", OWNER_STUDENT_USER_ID))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"studentId\":101,\"worksheetId\":999,\"answers\":[{\"questionBankId\":1,\"answer\":\"answer\"}],\"submit\":false}"))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.code").value("SUBMISSION_MARKING_CONTEXT_NOT_FOUND"));
+        learningServer.verify();
     }
 
     @Test

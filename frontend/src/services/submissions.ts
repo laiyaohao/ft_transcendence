@@ -94,6 +94,93 @@ export async function submitOcrForTutorReview(documentId: number, answers: OcrAn
   return { submissionDocumentId: body.submissionDocumentId as number, submissionIds: body.submissionIds as number[], status: "PENDING_REVIEW" };
 }
 
+/** OCR and typed answers are persisted through the same canonical submission records. */
+export type ManualAnswerEntry = { questionBankId: number; answer: string };
+export type ManualAnswerSubmission = {
+  studentId: number;
+  worksheetId: number;
+  classId?: number;
+  answers: ManualAnswerEntry[];
+  submit: boolean;
+};
+export type ManualAnswerResponse = {
+  submissionDocumentId: number;
+  submissionIds: number[];
+  status: "DRAFT" | "PENDING_REVIEW";
+  inputMethod: "MANUAL";
+};
+export type ManualAnswerDraft = {
+  submissionDocumentId: number | null;
+  answers: ManualAnswerEntry[];
+  status: "DRAFT" | "PENDING_REVIEW";
+  inputMethod: "MANUAL";
+};
+function parseManualAnswerDraft(value: unknown): ManualAnswerDraft {
+  if (!value || typeof value !== "object") throw new SubmissionApiError("The manual answer response is invalid.");
+  const body = value as Record<string, unknown>;
+  const validId = (item: unknown) => Number.isSafeInteger(item) && (item as number) > 0;
+  if (!(body.submissionDocumentId === null || validId(body.submissionDocumentId))
+    || !Array.isArray(body.answers)
+    || body.answers.some((item) => !item || typeof item !== "object" || !validId((item as Record<string, unknown>).questionBankId) || typeof (item as Record<string, unknown>).answer !== "string")
+    || body.inputMethod !== "MANUAL"
+    || (body.status !== "DRAFT" && body.status !== "PENDING_REVIEW")) {
+    throw new SubmissionApiError("The manual answer response is invalid.");
+  }
+  return {
+    submissionDocumentId: body.submissionDocumentId as number | null,
+    answers: body.answers.map((item) => ({ questionBankId: (item as Record<string, unknown>).questionBankId as number, answer: (item as Record<string, unknown>).answer as string })),
+    status: body.status,
+    inputMethod: "MANUAL",
+  };
+}
+export async function fetchManualAnswerDraft(input: Pick<ManualAnswerSubmission, "studentId" | "worksheetId" | "classId">): Promise<ManualAnswerDraft> {
+  const validId = (value: unknown) => Number.isSafeInteger(value) && (value as number) > 0;
+  if (!validId(input.studentId) || !validId(input.worksheetId) || (input.classId !== undefined && !validId(input.classId))) {
+    throw new SubmissionApiError("Manual answer details are invalid.", 400);
+  }
+  const query = new URLSearchParams({ studentId: String(input.studentId), worksheetId: String(input.worksheetId) });
+  if (input.classId !== undefined) query.set("classId", String(input.classId));
+  const response = await fetch(`${gradingUrl}/api/grading/submission-documents/manual-answers?${query.toString()}`, { headers: headers() });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { error?: string } | null;
+    throw new SubmissionApiError(body?.error || "Your answers could not be loaded. Please try again.", response.status);
+  }
+  return parseManualAnswerDraft(await response.json());
+}
+export async function saveManualAnswers(input: ManualAnswerSubmission): Promise<ManualAnswerResponse> {
+  const validId = (value: unknown) => Number.isSafeInteger(value) && (value as number) > 0;
+  if (!validId(input.studentId) || !validId(input.worksheetId)
+    || (input.classId !== undefined && !validId(input.classId))
+    || !Array.isArray(input.answers) || input.answers.length === 0
+    || input.answers.some((entry) => !validId(entry.questionBankId) || typeof entry.answer !== "string")
+    || new Set(input.answers.map((entry) => entry.questionBankId)).size !== input.answers.length) {
+    throw new SubmissionApiError("Manual answer details are invalid.", 400);
+  }
+  const response = await fetch(`${gradingUrl}/api/grading/submission-documents/manual-answers`, {
+    method: "POST",
+    headers: { ...headers(), "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { error?: string } | null;
+    throw new SubmissionApiError(body?.error || "Your answers could not be saved. Please try again.", response.status);
+  }
+  const body = await response.json() as Record<string, unknown>;
+  if (!validId(body.submissionDocumentId)
+    || !Array.isArray(body.submissionIds)
+    || body.submissionIds.some((value) => !validId(value))
+    || body.inputMethod !== "MANUAL"
+    || (body.status !== "DRAFT" && body.status !== "PENDING_REVIEW")) {
+    throw new SubmissionApiError("The manual answer response is invalid.");
+  }
+  return {
+    submissionDocumentId: body.submissionDocumentId as number,
+    submissionIds: body.submissionIds as number[],
+    status: body.status as ManualAnswerResponse["status"],
+    inputMethod: "MANUAL",
+  };
+}
+
 export type MarkingReviewStatus = "PENDING_REVIEW" | "FLAGGED" | "APPROVED";
 export type DiagnosticCategory = "CONCEPT" | "KEYWORD" | "EXPRESSION" | "APPLICATION";
 export type MistakeType = "CONCEPT_MISUNDERSTANDING" | "CALCULATION_ERROR" | "MISREAD_QUESTION" | "INCOMPLETE_WORKING" | "INCORRECT_FORMULA" | "CARELESS_MISTAKE" | "WEAK_EXPLANATION" | "MISSING_KEY_POINT" | "WRONG_UNITS" | "ANSWER_FORMAT_ISSUE";

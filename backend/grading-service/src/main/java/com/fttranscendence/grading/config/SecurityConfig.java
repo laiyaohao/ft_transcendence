@@ -74,7 +74,11 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/api/grading/submission-documents/*")
                     .hasAnyRole("TUTOR", "STUDENT")
                 .requestMatchers(HttpMethod.POST, "/api/grading/submission-documents/*/submit-for-review")
-                    .hasRole("STUDENT")
+                    .hasAnyRole("TUTOR", "STUDENT")
+                .requestMatchers(HttpMethod.GET, "/api/grading/submission-documents/manual-answers")
+                    .hasAnyRole("TUTOR", "STUDENT")
+                .requestMatchers(HttpMethod.POST, "/api/grading/submission-documents/manual-answers")
+                    .hasAnyRole("TUTOR", "STUDENT")
                 // The controller accepts only POST. Matching the canonical path
                 // here keeps its role boundary stable across multipart dispatch.
                 .requestMatchers("/api/grading/submission-documents")

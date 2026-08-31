@@ -91,18 +91,21 @@ public class MarkingReviewService {
     }
 
     /**
-     * Converts a Student-owned OCR document into canonical answer records.
-     * The caller supplies only page-to-question associations; Learning supplies
-     * the trusted rubric and owning Tutor through the integration boundary.
+     * Converts an actor-owned OCR document into canonical answer records.
+     * The actor may be the Student or their Tutor uploading on their behalf;
+     * Learning supplies the trusted rubric and owning Tutor through the
+     * integration boundary.
      */
     @Transactional
     public SubmissionForTutorReviewResponse submitOcrForTutorReview(
         AuthenticatedUser user, long submissionDocumentId, OcrSubmissionRequest request
     ) {
         requirePositive(submissionDocumentId, "Submission document id");
-        if (user == null || !"STUDENT".equals(user.role())) throw new LearningAuthorizationClient.Forbidden();
+        if (user == null || (!"STUDENT".equals(user.role()) && !"TUTOR".equals(user.role()))) {
+            throw new LearningAuthorizationClient.Forbidden();
+        }
         SubmissionDocument document = documents.findByIdAndOwnerUserIdAndOwnerRole(
-            submissionDocumentId, user.userId(), SubmissionDocument.OwnerRole.STUDENT
+            submissionDocumentId, user.userId(), SubmissionDocument.OwnerRole.valueOf(user.role())
         ).orElseThrow(ReviewNotFound::new);
         List<Submission> existing = submissions.findBySubmissionDocumentIdOrderByWorksheetQuestionIdAsc(document.getId());
         if (document.getStatus() == SubmissionDocument.Status.SUBMITTED_FOR_REVIEW) {
@@ -152,6 +155,122 @@ public class MarkingReviewService {
         documents.saveAndFlush(document);
         for (Submission submission : saved) enqueueReviewState(submission, context.tutorUserId(), "PENDING_REVIEW");
         return SubmissionForTutorReviewResponse.from(document.getId(), saved);
+    }
+
+    /**
+     * Saves or submits typed student answers using the exact same canonical
+     * Submission aggregate used by OCR.  A page-less MANUAL document is the
+     * durable submission scope; its unique owner/worksheet/student key makes
+     * draft saves and repeated submit clicks idempotent.
+     */
+    @Transactional
+    public ManualAnswerResponse saveManualAnswers(
+        AuthenticatedUser user, ManualAnswerRequest request
+    ) {
+        if (user == null || (!"STUDENT".equals(user.role()) && !"TUTOR".equals(user.role()))) {
+            throw new LearningAuthorizationClient.Forbidden();
+        }
+        requirePositive(request == null ? null : request.studentId(), "Student id");
+        requirePositive(request == null ? null : request.worksheetId(), "Worksheet id");
+        if ("TUTOR".equals(user.role()) && (request.classId() == null || request.classId() <= 0)) {
+            throw new InvalidReviewRequest("Class id is required when a Tutor enters answers for a student.");
+        }
+
+        LearningAuthorizationClient.SubmissionMarkingContext context = learning.loadSubmissionMarkingContext(
+            user, request.studentId(), request.worksheetId(), request.classId()
+        );
+        SubmissionDocument document = manualDocument(
+            user.userId(), SubmissionDocument.OwnerRole.valueOf(user.role()), request.worksheetId(), request.studentId(), request.classId()
+        );
+        List<Submission> existing = submissions.findBySubmissionDocumentIdOrderByWorksheetQuestionIdAsc(document.getId());
+        if (document.getStatus() == SubmissionDocument.Status.SUBMITTED_FOR_REVIEW) {
+            return ManualAnswerResponse.submitted(document.getId(), existing);
+        }
+        if (document.getStatus() != SubmissionDocument.Status.READY) {
+            throw new InvalidReviewRequest("The manual submission is not ready.");
+        }
+
+        java.util.Map<Long, Submission> existingByQuestion = existing.stream().collect(java.util.stream.Collectors.toMap(
+            Submission::getWorksheetQuestionId, java.util.function.Function.identity()
+        ));
+        java.util.Set<Long> seen = new java.util.HashSet<>();
+        List<Submission> changed = new java.util.ArrayList<>();
+        if (request.answers() != null) {
+            for (ManualAnswerEntry entry : request.answers()) {
+                if (entry == null || entry.questionBankId() == null || entry.questionBankId() <= 0) {
+                    throw new InvalidReviewRequest("Each manual answer requires a worksheet question.");
+                }
+                if (!seen.add(entry.questionBankId())) {
+                    throw new InvalidReviewRequest("Each worksheet question may be entered only once.");
+                }
+                LearningAuthorizationClient.QuestionContext question = context.questionsByQuestionBankId().get(entry.questionBankId());
+                if (question == null) {
+                    throw new InvalidReviewRequest("A manual answer does not belong to this worksheet.");
+                }
+                String answer = entry.answer() == null ? "" : entry.answer().trim();
+                // Empty fields represent an unanswered question.  They stay out
+                // of the canonical answer table until the learner enters text.
+                if (answer.isEmpty()) continue;
+                Submission submission = existingByQuestion.get(entry.questionBankId());
+                if (submission == null) {
+                    submission = Submission.createDraftAnswer(document, entry.questionBankId(), entry.questionBankId(), answer,
+                        question.modelAnswer(), question.totalMarks(), question.syllabusTopicId(), question.syllabusTopicCode());
+                } else {
+                    submission.replacePendingAnswer(answer);
+                }
+                AiGradingService.AiMarkingResult suggestion = ai.evaluateMarking(question.prompt(), question.modelAnswer(),
+                    question.markingCriteria(), question.markingComponents().stream()
+                        .map(LearningAuthorizationClient.MarkingComponentContext::toRuleComponent).toList(),
+                    question.keywords(), answer, question.totalMarks());
+                submission.recordAiSuggestion(suggestion.suggestedMarks(), suggestion.correctness(), suggestion.errorCategory(),
+                    suggestion.missingKeywords(), suggestion.feedback());
+                changed.add(submission);
+            }
+        }
+        if (!changed.isEmpty()) submissions.saveAllAndFlush(changed);
+        List<Submission> canonical = submissions.findBySubmissionDocumentIdOrderByWorksheetQuestionIdAsc(document.getId());
+        if (!Boolean.TRUE.equals(request.submit())) {
+            return ManualAnswerResponse.draft(document.getId(), canonical);
+        }
+        if (canonical.isEmpty()) {
+            throw new InvalidReviewRequest("Enter at least one answer before submitting for Tutor review.");
+        }
+        document.markSubmittedForReview();
+        documents.saveAndFlush(document);
+        for (Submission submission : canonical) {
+            // A draft may be saved many times, but this state event is emitted
+            // once when the document is made immutable and reviewable.
+            submission.submitForTutorReview();
+            submission.nextMasterySyncRevision();
+            Submission saved = submissions.saveAndFlush(submission);
+            enqueueReviewState(saved, context.tutorUserId(), "PENDING_REVIEW");
+        }
+        return ManualAnswerResponse.submitted(document.getId(), canonical);
+    }
+
+    /** Reloads an actor's own manual draft after independently revalidating its worksheet scope. */
+    @Transactional
+    public ManualAnswerResponse loadManualAnswers(
+        AuthenticatedUser user, long studentId, long worksheetId, Long classId
+    ) {
+        if (user == null || (!"STUDENT".equals(user.role()) && !"TUTOR".equals(user.role()))) {
+            throw new LearningAuthorizationClient.Forbidden();
+        }
+        requirePositive(studentId, "Student id");
+        requirePositive(worksheetId, "Worksheet id");
+        if ("TUTOR".equals(user.role()) && (classId == null || classId <= 0)) {
+            throw new InvalidReviewRequest("Class id is required when a Tutor enters answers for a student.");
+        }
+        learning.loadSubmissionMarkingContext(user, studentId, worksheetId, classId);
+        return documents.findByOwnerUserIdAndOwnerRoleAndWorksheetIdAndStudentIdAndSourceType(
+            user.userId(), SubmissionDocument.OwnerRole.valueOf(user.role()), worksheetId, studentId,
+            SubmissionDocument.SourceType.MANUAL
+        ).map(document -> document.getStatus() == SubmissionDocument.Status.SUBMITTED_FOR_REVIEW
+            ? ManualAnswerResponse.submitted(document.getId(),
+                submissions.findBySubmissionDocumentIdOrderByWorksheetQuestionIdAsc(document.getId()))
+            : ManualAnswerResponse.draft(document.getId(),
+                submissions.findBySubmissionDocumentIdOrderByWorksheetQuestionIdAsc(document.getId()))
+        ).orElseGet(ManualAnswerResponse::empty);
     }
 
     /**
@@ -208,7 +327,8 @@ public class MarkingReviewService {
             normalized.add(new ManualResultEntry(entry.questionBankId(), answer, entry.marks(), feedback));
         }
 
-        SubmissionDocument document = manualDocument(user.userId(), request.worksheetId(), request.studentId());
+        SubmissionDocument document = manualDocument(user.userId(), SubmissionDocument.OwnerRole.TUTOR,
+            request.worksheetId(), request.studentId(), null);
         for (ManualResultEntry entry : normalized) {
             if (submissions.findBySubmissionDocumentIdAndWorksheetQuestionId(document.getId(), entry.questionBankId()).isPresent()) {
                 throw new ManualResultAlreadyExists();
@@ -341,19 +461,21 @@ public class MarkingReviewService {
         return submission;
     }
 
-    private SubmissionDocument manualDocument(long tutorId, long worksheetId, long studentId) {
+    private SubmissionDocument manualDocument(long ownerUserId, SubmissionDocument.OwnerRole ownerRole,
+                                              long worksheetId, long studentId, Long classId) {
         return documents.findByOwnerUserIdAndOwnerRoleAndWorksheetIdAndStudentIdAndSourceType(
-            tutorId,
-            SubmissionDocument.OwnerRole.TUTOR,
+            ownerUserId,
+            ownerRole,
             worksheetId,
             studentId,
             SubmissionDocument.SourceType.MANUAL
         ).orElseGet(() -> {
             SubmissionDocument created = new SubmissionDocument(
-                tutorId,
-                SubmissionDocument.OwnerRole.TUTOR,
+                ownerUserId,
+                ownerRole,
                 worksheetId,
                 studentId,
+                classId,
                 SubmissionDocument.SourceType.MANUAL
             );
             created.markReady();
@@ -361,8 +483,8 @@ public class MarkingReviewService {
                 return documents.saveAndFlush(created);
             } catch (DataIntegrityViolationException exception) {
                 return documents.findByOwnerUserIdAndOwnerRoleAndWorksheetIdAndStudentIdAndSourceType(
-                    tutorId,
-                    SubmissionDocument.OwnerRole.TUTOR,
+                    ownerUserId,
+                    ownerRole,
                     worksheetId,
                     studentId,
                     SubmissionDocument.SourceType.MANUAL
@@ -554,6 +676,30 @@ public class MarkingReviewService {
             return new SubmissionForTutorReviewResponse(documentId, submissions.stream().map(Submission::getId).toList(), "PENDING_REVIEW");
         }
     }
+    public record ManualAnswerEntry(Long questionBankId, String answer) { }
+    public record ManualAnswerRequest(
+        Long studentId, Long worksheetId, Long classId, List<ManualAnswerEntry> answers, Boolean submit
+    ) { }
+    /** Deliberately excludes model answers and provisional AI suggestions from learner-facing clients. */
+    public record ManualAnswerResponse(
+        Long submissionDocumentId, List<Long> submissionIds, List<ManualAnswerValue> answers, String status, String inputMethod
+    ) {
+        static ManualAnswerResponse empty() {
+            return new ManualAnswerResponse(null, List.of(), List.of(), "DRAFT", "MANUAL");
+        }
+        static ManualAnswerResponse draft(Long documentId, List<Submission> submissions) {
+            return response(documentId, submissions, "DRAFT");
+        }
+        static ManualAnswerResponse submitted(Long documentId, List<Submission> submissions) {
+            return response(documentId, submissions, "PENDING_REVIEW");
+        }
+        private static ManualAnswerResponse response(Long documentId, List<Submission> submissions, String status) {
+            return new ManualAnswerResponse(documentId, submissions.stream().map(Submission::getId).toList(), submissions.stream().map(submission ->
+                new ManualAnswerValue(submission.getWorksheetQuestionId(), submission.getExtractedAnswer())
+            ).toList(), status, "MANUAL");
+        }
+    }
+    public record ManualAnswerValue(Long questionBankId, String answer) { }
     public record ManualResultRequest(
         Long worksheetId,
         Long studentId,

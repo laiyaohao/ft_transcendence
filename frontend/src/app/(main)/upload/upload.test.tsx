@@ -57,7 +57,7 @@ describe("Tutor upload wizard", () => {
     expect(fetchTutorClasses).toHaveBeenCalledOnce();
     expect(fetchTutorStudents).toHaveBeenCalledWith(3);
     expect(fetchSubmissionWorksheets).toHaveBeenCalledWith(3, 7);
-    expect(screen.getByRole("button", { name: "Continue" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Upload scan / photo" })).toBeEnabled();
   });
 
   it("clears the student and worksheet when the class changes", async () => {
@@ -67,7 +67,7 @@ describe("Tutor upload wizard", () => {
     await choose(user, "Worksheet", "Water cycle practice");
     await choose(user, "Class", "P6 Science B · Primary 6 Science");
     expect(fetchTutorStudents).toHaveBeenLastCalledWith(4);
-    expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Upload scan / photo" })).toBeDisabled();
   });
 
   it("prefills student and class from the Student Profile route", async () => {
@@ -82,7 +82,7 @@ describe("Tutor upload wizard", () => {
     render(<Page />);
     await waitFor(() => expect(fetchSubmissionWorksheets).toHaveBeenCalledWith(3, 7));
     expect(fetchTutorWorksheet).toHaveBeenCalledWith(42);
-    await waitFor(() => expect(screen.getByRole("button", { name: "Continue" })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Upload scan / photo" })).toBeEnabled());
   });
 
   it("persists every selected relationship then hands the saved submission to OCR", async () => {
@@ -90,7 +90,7 @@ describe("Tutor upload wizard", () => {
     await choose(user, "Class", "P6 Science A · Primary 6 Science");
     await choose(user, "Student", "Bella Tan");
     await choose(user, "Worksheet", "Water cycle practice");
-    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("button", { name: "Upload scan / photo" }));
     const input = document.querySelector('input[type="file"][multiple]') as HTMLInputElement;
     await user.upload(input, new File(["page"], "page.jpg", { type: "image/jpeg" }));
     await user.click(screen.getByRole("button", { name: "Review submission" }));
@@ -104,10 +104,19 @@ describe("Tutor upload wizard", () => {
     await choose(user, "Class", "P6 Science A · Primary 6 Science");
     await choose(user, "Student", "Bella Tan");
     await choose(user, "Worksheet", "Water cycle practice");
-    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("button", { name: "Upload scan / photo" }));
     await user.click(screen.getByRole("button", { name: "Review submission" }));
     expect(screen.getByRole("alert")).toHaveTextContent("Add at least one page");
     expect(createOcrDocument).not.toHaveBeenCalled();
+  });
+
+  it("carries the real Tutor class, student and worksheet selection into manual entry", async () => {
+    const user = userEvent.setup(); render(<Page />);
+    await choose(user, "Class", "P6 Science A · Primary 6 Science");
+    await choose(user, "Student", "Bella Tan");
+    await choose(user, "Worksheet", "Water cycle practice");
+    await user.click(screen.getByRole("button", { name: "Enter answers manually" }));
+    expect(navigation.push).toHaveBeenCalledWith("/manual-answers?classId=3&studentId=7&worksheetId=42");
   });
 
   it("shows a safe empty state when no worksheet is available for the selected relationship", async () => {
@@ -116,7 +125,7 @@ describe("Tutor upload wizard", () => {
     await choose(user, "Class", "P6 Science A · Primary 6 Science");
     await choose(user, "Student", "Bella Tan");
     expect(await screen.findByText("No worksheets available for this student/class.")).toBeVisible();
-    expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Upload scan / photo" })).toBeDisabled();
   });
 });
 
@@ -150,6 +159,12 @@ describe("Student assigned worksheet upload", () => {
     await waitFor(() => expect(createOcrDocument).toHaveBeenCalledWith(expect.objectContaining({ studentId: 7, worksheetId: 42, pages: expect.any(Array) })));
     expect(createOcrDocument).toHaveBeenCalledWith(expect.not.objectContaining({ classId: expect.anything() }));
     expect(navigation.push).toHaveBeenCalledWith("/ocr?submissionId=55");
+  });
+
+  it("offers manual answer entry for the real assigned worksheet", async () => {
+    render(<Page />);
+    expect(await screen.findByRole("link", { name: "Enter answers manually" }))
+      .toHaveAttribute("href", "/manual-answers?worksheetId=42");
   });
 
   it("rejects a worksheet not currently assigned to the Student without offering a generic upload", async () => {
