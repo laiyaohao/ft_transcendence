@@ -37,6 +37,7 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
         Long submissionDocumentId,
         Long worksheetQuestionId
     );
+    List<Submission> findBySubmissionDocumentIdOrderByWorksheetQuestionIdAsc(Long submissionDocumentId);
 
     /**
      * Manual marks are deliberately scoped through their Tutor-owned document.

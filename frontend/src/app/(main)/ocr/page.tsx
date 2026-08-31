@@ -7,7 +7,7 @@ import Card from "@mui/material/Card";
 import CircularProgress from "@mui/material/CircularProgress";
 import Typography from "@mui/material/Typography";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import OcrReview from "@/components/submissions/OcrReview";
 import Stack from "@/components/lumina-stack";
@@ -16,8 +16,10 @@ import {
   correctOcrExtraction,
   fetchSubmissionDocument,
   SubmissionApiError,
+  submitOcrForTutorReview,
   type SubmissionDocument,
 } from "@/services/submissions";
+import { fetchStudentWorksheet, type StudentWorksheetDetail } from "@/services/worksheets";
 
 function submissionId(value: string | null): number | null {
   if (!value || !/^\d+$/.test(value)) return null;
@@ -29,9 +31,11 @@ function OcrPage() {
   const params = useSearchParams();
   const id = submissionId(params.get("submissionId"));
   const isStudent = getBrowserSession()?.role === "STUDENT";
+  const router = useRouter();
   const returnPath = isStudent ? "/worksheets" : "/upload";
   const completionPath = isStudent ? "/worksheets" : "/tutor/worksheets";
   const [document, setDocument] = React.useState<SubmissionDocument | null>(null);
+  const [worksheet, setWorksheet] = React.useState<StudentWorksheetDetail | null>(null);
   const [error, setError] = React.useState<string | null>(id === null ? "Choose a saved submission before reviewing OCR." : null);
   const [loading, setLoading] = React.useState(id !== null);
   const [reload, setReload] = React.useState(0);
@@ -44,10 +48,17 @@ function OcrPage() {
         setLoading(true);
         setError(null);
         setDocument(null);
+        setWorksheet(null);
       }
     });
     void fetchSubmissionDocument(id)
-      .then((loaded) => { if (active) setDocument(loaded); })
+      .then(async (loaded) => {
+        if (isStudent) {
+          const detail = await fetchStudentWorksheet(loaded.worksheetId);
+          if (active) setWorksheet(detail);
+        }
+        if (active) setDocument(loaded);
+      })
       .catch((reason: unknown) => {
         if (!active) return;
         if (reason instanceof SubmissionApiError && reason.status === 404) setError("This submission was not found.");
@@ -56,7 +67,7 @@ function OcrPage() {
       })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [id, reload]);
+  }, [id, isStudent, reload]);
 
   return <Box sx={{ minHeight: "100vh", bgcolor: "#F7F4EF", px: { xs: 2, sm: 4 }, py: 4 }}>
     <Box sx={{ maxWidth: 850, mx: "auto" }}>
@@ -71,14 +82,17 @@ function OcrPage() {
           <Typography>Class #{document.classId} · Student #{document.studentId} · Worksheet #{document.worksheetId}</Typography>
           <Typography sx={{ fontSize: 13, color: "#6F675E", mt: .5 }}>{document.pages.length} uploaded page{document.pages.length === 1 ? "" : "s"} · {document.status}</Typography>
         </Card>
-        <OcrReview pages={document.pages} onCorrect={async (extractionId, text) => {
+        {document.status === "SUBMITTED_FOR_REVIEW" && isStudent ? <Card role="status" variant="outlined" sx={{ p: 2, borderColor: "#87A878", bgcolor: "#F7FBF4" }}><Typography sx={{ fontWeight: 700 }}>Submitted for Tutor Review</Typography><Typography sx={{ color: "#506348", mt: .5 }}>Your OCR answers are saved and waiting for Tutor review.</Typography><Button component={Link} href={`/worksheets/${document.worksheetId}/results`} sx={{ mt: 1 }}>View worksheet status</Button></Card> : <OcrReview pages={document.pages} questions={worksheet?.questions.map((question) => ({ id: question.id, prompt: question.prompt }))} onCorrect={async (extractionId, text) => {
           const corrected = await correctOcrExtraction(extractionId, text);
           setDocument((current) => current === null ? current : {
             ...current,
             pages: current.pages.map((page) => page.extractionId === extractionId ? { ...page, ...corrected, pageId: page.pageId } : page),
           });
-        }} />
-        <Stack direction="row" justifyContent="flex-end" sx={{ mt: 3 }}><Button component={Link} href={completionPath} sx={{ bgcolor: "#9E3A24", color: "#FFFDFA", "&:hover": { bgcolor: "#8A3120" } }}>{isStudent ? "Return to My Worksheets" : "Continue to worksheets"}</Button></Stack>
+        }} onSubmitForReview={isStudent && worksheet ? async (answers) => {
+          await submitOcrForTutorReview(document.id, answers);
+          router.replace(`/worksheets/${document.worksheetId}/results`);
+        } : undefined} />}
+        <Stack direction="row" justifyContent="flex-end" sx={{ mt: 3 }}><Button component={Link} href={isStudent ? "/worksheets" : completionPath} sx={!isStudent ? { bgcolor: "#9E3A24", color: "#FFFDFA", "&:hover": { bgcolor: "#8A3120" } } : undefined}>{isStudent ? "Return to My Worksheets" : "Continue to worksheets"}</Button></Stack>
       </> : null}
     </Box>
   </Box>;

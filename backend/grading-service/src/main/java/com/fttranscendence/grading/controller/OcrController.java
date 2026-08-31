@@ -30,7 +30,7 @@ public class OcrController {
         @PathVariable long extractionId,
         @RequestBody Map<String, String> request
     ) {
-        OcrExtraction extraction = reviews.correct(user.userId(), extractionId, request.get("correctedText"));
+        OcrExtraction extraction = reviews.correct(user.userId(), user.role(), extractionId, request.get("correctedText"));
         return ResponseEntity.ok(Map.of(
             "id", extraction.getId(),
             "text", extraction.getCorrectedText(),
@@ -53,5 +53,11 @@ public class OcrController {
     ResponseEntity<Map<String, String>> invalidCorrection(IllegalArgumentException exception) {
         return ResponseEntity.badRequest()
             .body(Map.of("code", "INVALID_OCR_CORRECTION", "error", exception.getMessage()));
+    }
+
+    @ExceptionHandler(IllegalStateException.class)
+    ResponseEntity<Map<String, String>> invalidState(IllegalStateException exception) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+            .body(Map.of("code", "OCR_EXTRACTION_STATE_CONFLICT", "error", exception.getMessage()));
     }
 }

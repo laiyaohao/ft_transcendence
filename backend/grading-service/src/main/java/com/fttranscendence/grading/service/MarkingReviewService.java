@@ -91,6 +91,70 @@ public class MarkingReviewService {
     }
 
     /**
+     * Converts a Student-owned OCR document into canonical answer records.
+     * The caller supplies only page-to-question associations; Learning supplies
+     * the trusted rubric and owning Tutor through the integration boundary.
+     */
+    @Transactional
+    public SubmissionForTutorReviewResponse submitOcrForTutorReview(
+        AuthenticatedUser user, long submissionDocumentId, OcrSubmissionRequest request
+    ) {
+        requirePositive(submissionDocumentId, "Submission document id");
+        if (user == null || !"STUDENT".equals(user.role())) throw new LearningAuthorizationClient.Forbidden();
+        SubmissionDocument document = documents.findByIdAndOwnerUserIdAndOwnerRole(
+            submissionDocumentId, user.userId(), SubmissionDocument.OwnerRole.STUDENT
+        ).orElseThrow(ReviewNotFound::new);
+        List<Submission> existing = submissions.findBySubmissionDocumentIdOrderByWorksheetQuestionIdAsc(document.getId());
+        if (document.getStatus() == SubmissionDocument.Status.SUBMITTED_FOR_REVIEW) {
+            if (existing.isEmpty()) throw new IllegalStateException("Submitted document is missing its answer records.");
+            return SubmissionForTutorReviewResponse.from(document.getId(), existing);
+        }
+        if (document.getStatus() != SubmissionDocument.Status.READY) {
+            throw new InvalidReviewRequest("The submission document is not ready for review.");
+        }
+        if (!existing.isEmpty()) {
+            throw new IllegalStateException("Ready document already has answer records.");
+        }
+        List<OcrExtraction> documentExtractions = extractions.findByPageDocumentIdOrderByPagePageNumberAsc(document.getId());
+        java.util.Map<Long, Long> mappings = validatedMappings(request, documentExtractions);
+        LearningAuthorizationClient.SubmissionMarkingContext context = learning.loadSubmissionMarkingContext(
+            user, document.getStudentId(), document.getWorksheetId(), document.getClassId()
+        );
+
+        java.util.Map<Long, List<OcrExtraction>> byQuestion = new java.util.LinkedHashMap<>();
+        for (OcrExtraction extraction : documentExtractions) {
+            Long questionBankId = mappings.get(extraction.getId());
+            LearningAuthorizationClient.QuestionContext question = context.questionsByQuestionBankId().get(questionBankId);
+            if (question == null) throw new InvalidReviewRequest("Choose a question from this worksheet for every OCR page.");
+            extraction.assignToWorksheetQuestion(questionBankId);
+            byQuestion.computeIfAbsent(questionBankId, ignored -> new java.util.ArrayList<>()).add(extraction);
+        }
+
+        List<Submission> pending = new java.util.ArrayList<>();
+        for (var item : byQuestion.entrySet()) {
+            LearningAuthorizationClient.QuestionContext question = context.questionsByQuestionBankId().get(item.getKey());
+            String answer = item.getValue().stream().map(this::effectiveText)
+                .collect(java.util.stream.Collectors.joining("\n\n")).trim();
+            if (answer.isBlank()) throw new InvalidReviewRequest("Each mapped OCR page needs corrected text before submission.");
+            Submission submission = Submission.createAnswer(document, item.getKey(), item.getKey(), answer,
+                question.modelAnswer(), question.totalMarks(), question.syllabusTopicId(), question.syllabusTopicCode());
+            AiGradingService.AiMarkingResult suggestion = ai.evaluateMarking(question.prompt(), question.modelAnswer(),
+                question.markingCriteria(), question.markingComponents().stream()
+                    .map(LearningAuthorizationClient.MarkingComponentContext::toRuleComponent).toList(),
+                question.keywords(), answer, question.totalMarks());
+            submission.recordAiSuggestion(suggestion.suggestedMarks(), suggestion.correctness(), suggestion.errorCategory(),
+                suggestion.missingKeywords(), suggestion.feedback());
+            submission.nextMasterySyncRevision();
+            pending.add(submission);
+        }
+        List<Submission> saved = submissions.saveAllAndFlush(pending);
+        document.markSubmittedForReview();
+        documents.saveAndFlush(document);
+        for (Submission submission : saved) enqueueReviewState(submission, context.tutorUserId(), "PENDING_REVIEW");
+        return SubmissionForTutorReviewResponse.from(document.getId(), saved);
+    }
+
+    /**
      * Persists a Tutor-entered result through the same canonical submission,
      * approval, score-boundary and audit-history path as an OCR review.
      */
@@ -312,6 +376,30 @@ public class MarkingReviewService {
         return corrected != null && !corrected.isBlank() ? corrected : extraction.getExtractedText();
     }
 
+    private static java.util.Map<Long, Long> validatedMappings(
+        OcrSubmissionRequest request, List<OcrExtraction> documentExtractions
+    ) {
+        if (request == null || request.answers() == null || request.answers().size() != documentExtractions.size()
+            || documentExtractions.isEmpty()) {
+            throw new InvalidReviewRequest("Assign every OCR page to a worksheet question before submitting.");
+        }
+        java.util.Set<Long> extractionIds = documentExtractions.stream().map(OcrExtraction::getId)
+            .collect(java.util.stream.Collectors.toSet());
+        java.util.Map<Long, Long> result = new java.util.LinkedHashMap<>();
+        for (OcrAnswerMapping mapping : request.answers()) {
+            if (mapping == null || mapping.extractionId() == null || mapping.questionBankId() == null
+                || mapping.extractionId() <= 0 || mapping.questionBankId() <= 0
+                || !extractionIds.contains(mapping.extractionId()) || result.putIfAbsent(mapping.extractionId(), mapping.questionBankId()) != null) {
+                throw new InvalidReviewRequest("OCR page mappings are invalid.");
+            }
+        }
+        if (result.size() != extractionIds.size() || documentExtractions.stream()
+            .anyMatch(extraction -> extraction.getStatus() != OcrExtraction.Status.READY)) {
+            throw new InvalidReviewRequest("Correct all OCR pages and assign each one before submitting.");
+        }
+        return result;
+    }
+
     private static void requirePositive(Long value, String field) {
         if (value == null || value <= 0) {
             throw new InvalidReviewRequest(field + " must be positive.");
@@ -458,6 +546,14 @@ public class MarkingReviewService {
     }
 
     public record CreateRequest(Long submissionDocumentId, Long worksheetQuestionId, Long questionBankId) { }
+    public record OcrAnswerMapping(Long extractionId, Long questionBankId) { }
+    public record OcrSubmissionRequest(List<OcrAnswerMapping> answers) { }
+    /** Student-safe confirmation response: it deliberately excludes AI scores and rubric data. */
+    public record SubmissionForTutorReviewResponse(Long submissionDocumentId, List<Long> submissionIds, String status) {
+        static SubmissionForTutorReviewResponse from(Long documentId, List<Submission> submissions) {
+            return new SubmissionForTutorReviewResponse(documentId, submissions.stream().map(Submission::getId).toList(), "PENDING_REVIEW");
+        }
+    }
     public record ManualResultRequest(
         Long worksheetId,
         Long studentId,

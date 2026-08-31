@@ -64,6 +64,65 @@ public class LearningAuthorizationClient {
         }
     }
 
+    /**
+     * Internal-only equivalent of the Tutor rubric lookup.  It validates the
+     * Student-owned assigned worksheet and returns its question snapshots to
+     * Grading, never to the browser.
+     */
+    public SubmissionMarkingContext loadSubmissionMarkingContext(
+        AuthenticatedUser user, long studentId, long worksheetId, Long classId
+    ) {
+        if (user == null || (!"STUDENT".equals(user.role()) && !"TUTOR".equals(user.role()))) {
+            throw new Forbidden();
+        }
+        try {
+            if (syncKey == null || syncKey.isBlank()) throw new Forbidden();
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("X-Learning-Integration-Key", syncKey);
+            headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+            Map<String, Object> request = new java.util.LinkedHashMap<>();
+            request.put("actorUserId", user.userId());
+            request.put("actorRole", user.role());
+            request.put("studentId", studentId);
+            request.put("worksheetId", worksheetId);
+            request.put("classId", classId);
+            Map<?, ?> body = rest.exchange(
+                base + "/api/learning/internal/submission-authorization/marking-context",
+                HttpMethod.POST, new HttpEntity<>(request, headers), Map.class
+            ).getBody();
+            if (body == null || !(body.get("tutorUserId") instanceof Number tutor) || tutor.longValue() <= 0
+                || !(body.get("questions") instanceof List<?> values) || values.isEmpty()) {
+                throw new SubmissionMarkingContextUnavailable();
+            }
+            Map<Long, QuestionContext> questions = new java.util.LinkedHashMap<>();
+            for (Object value : values) {
+                if (!(value instanceof Map<?, ?> question)) throw new SubmissionMarkingContextUnavailable();
+                Object id = question.get("questionBankId");
+                String prompt = text(question.get("prompt"));
+                String modelAnswer = text(question.get("modelAnswer"));
+                BigDecimal totalMarks = decimal(question.get("totalMarks"));
+                List<MarkingComponentContext> components = components(question.get("markingComponents"), totalMarks);
+                List<String> keywords = strings(question.get("keywords"));
+                TopicContext topic = new TopicContext(
+                    positiveSubmissionContextId(question.get("syllabusTopicId")),
+                    requiredSubmissionContextText(question.get("syllabusTopicCode"))
+                );
+                if (!(id instanceof Number number) || number.longValue() <= 0 || prompt == null || modelAnswer == null
+                    || totalMarks == null || totalMarks.signum() <= 0 || components.isEmpty()
+                    || questions.putIfAbsent(number.longValue(), new QuestionContext(prompt, modelAnswer, totalMarks,
+                        components.stream().map(MarkingComponentContext::description).toList(), components, keywords,
+                        topic.id(), topic.code())) != null) {
+                    throw new SubmissionMarkingContextUnavailable();
+                }
+            }
+            return new SubmissionMarkingContext(tutor.longValue(), Map.copyOf(questions));
+        } catch (Forbidden | SubmissionMarkingContextUnavailable exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new SubmissionMarkingContextUnavailable();
+        }
+    }
+
     /** A marking decision is a protected Tutor action for a linked student. */
     public void assertCanReview(AuthenticatedUser user, String bearer, long studentId) {
         if (user == null || !"TUTOR".equals(user.role())) {
@@ -375,6 +434,17 @@ public class LearningAuthorizationClient {
         return number.longValue();
     }
 
+    private static long positiveSubmissionContextId(Object value) {
+        if (!(value instanceof Number number) || number.longValue() <= 0) throw new SubmissionMarkingContextUnavailable();
+        return number.longValue();
+    }
+
+    private static String requiredSubmissionContextText(Object value) {
+        String result = text(value);
+        if (result == null) throw new SubmissionMarkingContextUnavailable();
+        return result;
+    }
+
     private static String text(Object value) {
         return value instanceof String string && !string.isBlank() ? string.trim() : null;
     }
@@ -435,6 +505,7 @@ public class LearningAuthorizationClient {
         Long syllabusTopicId,
         String syllabusTopicCode
     ) { }
+    public record SubmissionMarkingContext(long tutorUserId, Map<Long, QuestionContext> questionsByQuestionBankId) { }
 
     public record MarkingComponentContext(int position, String description, BigDecimal marks, List<String> keywords) {
         public RuleBasedAnswerChecker.WeightedMarkingComponent toRuleComponent() {
@@ -453,6 +524,7 @@ public class LearningAuthorizationClient {
     public static class QuestionUnavailable extends RuntimeException { }
     public static class QuestionNotFound extends RuntimeException { }
     public static class ManualResultContextNotFound extends RuntimeException { }
+    public static class SubmissionMarkingContextUnavailable extends RuntimeException { }
     public static class MistakeHistoryNotFound extends RuntimeException { }
     public static class StudentWorksheetNotFound extends RuntimeException { }
     public static class SyllabusUnavailable extends RuntimeException { }

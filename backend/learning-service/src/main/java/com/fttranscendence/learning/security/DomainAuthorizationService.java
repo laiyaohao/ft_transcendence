@@ -6,6 +6,7 @@ import com.fttranscendence.learning.student.StudentProfile;
 import com.fttranscendence.learning.student.StudentProfileRepository;
 import com.fttranscendence.learning.worksheet.Worksheet;
 import com.fttranscendence.learning.worksheet.WorksheetRepository;
+import com.fttranscendence.learning.question.Question;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -82,6 +83,35 @@ public class DomainAuthorizationService {
         }
     }
 
+    /**
+     * Resolves the authoritative, assigned worksheet rubric for the grading
+     * service.  This is intentionally an internal contract: model answers and
+     * marking criteria must never be sent to the Student browser.
+     */
+    @Transactional(readOnly = true)
+    public SubmissionMarkingContext requireSubmissionMarkingContext(
+        long actorUserId, ActorRole actorRole, long studentId, long worksheetId, Long classId
+    ) {
+        requireSubmissionContext(actorUserId, actorRole, studentId, worksheetId, null, classId);
+        Worksheet worksheet = worksheets.findById(worksheetId).orElseThrow(ResourceNotFoundException::new);
+        if (worksheet.getQuestions().isEmpty()) {
+            throw new ResourceNotFoundException();
+        }
+        return new SubmissionMarkingContext(
+            worksheet.getTutorId(),
+            worksheet.getQuestions().stream().map(worksheetQuestion -> {
+                Question question = worksheetQuestion.getQuestion();
+                return new MarkingQuestion(
+                    question.getId(), question.getPrompt(), question.getModelAnswer(), question.getTotalMarks(),
+                    question.getKeywords(), question.getMarkingComponents().stream()
+                        .map(component -> new MarkingComponent(component.getDescription(), component.getMarks(), component.getKeywords()))
+                        .toList(),
+                    question.getSyllabusTopic().getId(), question.getSyllabusTopic().getCode()
+                );
+            }).toList()
+        );
+    }
+
     private boolean isAssignedTo(Worksheet worksheet, StudentProfile student, Long classId) {
         if (classId != null) {
             boolean classAssignment = worksheet.getAssignments().stream().anyMatch(assignment ->
@@ -111,4 +141,9 @@ public class DomainAuthorizationService {
 
     public static class ResourceNotFoundException extends RuntimeException { }
     public enum ActorRole { TUTOR, STUDENT }
+    public record SubmissionMarkingContext(Long tutorUserId, java.util.List<MarkingQuestion> questions) { }
+    public record MarkingQuestion(Long questionBankId, String prompt, String modelAnswer, java.math.BigDecimal totalMarks,
+                                  java.util.List<String> keywords, java.util.List<MarkingComponent> markingComponents,
+                                  Long syllabusTopicId, String syllabusTopicCode) { }
+    public record MarkingComponent(String description, java.math.BigDecimal marks, java.util.List<String> keywords) { }
 }

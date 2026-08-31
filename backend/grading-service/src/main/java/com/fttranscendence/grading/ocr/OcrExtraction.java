@@ -20,6 +20,7 @@ public class OcrExtraction {
   protected OcrExtraction() {}
   public OcrExtraction(SubmissionPage page, Long questionId, String text, double confidence, String provider) { this.page=page; worksheetQuestionId=questionId; extractedText=text; this.confidence=confidence; this.provider=provider; status=text.isBlank()?Status.UNREADABLE:confidence<.85?Status.REQUIRES_REVIEW:Status.READY; }
   public void correct(String text) { correctedText=text.trim(); status=Status.READY; }
+  public void assignToWorksheetQuestion(Long questionId) { if(questionId==null||questionId<=0) throw new IllegalArgumentException("Worksheet question is required."); worksheetQuestionId=questionId; }
   @PrePersist void insert(){createdAt=updatedAt=LocalDateTime.now();} @PreUpdate void update(){updatedAt=LocalDateTime.now();}
   public Long getId(){return id;} public SubmissionPage getPage(){return page;} public Long getWorksheetQuestionId(){return worksheetQuestionId;} public String getExtractedText(){return extractedText;} public String getCorrectedText(){return correctedText;} public double getConfidence(){return confidence;} public Status getStatus(){return status;}
 }

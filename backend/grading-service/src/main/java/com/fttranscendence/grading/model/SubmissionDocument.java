@@ -41,7 +41,8 @@ public class SubmissionDocument {
 
     public enum Status {
         UPLOADING,
-        READY
+        READY,
+        SUBMITTED_FOR_REVIEW
     }
 
     @Id
@@ -81,7 +82,7 @@ public class SubmissionDocument {
     private String manualScopeKey;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 16)
+    @Column(nullable = false, length = 24)
     private Status status = Status.UPLOADING;
 
     @OneToMany(
@@ -194,6 +195,14 @@ public class SubmissionDocument {
         status = Status.READY;
     }
 
+    /** Locks a completed OCR document once canonical answer records exist. */
+    public void markSubmittedForReview() {
+        if (status != Status.READY) {
+            throw new IllegalStateException("Only a ready submission document can be submitted for review");
+        }
+        status = Status.SUBMITTED_FOR_REVIEW;
+    }
+
     @PrePersist
     protected void beforeInsert() {
         LocalDateTime now = LocalDateTime.now();
@@ -231,7 +240,7 @@ public class SubmissionDocument {
         } else if (manualScopeKey != null) {
             throw new IllegalStateException("Uploaded submission documents cannot have a manual scope key");
         }
-        if (status == Status.READY) {
+        if (status == Status.READY || status == Status.SUBMITTED_FOR_REVIEW) {
             validatePages();
         } else {
             validateExistingPages();

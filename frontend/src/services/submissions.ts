@@ -24,7 +24,7 @@ export function releasePagePreview(page: UploadPage) { if (page.previewUrl) URL.
 function headers(): HeadersInit { const token = typeof window === "undefined" ? null : localStorage.getItem("jwt_token"); return token ? { Authorization: `Bearer ${token}` } : {}; }
 export type SubmissionDocument = {
   id: number; classId: number | null; studentId: number; worksheetId: number;
-  uploadedByTutorId: number | null; status: "UPLOADING" | "READY"; createdAt: string;
+  uploadedByTutorId: number | null; status: "UPLOADING" | "READY" | "SUBMITTED_FOR_REVIEW"; createdAt: string;
   pages: OcrPage[];
 };
 
@@ -36,7 +36,7 @@ function parseSubmissionDocument(value: unknown): SubmissionDocument {
     || !Number.isSafeInteger(raw.worksheetId) || (raw.worksheetId as number) <= 0
     || (raw.classId !== null && (!Number.isSafeInteger(raw.classId) || (raw.classId as number) <= 0))
     || (raw.uploadedByTutorId !== null && (!Number.isSafeInteger(raw.uploadedByTutorId) || (raw.uploadedByTutorId as number) <= 0))
-    || (raw.status !== "UPLOADING" && raw.status !== "READY") || typeof raw.createdAt !== "string" || !Array.isArray(raw.pages)) {
+    || (raw.status !== "UPLOADING" && raw.status !== "READY" && raw.status !== "SUBMITTED_FOR_REVIEW") || typeof raw.createdAt !== "string" || !Array.isArray(raw.pages)) {
     throw new SubmissionApiError("The submission document response is invalid.");
   }
   const pageIds = new Set<number>();
@@ -72,6 +72,27 @@ export async function fetchSubmissionDocument(documentId: number): Promise<Submi
   return parseSubmissionDocument(await response.json());
 }
 export async function correctOcrExtraction(extractionId:number,correctedText:string):Promise<OcrPage>{const response=await fetch(`${gradingUrl}/api/grading/ocr-extractions/${extractionId}`,{method:"PATCH",headers:{...headers(),"Content-Type":"application/json"},body:JSON.stringify({correctedText})});if(!response.ok)throw new SubmissionApiError("OCR correction could not be saved.",response.status);const b=await response.json() as {id:number;text:string;confidence:number;status:OcrPage["status"]};return {pageId:0,extractionId:b.id,text:b.text,confidence:b.confidence,status:b.status};}
+
+export type OcrAnswerMapping = { extractionId: number; questionBankId: number };
+export type SubmissionForTutorReview = { submissionDocumentId: number; submissionIds: number[]; status: "PENDING_REVIEW" };
+export async function submitOcrForTutorReview(documentId: number, answers: OcrAnswerMapping[]): Promise<SubmissionForTutorReview> {
+  if (!Number.isSafeInteger(documentId) || documentId <= 0 || !answers.length || answers.some((answer) => !Number.isSafeInteger(answer.extractionId) || answer.extractionId <= 0 || !Number.isSafeInteger(answer.questionBankId) || answer.questionBankId <= 0)) {
+    throw new SubmissionApiError("OCR submission details are invalid.", 400);
+  }
+  const response = await fetch(`${gradingUrl}/api/grading/submission-documents/${documentId}/submit-for-review`, {
+    method: "POST", headers: { ...headers(), "Content-Type": "application/json" }, body: JSON.stringify({ answers }),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { error?: string } | null;
+    throw new SubmissionApiError(body?.error || "The OCR submission could not be sent for Tutor review.", response.status);
+  }
+  const body = await response.json() as Record<string, unknown>;
+  if (!Number.isSafeInteger(body.submissionDocumentId) || body.submissionDocumentId !== documentId || body.status !== "PENDING_REVIEW"
+    || !Array.isArray(body.submissionIds) || !body.submissionIds.length || body.submissionIds.some((id) => !Number.isSafeInteger(id) || (id as number) <= 0)) {
+    throw new SubmissionApiError("The OCR submission response is invalid.");
+  }
+  return { submissionDocumentId: body.submissionDocumentId as number, submissionIds: body.submissionIds as number[], status: "PENDING_REVIEW" };
+}
 
 export type MarkingReviewStatus = "PENDING_REVIEW" | "FLAGGED" | "APPROVED";
 export type DiagnosticCategory = "CONCEPT" | "KEYWORD" | "EXPRESSION" | "APPLICATION";

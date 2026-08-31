@@ -8,6 +8,7 @@ import com.fttranscendence.grading.repository.OcrExtractionRepository;
 import com.fttranscendence.grading.repository.SubmissionDocumentRepository;
 import com.fttranscendence.grading.security.AuthenticatedUser;
 import com.fttranscendence.grading.service.LearningAuthorizationClient;
+import com.fttranscendence.grading.service.MarkingReviewService;
 import com.fttranscendence.grading.storage.DocumentStorage;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -40,19 +41,22 @@ public class SubmissionDocumentController {
     private final OcrReviewService review;
     private final LearningAuthorizationClient authorization;
     private final OcrExtractionRepository extractions;
+    private final MarkingReviewService markingReviews;
 
     public SubmissionDocumentController(
         SubmissionDocumentRepository documents,
         DocumentStorage storage,
         OcrReviewService review,
         LearningAuthorizationClient authorization,
-        OcrExtractionRepository extractions
+        OcrExtractionRepository extractions,
+        MarkingReviewService markingReviews
     ) {
         this.documents = documents;
         this.storage = storage;
         this.review = review;
         this.authorization = authorization;
         this.extractions = extractions;
+        this.markingReviews = markingReviews;
     }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -155,6 +159,16 @@ public class SubmissionDocumentController {
         );
     }
 
+    /** A Student explicitly confirms corrected OCR and sends it to the assigned Tutor queue. */
+    @PostMapping(value = "/{documentId}/submit-for-review", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<MarkingReviewService.SubmissionForTutorReviewResponse> submitForReview(
+        @AuthenticationPrincipal AuthenticatedUser user,
+        @PathVariable long documentId,
+        @org.springframework.web.bind.annotation.RequestBody MarkingReviewService.OcrSubmissionRequest request
+    ) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(markingReviews.submitOcrForTutorReview(user, documentId, request));
+    }
+
     public record PageResponse(
         long id,
         int pageNumber,
@@ -234,5 +248,19 @@ public class SubmissionDocumentController {
     ResponseEntity<Map<String, String>> notFound() {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
             .body(Map.of("code", "SUBMISSION_DOCUMENT_NOT_FOUND", "error", "Submission document was not found."));
+    }
+
+    @ExceptionHandler(MarkingReviewService.ReviewNotFound.class)
+    ResponseEntity<Map<String, String>> reviewDocumentNotFound() { return notFound(); }
+
+    @ExceptionHandler(LearningAuthorizationClient.SubmissionMarkingContextUnavailable.class)
+    ResponseEntity<Map<String, String>> markingContextUnavailable() {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+            .body(Map.of("code", "SUBMISSION_MARKING_CONTEXT_UNAVAILABLE", "error", "The worksheet marking context is temporarily unavailable."));
+    }
+
+    @ExceptionHandler(MarkingReviewService.InvalidReviewRequest.class)
+    ResponseEntity<Map<String, String>> invalidReviewRequest(MarkingReviewService.InvalidReviewRequest exception) {
+        return ResponseEntity.badRequest().body(Map.of("code", "INVALID_OCR_SUBMISSION", "error", exception.getMessage()));
     }
 }

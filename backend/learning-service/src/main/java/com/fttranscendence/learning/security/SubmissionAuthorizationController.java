@@ -45,6 +45,24 @@ public class SubmissionAuthorizationController {
         return ResponseEntity.noContent().build();
     }
 
+    /** Gives grading a server-only worksheet rubric after the same scope check used for uploads. */
+    @PostMapping("/marking-context")
+    public DomainAuthorizationService.SubmissionMarkingContext markingContext(
+        @RequestHeader(value = "X-Learning-Integration-Key", required = false) String key,
+        @RequestBody SubmissionContext request
+    ) {
+        if (!matches(key)) throw new IntegrationForbiddenException();
+        if (request == null || request.actorUserId() <= 0 || request.studentId() <= 0 || request.worksheetId() <= 0) {
+            throw new DomainAuthorizationService.ResourceNotFoundException();
+        }
+        DomainAuthorizationService.ActorRole role;
+        try { role = DomainAuthorizationService.ActorRole.valueOf(request.actorRole()); }
+        catch (RuntimeException exception) { throw new DomainAuthorizationService.ResourceNotFoundException(); }
+        return authorization.requireSubmissionMarkingContext(
+            request.actorUserId(), role, request.studentId(), request.worksheetId(), request.classId()
+        );
+    }
+
     private boolean matches(String candidate) {
         return candidate != null && MessageDigest.isEqual(integrationKey, candidate.getBytes(StandardCharsets.UTF_8));
     }
