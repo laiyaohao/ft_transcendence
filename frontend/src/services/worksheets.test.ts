@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchDiagnosticRecommendations, fetchStudentWorksheets, fetchTutorWorksheet, fetchTutorWorksheets, generateDiagnosticWorksheet, generateWorksheet, parseStudentWorksheet, parseTutorWorksheet, WorksheetApiError } from "./worksheets";
+import { downloadStudentWorksheetPdf, fetchDiagnosticRecommendations, fetchStudentWorksheet, fetchStudentWorksheets, fetchTutorWorksheet, fetchTutorWorksheets, generateDiagnosticWorksheet, generateWorksheet, parseStudentWorksheet, parseStudentWorksheetDetail, parseTutorWorksheet, WorksheetApiError } from "./worksheets";
 
 const worksheet = {
   id: 9, code: "GEN-9", title: "Water drill", instructions: null, audienceType: "CLASS", status: "DRAFT", generationRequestId: 3,
@@ -13,6 +13,12 @@ const studentWorksheet = {
   assignedAt: "2026-08-15T09:30:00", dueAt: "2026-08-25T23:59:00", status: "MARKED",
   submittedAt: "2026-08-20T12:00:00", reviewedAt: "2026-08-21T10:15:00",
   score: { earned: 8, available: 10, percent: 80 },
+};
+
+const studentWorksheetDetail = {
+  id: 18, code: "SCI-18", title: "Plant transport review", instructions: "Answer every question.", subject: "Science",
+  questions: [{ id: 12, code: "SCI-12", prompt: "Explain xylem transport.", questionType: "OPEN_ENDED", totalMarks: 2, syllabusTopicId: 9, syllabusTopicName: "Plant transport" }],
+  assignedAt: "2026-08-15T09:30:00", dueAt: "2026-08-25T23:59:00",
 };
 
 describe("worksheet service", () => {
@@ -70,5 +76,24 @@ describe("worksheet service", () => {
     expect(() => parseStudentWorksheet({ ...studentWorksheet, score: { earned: 11, available: 10, percent: 110 } })).toThrow(/invalid student worksheet score/i);
     await expect(fetchStudentWorksheets({ status: "DRAFT" as never })).rejects.toMatchObject({ status: 400 });
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("loads and exports only one Student-scoped worksheet with safe prompt detail", async () => {
+    localStorage.setItem("jwt_token", "student-token");
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify(studentWorksheetDetail), { status: 200 }))
+      .mockResolvedValueOnce(new Response("pdf", { status: 200, headers: { "content-type": "application/pdf" } }));
+    await expect(fetchStudentWorksheet(18)).resolves.toMatchObject({ id: 18, questions: [{ prompt: "Explain xylem transport." }] });
+    expect(fetch).toHaveBeenLastCalledWith(
+      "http://localhost:8083/api/learning/student/worksheets/18",
+      expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer student-token" }) }),
+    );
+    await expect(downloadStudentWorksheetPdf(18)).resolves.toMatchObject({ type: "application/pdf", size: 3 });
+    expect(fetch).toHaveBeenLastCalledWith(
+      "http://localhost:8083/api/learning/student/worksheets/18/pdf",
+      expect.objectContaining({ headers: expect.objectContaining({ Accept: "application/pdf", Authorization: "Bearer student-token" }) }),
+    );
+    expect(parseStudentWorksheetDetail({ ...studentWorksheetDetail, questions: [{ ...studentWorksheetDetail.questions[0], modelAnswer: "leaked" }] }).questions[0]).not.toHaveProperty("modelAnswer");
+    expect(() => parseStudentWorksheetDetail({ ...studentWorksheetDetail, questions: [{ id: 12 }] })).toThrow(/invalid worksheet question/i);
   });
 });

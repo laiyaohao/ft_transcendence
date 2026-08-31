@@ -126,6 +126,37 @@ public final class WorksheetRequests {
         ScoreSummary score
     ) { }
 
+    /**
+     * Learner-safe worksheet content.  Prompts and marks are intentionally
+     * available so an assigned learner can complete the work; model answers,
+     * required keywords, tutor ownership and the full assignment roster are
+     * never included in this response.
+     */
+    public record StudentWorksheetDetail(
+        Long id,
+        String code,
+        String title,
+        String instructions,
+        String subject,
+        List<QuestionSummary> questions,
+        LocalDateTime assignedAt,
+        LocalDateTime dueAt
+    ) {
+        static StudentWorksheetDetail from(Worksheet worksheet, WorksheetAssignment assignment) {
+            return new StudentWorksheetDetail(
+                worksheet.getId(), worksheet.getCode(), worksheet.getTitle(), worksheet.getInstructions(),
+                worksheet.getSubject(), worksheet.getQuestions().stream().map(item -> {
+                    Question question = item.getQuestion();
+                    return new QuestionSummary(question.getId(),
+                        item.getQuestionCodeSnapshot() == null ? question.getCode() : item.getQuestionCodeSnapshot(),
+                        item.getPromptSnapshot() == null ? question.getPrompt() : item.getPromptSnapshot(),
+                        item.getQuestionTypeSnapshot() == null ? question.getQuestionType() : item.getQuestionTypeSnapshot(),
+                        item.getTotalMarksSnapshot() == null ? question.getTotalMarks() : item.getTotalMarksSnapshot(),
+                        question.getSyllabusTopic().getId(), question.getSyllabusTopic().getName());
+                }).toList(), assignment.getAssignedAt(), assignment.getDueAt());
+        }
+    }
+
     public record TopicSummary(Long id, String name) { }
     /** Marks and percent are kept together so the client never mistakes a percentage for raw marks. */
     public record ScoreSummary(BigDecimal earned, BigDecimal available, BigDecimal percent) { }

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
-import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
@@ -11,103 +11,125 @@ import CircularProgress from "@mui/material/CircularProgress";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import Link from "next/link";
-import { fetchStudentWorksheetResults, type StudentWorksheetResult, type StudentWorksheetResultOutcome, type StudentWorksheetResultsResponse } from "@/services/submissions";
+import { useParams } from "next/navigation";
 
-const INK = "rgb(24,21,18)";
-const MUTED = "rgb(126,117,111)";
-const BORDER = "rgb(232,226,217)";
-const CARD_BG = "rgb(250,247,242)";
+import {
+  downloadStudentWorksheetPdf,
+  fetchStudentWorksheet,
+  type StudentWorksheetDetail,
+} from "@/services/worksheets";
 
-const outcomeMeta: Record<StudentWorksheetResultOutcome, { label: string; background: string; color: string }> = {
-  CORRECT: { label: "Correct", background: "rgb(233,238,233)", color: "rgb(50,66,50)" },
-  PARTIAL: { label: "Partially correct", background: "rgb(248,239,220)", color: "rgb(116,82,31)" },
-  INCORRECT: { label: "Incorrect", background: "rgb(248,232,226)", color: "rgb(155,68,48)" },
-  REVIEW_NEEDED: { label: "Review needed", background: "rgb(238,235,232)", color: "rgb(77,69,64)" },
-};
+const INK = "#2A2622";
+const MUTED = "#6F675E";
+const BORDER = "#EBE4D9";
+const CARD_BG = "#FFFDFA";
 
-function isWorksheetId(value: string): boolean {
+function validId(value: string): boolean {
   return /^[1-9]\d*$/.test(value) && Number.isSafeInteger(Number(value));
 }
 
-function reviewLabel(result: StudentWorksheetResult): string {
-  if (result.reviewStatus === "APPROVED") return outcomeMeta[result.outcome].label;
-  return result.reviewStatus === "FLAGGED" ? "Flagged for tutor review" : "Awaiting tutor review";
+function questionTypeLabel(value: string): string {
+  return value.replaceAll("_", " ").toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function ResultCard({ result, index }: { result: StudentWorksheetResult; index: number }) {
-  const [expanded, setExpanded] = React.useState(false);
-  const approved = result.reviewStatus === "APPROVED";
-  const meta = approved ? outcomeMeta[result.outcome] : outcomeMeta.REVIEW_NEEDED;
-  return <Card variant="outlined" sx={{ borderRadius: 3.5, borderColor: BORDER, backgroundColor: CARD_BG, boxShadow: "none", overflow: "hidden" }}>
-    <Box sx={{ p: 3 }}>
-      <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", gap: 1.5, mb: 1.5 }}>
-        <Stack direction="row" spacing={1.25} sx={{ alignItems: "center", minWidth: 0 }}>
-          <Typography sx={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.5px", textTransform: "uppercase", color: MUTED }}>Question {index + 1}</Typography>
-          <Chip label={reviewLabel(result)} size="small" sx={{ fontSize: 12, fontWeight: 600, backgroundColor: meta.background, color: meta.color }} />
-        </Stack>
-        <Typography aria-label={approved ? `Final mark ${result.awardedMarks} out of ${result.maximumMarks}` : "Final mark pending tutor review"} sx={{ fontSize: 15, fontWeight: 600, color: INK, whiteSpace: "nowrap" }}>{approved ? `${result.awardedMarks} / ${result.maximumMarks}` : "Pending"}</Typography>
-      </Stack>
-      <Box sx={{ backgroundColor: "rgb(247,243,241)", border: `1px solid ${BORDER}`, borderRadius: 2.5, p: 1.75 }}>
-        <Typography sx={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.5px", textTransform: "uppercase", color: MUTED, mb: 0.625 }}>Your answer</Typography>
-        <Typography sx={{ fontSize: 14, color: "rgb(45,41,38)", lineHeight: 1.45, whiteSpace: "pre-wrap" }}>{result.answer || "No answer submitted."}</Typography>
-      </Box>
-      {approved ? <>
-        <Box sx={{ mt: 1.5, backgroundColor: "rgb(247,243,241)", border: `1px solid ${BORDER}`, borderRadius: 2.5, p: 1.75 }}>
-          <Typography sx={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.5px", textTransform: "uppercase", color: MUTED, mb: 0.625 }}>Model answer</Typography>
-          <Typography sx={{ fontSize: 14, color: "rgb(45,41,38)", lineHeight: 1.45, whiteSpace: "pre-wrap" }}>{result.modelAnswer || "No model answer was supplied."}</Typography>
-        </Box>
-        {result.explanation && <>
-          <Button aria-expanded={expanded} onClick={() => setExpanded((current) => !current)} endIcon={<ExpandMoreIcon sx={{ fontSize: 15, transform: expanded ? "rotate(180deg)" : "none" }} />} sx={{ mt: 1.75, p: 0, minWidth: 0, fontSize: 14, fontWeight: 600, color: "rgb(155,68,48)", textTransform: "none", "&:hover": { backgroundColor: "transparent" } }}>{expanded ? "Hide explanation" : "Read explanation"}</Button>
-          {expanded && <Box sx={{ mt: 1.25, p: 1.75, borderRadius: 2.5, backgroundColor: "rgb(253,248,247)", border: `1px solid ${BORDER}` }}><Typography sx={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.4px", textTransform: "uppercase", color: "rgb(155,68,48)", mb: 0.625 }}>Tutor feedback</Typography><Typography sx={{ fontSize: 14, color: "rgb(45,41,38)", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{result.explanation}</Typography></Box>}
-        </>}
-      </> : <Typography role="status" sx={{ mt: 1.5, fontSize: 14, color: MUTED, lineHeight: 1.45 }}>Your tutor is still reviewing this answer. Final marks, feedback, and model answers will appear when it is approved.</Typography>}
-    </Box>
-  </Card>;
+function DetailSkeleton() {
+  return <Stack spacing={1.5} sx={{ py: 10, alignItems: "center" }} data-testid="student-worksheet-detail-loading">
+    <CircularProgress size={28} aria-label="Loading worksheet" />
+    <Typography sx={{ color: MUTED }}>Loading worksheet…</Typography>
+  </Stack>;
 }
 
-function Results({ data }: { data: StudentWorksheetResultsResponse }) {
-  const approved = data.results.filter((result) => result.reviewStatus === "APPROVED");
-  const allApproved = data.results.length > 0 && approved.length === data.results.length;
-  const earned = approved.reduce((total, result) => total + (result.awardedMarks ?? 0), 0);
-  const available = approved.reduce((total, result) => total + result.maximumMarks, 0);
-  const percentage = available === 0 ? 0 : Math.round((earned / available) * 100);
+function Detail({ worksheet, onExport, exporting }: {
+  worksheet: StudentWorksheetDetail;
+  onExport: () => void;
+  exporting: boolean;
+}) {
+  const totalMarks = worksheet.questions.reduce((total, question) => total + question.totalMarks, 0);
   return <>
-    <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ justifyContent: "space-between", alignItems: { sm: "center" }, mb: 3.5 }}>
-      <Box><Typography sx={{ fontSize: 13, color: MUTED, mb: 0.5 }}>Worksheet results</Typography><Typography component="h1" sx={{ fontFamily: "'EB Garamond', serif", fontWeight: 400, fontSize: 38, lineHeight: 1.1, letterSpacing: "-0.8px", color: INK }}>Your submitted answers</Typography></Box>
-      <Card variant="outlined" sx={{ minWidth: 195, borderRadius: 3, borderColor: BORDER, backgroundColor: CARD_BG, boxShadow: "none", p: 2, textAlign: "center" }}>
-        {allApproved ? <><Typography aria-label="Final worksheet score" sx={{ fontFamily: "'EB Garamond', serif", fontSize: 38, lineHeight: 1, color: INK }}>{percentage}%</Typography><Typography sx={{ fontSize: 13, color: MUTED, mt: 0.5 }}>Final score · {earned} / {available}</Typography></> : <><Typography sx={{ fontSize: 15, fontWeight: 600, color: INK }}>Final score pending</Typography><Typography sx={{ fontSize: 13, color: MUTED, mt: 0.5 }}>{approved.length} of {data.results.length} answer{data.results.length === 1 ? "" : "s"} approved</Typography></>}
-      </Card>
+    <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ alignItems: { sm: "flex-start" }, justifyContent: "space-between", mb: 2.5 }}>
+      <Box sx={{ minWidth: 0 }}>
+        <Stack direction="row" spacing={1} useFlexGap sx={{ mb: .9, flexWrap: "wrap" }}>
+          <Chip label="ASSIGNED WORKSHEET" size="small" sx={{ bgcolor: "#F3EBDD", color: "#7A6238", fontSize: 10, fontWeight: 700, letterSpacing: ".05em" }} />
+          {worksheet.subject ? <Typography sx={{ color: "#8B837A", fontSize: 12, pt: .3 }}>{worksheet.subject}</Typography> : null}
+        </Stack>
+        <Typography component="h1" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: { xs: 30, sm: 38 }, lineHeight: 1.15 }}>{worksheet.title}</Typography>
+        <Typography sx={{ color: MUTED, mt: .75, fontSize: 13 }}>{worksheet.code} · {worksheet.questions.length} question{worksheet.questions.length === 1 ? "" : "s"} · {totalMarks.toFixed(1)} marks</Typography>
+      </Box>
+      <Button onClick={onExport} disabled={exporting} startIcon={<DownloadOutlinedIcon />} sx={{ minHeight: 40, flex: "0 0 auto", bgcolor: "#9E3A24", color: "#FFFDFA", textTransform: "none", fontWeight: 600, "&:hover": { bgcolor: "#7F2D1D" } }}>
+        {exporting ? "Preparing PDF…" : "Download PDF"}
+      </Button>
     </Stack>
-    {data.results.length === 0 ? <Card variant="outlined" sx={{ borderRadius: 3.5, borderColor: BORDER, backgroundColor: CARD_BG, boxShadow: "none", p: 3 }}><Typography component="h2" sx={{ fontSize: 18, fontWeight: 600, color: INK }}>No submitted answers yet</Typography><Typography sx={{ mt: 0.75, fontSize: 14, color: MUTED }}>Results will appear here after your work has been submitted and reviewed.</Typography></Card> : <Stack spacing={2}>{data.results.map((result, index) => <ResultCard key={result.submissionId} result={result} index={index} />)}</Stack>}
+
+    {worksheet.instructions ? <Card component="section" variant="outlined" sx={{ borderColor: BORDER, borderRadius: "12px", bgcolor: "#F9F4EC", p: { xs: 2, sm: 2.5 }, mb: 2.5 }}>
+      <Typography component="h2" sx={{ fontSize: 13, fontWeight: 700, letterSpacing: ".06em", color: "#6F675E", textTransform: "uppercase", mb: .75 }}>Instructions</Typography>
+      <Typography sx={{ color: INK, fontSize: 14, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{worksheet.instructions}</Typography>
+    </Card> : null}
+
+    <Card component="section" variant="outlined" sx={{ borderColor: BORDER, borderRadius: "12px", bgcolor: CARD_BG, p: { xs: 2, sm: 3 } }}>
+      <Typography component="h2" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 25, mb: .5 }}>Questions</Typography>
+      <Typography sx={{ color: MUTED, fontSize: 13, mb: 2.25 }}>Read every question before completing your work. Your tutor will review your submitted answers.</Typography>
+      {worksheet.questions.length === 0 ? <Box role="status" sx={{ border: "1px dashed #DCCFBE", borderRadius: "10px", p: 2, color: MUTED, fontSize: 13 }}>This approved worksheet has no questions available. Please contact your tutor.</Box> : <Box component="ol" sx={{ m: 0, pl: { xs: 2.75, sm: 3.5 } }}>
+        {worksheet.questions.map((question, index) => <Box component="li" key={question.id} sx={{ py: 2, borderBottom: index === worksheet.questions.length - 1 ? "none" : "1px solid #F0EAE0" }}>
+          <Typography sx={{ color: INK, fontWeight: 600, fontSize: 14.5, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{question.prompt}</Typography>
+          <Typography sx={{ color: "#8B837A", fontSize: 11.5, mt: .75 }}>{question.code} · {question.topicName} · {questionTypeLabel(question.questionType)} · {question.totalMarks.toFixed(1)} marks</Typography>
+        </Box>)}
+      </Box>}
+    </Card>
   </>;
 }
 
-export default function Page({ params }: { params: Promise<{ worksheetId: string }> }) {
-  const [worksheetId, setWorksheetId] = React.useState<string | null>(null);
-  const [state, setState] = React.useState<{ loading: boolean; data: StudentWorksheetResultsResponse | null; error: string | null }>({ loading: true, data: null, error: null });
+export default function StudentWorksheetDetailPage() {
+  const { worksheetId } = useParams<{ worksheetId: string }>();
+  const id = Number(worksheetId);
+  const isValid = validId(worksheetId);
+  const [worksheet, setWorksheet] = React.useState<StudentWorksheetDetail | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  const [loading, setLoading] = React.useState(isValid);
+  const [retry, setRetry] = React.useState(0);
+  const [exporting, setExporting] = React.useState(false);
+  const [exportError, setExportError] = React.useState<string | null>(null);
+
   const load = React.useCallback(async () => {
-    if (worksheetId === null) return;
-    if (!isWorksheetId(worksheetId)) { setState({ loading: false, data: null, error: "This worksheet link is invalid." }); return; }
-    setState({ loading: true, data: null, error: null });
+    if (!isValid) return;
+    setLoading(true); setError(null); setWorksheet(null);
     try {
-      const data = await fetchStudentWorksheetResults(Number(worksheetId));
-      if (data.worksheetId !== Number(worksheetId)) throw new Error("The loaded results do not match this worksheet.");
-      setState({ loading: false, data, error: null });
-    } catch (error) { setState({ loading: false, data: null, error: error instanceof Error ? error.message : "The worksheet results could not be loaded." }); }
-  }, [worksheetId]);
-  React.useEffect(() => {
-    let current = true;
-    void params.then(({ worksheetId: id }) => { if (current) setWorksheetId(id); });
-    return () => { current = false; };
-  }, [params]);
-  React.useEffect(() => {
-    const timer = window.setTimeout(() => { void load(); }, 0);
-    return () => window.clearTimeout(timer);
-  }, [load]);
-  return <Box sx={{ backgroundColor: "rgb(253,251,247)", minHeight: "100vh", py: 5, px: { xs: 2, sm: 4, md: 6 } }}><Box sx={{ maxWidth: 1000, mx: "auto" }}>
-    <Button component={Link} href="/worksheets" startIcon={<ArrowBackIcon sx={{ fontSize: 16 }} />} sx={{ color: "rgb(77,69,64)", textTransform: "none", fontSize: 14, mb: 2.5, p: 0, minWidth: 0, "&:hover": { backgroundColor: "transparent", color: INK } }}>Back to Worksheets</Button>
-    {state.loading && <Stack data-testid="student-results-loading" sx={{ alignItems: "center", py: 9 }} spacing={1.5}><CircularProgress size={28} /><Typography sx={{ color: MUTED }}>Loading worksheet results…</Typography></Stack>}
-    {state.error && <Card role="alert" variant="outlined" sx={{ borderRadius: 3.5, borderColor: "rgb(238,210,201)", backgroundColor: "rgb(253,248,247)", boxShadow: "none", p: 3 }}><Typography component="h1" sx={{ fontSize: 20, fontWeight: 600, color: INK }}>Worksheet results unavailable</Typography><Typography sx={{ mt: 0.75, fontSize: 14, color: "rgb(155,68,48)" }}>{state.error}</Typography>{worksheetId !== null && isWorksheetId(worksheetId) && <Button onClick={() => void load()} sx={{ mt: 1.5, textTransform: "none" }}>Retry loading results</Button>}</Card>}
-    {state.data && <Results data={state.data} />}
-  </Box></Box>;
+      const loaded = await fetchStudentWorksheet(id);
+      if (loaded.id !== id) throw new Error("The loaded worksheet does not match this link.");
+      setWorksheet(loaded);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "This worksheet could not be loaded. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }, [id, isValid]);
+
+  React.useEffect(() => { void Promise.resolve().then(load); }, [load, retry]);
+
+  const exportPdf = async () => {
+    setExporting(true); setExportError(null);
+    try {
+      const blob = await downloadStudentWorksheetPdf(id);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `${worksheet?.code || "worksheet"}.pdf`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (reason) {
+      setExportError(reason instanceof Error ? reason.message : "Worksheet PDF could not be downloaded. Please try again.");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  return <Box sx={{ minHeight: "100vh", bgcolor: "#F7F4EF", px: { xs: 2, sm: 4 }, py: { xs: 3, sm: 4 }, color: INK }}>
+    <Box sx={{ maxWidth: 940, mx: "auto" }}>
+      <Button component={Link} href="/worksheets" startIcon={<ArrowBackIcon sx={{ fontSize: 16 }} />} sx={{ color: "#5A544C", textTransform: "none", fontSize: 14, mb: 2.5, p: 0, minWidth: 0, "&:hover": { bgcolor: "transparent", color: INK } }}>Back to Worksheets</Button>
+      {!isValid ? <Card role="alert" variant="outlined" sx={{ p: 3, borderColor: "#F0DCD4", borderRadius: "12px", bgcolor: CARD_BG }}><Typography component="h1" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 25 }}>Worksheet could not be opened</Typography><Typography sx={{ color: MUTED, mt: .75 }}>The worksheet reference is invalid.</Typography></Card> : null}
+      {loading ? <DetailSkeleton /> : null}
+      {error ? <Card role="alert" variant="outlined" sx={{ p: 3, borderColor: "#F0DCD4", borderRadius: "12px", bgcolor: CARD_BG }}><Typography component="h1" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 25 }}>Worksheet could not be opened</Typography><Typography sx={{ color: "#9E3A24", mt: .75 }}>{error}</Typography><Button onClick={() => setRetry((value) => value + 1)} sx={{ mt: 1.5, textTransform: "none" }}>Retry loading worksheet</Button></Card> : null}
+      {exportError ? <Card role="alert" variant="outlined" sx={{ p: 2, mb: 2, borderColor: "#F0DCD4", borderRadius: "12px", bgcolor: "#FDF8F7" }}><Typography sx={{ color: "#9E3A24" }}>{exportError}</Typography></Card> : null}
+      {worksheet ? <Detail worksheet={worksheet} onExport={() => void exportPdf()} exporting={exporting} /> : null}
+    </Box>
+  </Box>;
 }

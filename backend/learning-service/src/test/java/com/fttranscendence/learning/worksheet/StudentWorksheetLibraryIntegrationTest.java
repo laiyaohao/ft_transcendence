@@ -11,6 +11,8 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -18,6 +20,7 @@ import java.time.Instant;
 import java.util.Date;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -150,6 +153,44 @@ class StudentWorksheetLibraryIntegrationTest {
             .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
         mvc.perform(get("/api/learning/student/worksheets")).andExpect(status().isUnauthorized());
         mvc.perform(get("/api/learning/student/worksheets").header("Authorization", bearer("TUTOR", OWNER))).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void opensAndExportsOnlyTheAuthenticatedStudentsAssignedWorksheet() throws Exception {
+        long learner = student(OWNER, LEARNER_LOGIN, "Ari Learner");
+        long foreignLearner = student(202L, 9002L, "Foreign Learner");
+        long topic = topic();
+        long assigned = worksheet(OWNER, "LIB-DETAIL", "Water cycle practice", "STUDENT");
+        question(assigned, topic, "LIB-DETAIL-Q1", 0, new BigDecimal("2.00"));
+        studentAssignment(assigned, learner, "2026-08-12 09:00:00", "2026-08-30 17:00:00");
+        long foreign = worksheet(202L, "LIB-DETAIL-FOREIGN", "Foreign practice", "STUDENT");
+        question(foreign, topic, "LIB-DETAIL-FOREIGN-Q1", 0, BigDecimal.ONE);
+        studentAssignment(foreign, foreignLearner, "2026-08-12 09:00:00", null);
+
+        mvc.perform(get("/api/learning/student/worksheets/{worksheetId}", assigned)
+                .header(HttpHeaders.AUTHORIZATION, bearer("STUDENT", LEARNER_LOGIN)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.code").value("LIB-DETAIL"))
+            .andExpect(jsonPath("$.instructions").value(nullValue()))
+            .andExpect(jsonPath("$.questions[0].code").value("LIB-DETAIL-Q1"))
+            .andExpect(jsonPath("$.questions[0].prompt").value("LIB-DETAIL-Q1 prompt"))
+            .andExpect(jsonPath("$.questions[0].modelAnswer").doesNotExist())
+            .andExpect(jsonPath("$.assignments").doesNotExist());
+
+        mvc.perform(get("/api/learning/student/worksheets/{worksheetId}/pdf", assigned)
+                .header(HttpHeaders.AUTHORIZATION, bearer("STUDENT", LEARNER_LOGIN)))
+            .andExpect(status().isOk())
+            .andExpect(content().contentType(MediaType.APPLICATION_PDF));
+
+        mvc.perform(get("/api/learning/student/worksheets/{worksheetId}", foreign)
+                .header(HttpHeaders.AUTHORIZATION, bearer("STUDENT", LEARNER_LOGIN)))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.code").value("WORKSHEET_RESOURCE_NOT_FOUND"));
+        mvc.perform(get("/api/learning/student/worksheets/{worksheetId}/pdf", assigned))
+            .andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/learning/student/worksheets/{worksheetId}", assigned)
+                .header(HttpHeaders.AUTHORIZATION, bearer("TUTOR", OWNER)))
+            .andExpect(status().isForbidden());
     }
 
     private long student(long tutor, long login, String name) { jdbc.update("INSERT INTO student_profiles (tutor_id, login_user_id, full_name) VALUES (?, ?, ?)", tutor, login, name); return jdbc.queryForObject("SELECT id FROM student_profiles WHERE login_user_id = ?", Long.class, login); }

@@ -33,8 +33,10 @@ describe("Student worksheet library page", () => {
     expect(screen.getByText("Science · Plant transport")).toBeVisible();
     expect(screen.getByText("80%", { exact: true })).toBeVisible();
     expect(screen.getByText("8/10 marks")).toBeVisible();
+    expect(screen.getByRole("link", { name: "Plant transport review" })).toHaveAttribute("href", "/worksheets/11");
     expect(screen.getByRole("link", { name: "Upload work" })).toHaveAttribute("href", "/upload?ws=11");
-    expect(screen.getByRole("link", { name: "View result" })).toHaveAttribute("href", "/worksheets/13");
+    expect(screen.getAllByRole("link", { name: "Open worksheet" })[0]).toHaveAttribute("href", "/worksheets/11");
+    expect(screen.getByRole("link", { name: "View results" })).toHaveAttribute("href", "/worksheets/13/results");
     expect(screen.getByRole("status", { name: "" })).toHaveTextContent("Awaiting tutor review");
   });
 

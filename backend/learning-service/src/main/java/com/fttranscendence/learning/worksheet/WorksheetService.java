@@ -161,6 +161,30 @@ public class WorksheetService {
             .toList();
     }
 
+    /** Returns content only for one worksheet assigned to the authenticated Student. */
+    @Transactional(readOnly = true)
+    public WorksheetRequests.StudentWorksheetDetail getStudentWorksheet(long loginUserId, long worksheetId) {
+        StudentProfile student = students.findByLoginUserId(loginUserId).orElseThrow(StudentWorksheetNotFoundException::new);
+        Worksheet worksheet = studentAssignedWorksheet(student, worksheetId);
+        WorksheetAssignment assignment = effectiveAssignment(student, worksheet);
+        if (assignment == null) throw new StudentWorksheetNotFoundException();
+        return WorksheetRequests.StudentWorksheetDetail.from(worksheet, assignment);
+    }
+
+    /** Shared self-scoped lookup for the Student detail and PDF contracts. */
+    @Transactional(readOnly = true)
+    public Worksheet studentAssignedWorksheet(long loginUserId, long worksheetId) {
+        StudentProfile student = students.findByLoginUserId(loginUserId).orElseThrow(StudentWorksheetNotFoundException::new);
+        return studentAssignedWorksheet(student, worksheetId);
+    }
+
+    private Worksheet studentAssignedWorksheet(StudentProfile student, long worksheetId) {
+        return worksheets.findApprovedAssignedToStudentWithQuestions(student.getId()).stream()
+            .filter(worksheet -> worksheet.getId().equals(worksheetId))
+            .findFirst()
+            .orElseThrow(StudentWorksheetNotFoundException::new);
+    }
+
     @Transactional
     public WorksheetRequests.WorksheetResponse updateWorksheet(long tutorId, long worksheetId, WorksheetRequests.UpdateWorksheetRequest input) {
         Worksheet worksheet = ownedWorksheet(tutorId, worksheetId);

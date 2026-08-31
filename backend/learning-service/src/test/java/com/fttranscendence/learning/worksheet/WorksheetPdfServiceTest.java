@@ -34,7 +34,7 @@ class WorksheetPdfServiceTest {
         ));
         WorksheetRepository repository = mock(WorksheetRepository.class);
         when(repository.findByIdAndTutorId(WORKSHEET_ID, TUTOR_ID)).thenReturn(Optional.of(worksheet));
-        WorksheetPdfService service = new WorksheetPdfService(repository, new PdfDocumentService());
+        WorksheetPdfService service = new WorksheetPdfService(repository, new PdfDocumentService(), mock(WorksheetService.class));
 
         WorksheetPdfService.PdfExport export = service.export(TUTOR_ID, WORKSHEET_ID);
 
@@ -64,7 +64,7 @@ class WorksheetPdfServiceTest {
         WorksheetRepository repository = mock(WorksheetRepository.class);
         when(repository.findByIdAndTutorId(WORKSHEET_ID, TUTOR_ID)).thenReturn(Optional.of(worksheet));
 
-        byte[] bytes = new WorksheetPdfService(repository, new PdfDocumentService()).export(TUTOR_ID, WORKSHEET_ID).bytes();
+        byte[] bytes = new WorksheetPdfService(repository, new PdfDocumentService(), mock(WorksheetService.class)).export(TUTOR_ID, WORKSHEET_ID).bytes();
 
         try (PDDocument document = Loader.loadPDF(bytes)) {
             assertTrue(document.getNumberOfPages() > 1);
@@ -79,7 +79,7 @@ class WorksheetPdfServiceTest {
         PdfDocumentService documents = mock(PdfDocumentService.class);
         when(repository.findByIdAndTutorId(WORKSHEET_ID, TUTOR_ID)).thenReturn(Optional.of(worksheet));
 
-        WorksheetPdfService service = new WorksheetPdfService(repository, documents);
+        WorksheetPdfService service = new WorksheetPdfService(repository, documents, mock(WorksheetService.class));
 
         assertThrows(WorksheetPdfService.WorksheetNotApprovedException.class, () -> service.export(TUTOR_ID, WORKSHEET_ID));
         verifyNoInteractions(documents);
@@ -91,7 +91,7 @@ class WorksheetPdfServiceTest {
         when(repository.findByIdAndTutorId(WORKSHEET_ID, TUTOR_ID)).thenReturn(Optional.empty());
 
         assertThrows(WorksheetService.WorksheetNotFoundException.class,
-            () -> new WorksheetPdfService(repository, mock(PdfDocumentService.class)).export(TUTOR_ID, WORKSHEET_ID));
+            () -> new WorksheetPdfService(repository, mock(PdfDocumentService.class), mock(WorksheetService.class)).export(TUTOR_ID, WORKSHEET_ID));
     }
 
     private Worksheet approvedWorksheet(String title, List<WorksheetQuestion> questions) {

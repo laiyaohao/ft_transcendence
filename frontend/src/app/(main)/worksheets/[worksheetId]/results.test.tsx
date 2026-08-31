@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as React from "react";
 
-import Page from "./page";
+import Page from "./results/page";
 import { fetchStudentWorksheetResults, type StudentWorksheetResultsResponse } from "@/services/submissions";
 
 vi.mock("@/services/submissions", async (importOriginal) => {

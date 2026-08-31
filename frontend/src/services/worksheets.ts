@@ -123,6 +123,18 @@ export interface StudentWorksheet {
   score: StudentWorksheetScore | null;
 }
 
+/** Prompts for one worksheet that has been authorised for the current Student. */
+export interface StudentWorksheetDetail {
+  id: number;
+  code: string;
+  title: string;
+  instructions: string | null;
+  subject: string | null;
+  questions: WorksheetQuestion[];
+  assignedAt: string;
+  dueAt: string | null;
+}
+
 export interface StudentWorksheetLibraryFilters {
   subjectId?: number;
   topicId?: number;
@@ -273,6 +285,25 @@ export function parseStudentWorksheet(payload: unknown): StudentWorksheet {
     submittedAt: localDateTimeOrNull(payload.submittedAt),
     reviewedAt: localDateTimeOrNull(payload.reviewedAt),
     score: payload.score === null ? null : parseStudentWorksheetScore(payload.score),
+  };
+}
+
+/** Strictly validates learner-safe detail; answer keys and assignment rosters are never accepted here. */
+export function parseStudentWorksheetDetail(payload: unknown): StudentWorksheetDetail {
+  if (!isRecord(payload) || !positiveId(payload.id) || !nonEmpty(payload.code) || !nonEmpty(payload.title)
+    || !stringOrNull(payload.instructions) || !stringOrNull(payload.subject) || !Array.isArray(payload.questions)
+    || !stringOrNull(payload.dueAt)) {
+    throw new Error("The learning service returned an invalid student worksheet detail. Please try again.");
+  }
+  return {
+    id: payload.id,
+    code: payload.code,
+    title: payload.title,
+    instructions: payload.instructions,
+    subject: payload.subject,
+    questions: payload.questions.map(parseQuestion),
+    assignedAt: localDateTime(payload.assignedAt),
+    dueAt: localDateTimeOrNull(payload.dueAt),
   };
 }
 
@@ -446,6 +477,32 @@ export async function fetchStudentWorksheets(filters: StudentWorksheetLibraryFil
   const payload = await json(await fetch(`${base}/api/learning/student/worksheets${query ? `?${query}` : ""}`, { headers: headers() }));
   if (!Array.isArray(payload)) throw new Error("The learning service returned an invalid student worksheet list. Please try again.");
   return payload.map(parseStudentWorksheet);
+}
+
+/** Loads the prompts for one assignment belonging to the authenticated Student only. */
+export async function fetchStudentWorksheet(worksheetId: number): Promise<StudentWorksheetDetail> {
+  requireId(worksheetId, "Worksheet reference is invalid.");
+  return parseStudentWorksheetDetail(await json(await fetch(
+    `${base}/api/learning/student/worksheets/${worksheetId}`,
+    { headers: headers() },
+  )));
+}
+
+/** Downloads the PDF for one assignment belonging to the authenticated Student only. */
+export async function downloadStudentWorksheetPdf(worksheetId: number): Promise<Blob> {
+  requireId(worksheetId, "Worksheet reference is invalid.");
+  const response = await fetch(`${base}/api/learning/student/worksheets/${worksheetId}/pdf`, {
+    headers: { ...headers(), Accept: "application/pdf" },
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { message?: string } | null;
+    throw new WorksheetApiError(body?.message || "Worksheet PDF could not be downloaded.", response.status);
+  }
+  const contentType = response.headers.get("content-type");
+  if (!contentType || !/^application\/pdf(?:\s*;|$)/i.test(contentType)) {
+    throw new WorksheetApiError("The worksheet PDF response is invalid. Please try again.", response.status);
+  }
+  return response.blob();
 }
 
 export async function updateWorksheet(worksheetId: number, request: UpdateWorksheetRequest): Promise<TutorWorksheet> {

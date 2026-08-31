@@ -129,6 +129,23 @@ public class WorksheetController {
         return worksheets.listStudentWorksheets(user.userId(), new WorksheetService.StudentWorksheetFilter(subjectId, topicId, normalizedStatus, assignedFrom, assignedTo));
     }
 
+    @GetMapping("/student/worksheets/{worksheetId}")
+    public WorksheetRequests.StudentWorksheetDetail studentWorksheet(
+            @AuthenticationPrincipal AuthenticatedUser user, @PathVariable @Positive long worksheetId) {
+        return worksheets.getStudentWorksheet(user.userId(), worksheetId);
+    }
+
+    @GetMapping(value = "/student/worksheets/{worksheetId}/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
+    public ResponseEntity<byte[]> studentWorksheetPdf(@AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable @Positive long worksheetId) {
+        WorksheetPdfService.PdfExport export = worksheetPdfs.exportStudent(user.userId(), worksheetId);
+        return ResponseEntity.ok()
+            .contentType(MediaType.APPLICATION_PDF)
+            .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
+                .filename(export.filename(), StandardCharsets.UTF_8).build().toString())
+            .body(export.bytes());
+    }
+
     @ExceptionHandler({WorksheetService.ClassNotFoundException.class, WorksheetService.WorksheetNotFoundException.class,
         WorksheetService.GenerationRequestNotFoundException.class, WorksheetService.StudentWorksheetNotFoundException.class})
     ResponseEntity<ClassController.ApiError> notFound(RuntimeException exception) { return error(HttpStatus.NOT_FOUND, "WORKSHEET_RESOURCE_NOT_FOUND", "Worksheet resource was not found."); }
