@@ -104,7 +104,9 @@ public class DomainAuthorizationService {
                 return new MarkingQuestion(
                     question.getId(), question.getPrompt(), question.getModelAnswer(), question.getTotalMarks(),
                     question.getKeywords(), question.getMarkingComponents().stream()
-                        .map(component -> new MarkingComponent(component.getDescription(), component.getMarks(), component.getKeywords()))
+                        .map(component -> new MarkingComponent(
+                            component.getPosition(), component.getDescription(), component.getMarks(), component.getKeywords()
+                        ))
                         .toList(),
                     question.getSyllabusTopic().getId(), question.getSyllabusTopic().getCode()
                 );
@@ -145,5 +147,10 @@ public class DomainAuthorizationService {
     public record MarkingQuestion(Long questionBankId, String prompt, String modelAnswer, java.math.BigDecimal totalMarks,
                                   java.util.List<String> keywords, java.util.List<MarkingComponent> markingComponents,
                                   Long syllabusTopicId, String syllabusTopicCode) { }
-    public record MarkingComponent(String description, java.math.BigDecimal marks, java.util.List<String> keywords) { }
+    /**
+     * Server-to-server rubric criterion. Position is the persisted criterion
+     * identity used by Grading for deterministic per-component marks.
+     */
+    public record MarkingComponent(int position, String description, java.math.BigDecimal marks,
+                                   java.util.List<String> keywords) { }
 }

@@ -12,6 +12,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Date;
@@ -99,6 +100,27 @@ class DataAccessAuthorizationIntegrationTest {
     }
 
     @Test
+    void returnsPersistedMarkingComponentPositionsInTheServerOnlyMarkingContext() throws Exception {
+        long student = student(101, 9001, "Assigned Learner");
+        long worksheet = approvedStudentWorksheet(101, student, "MARKING-CONTEXT-1");
+        addQuestionWithTwoMarkingComponents(worksheet, "MARKING-CONTEXT-Q1");
+        String body = """
+            {"actorUserId":9001,"actorRole":"STUDENT","studentId":%d,"worksheetId":%d}
+            """.formatted(student, worksheet);
+
+        mvc.perform(post("/api/learning/internal/submission-authorization/marking-context")
+                .header("X-Learning-Integration-Key", "test-learning-marking-sync-key")
+                .contentType(APPLICATION_JSON).content(body))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.tutorUserId").value(101))
+            .andExpect(jsonPath("$.questions[0].markingComponents.length()").value(2))
+            .andExpect(jsonPath("$.questions[0].markingComponents[0].position").value(0))
+            .andExpect(jsonPath("$.questions[0].markingComponents[0].description").value("Identifies the process"))
+            .andExpect(jsonPath("$.questions[0].markingComponents[1].position").value(1))
+            .andExpect(jsonPath("$.questions[0].markingComponents[1].marks").value(2.0));
+    }
+
+    @Test
     void validatesTutorUploadAgainstTheExactClassStudentAndWorksheetRelationship() throws Exception {
         long selectedClass = tutorClass(101, "Tutor upload class");
         long otherClass = tutorClass(101, "Other tutor class");
@@ -154,6 +176,27 @@ class DataAccessAuthorizationIntegrationTest {
         jdbc.update("INSERT INTO worksheet_assignments (worksheet_id, tutor_id, assignment_type, target_id, class_id) VALUES (?, ?, 'CLASS', ?, ?)",
             worksheetId, tutorId, classId, classId);
         return worksheetId;
+    }
+
+    private void addQuestionWithTwoMarkingComponents(long worksheetId, String code) {
+        long topicId = jdbc.queryForObject(
+            "SELECT id FROM syllabus_topics WHERE code = ?", Long.class, "SCI_P5_CYCLES_MATTER_WATER_WATER"
+        );
+        jdbc.update(
+            "INSERT INTO questions (code, syllabus_topic_id, syllabus_topic_type, question_type, prompt, total_marks, model_answer, archive_state) "
+                + "VALUES (?, ?, 'SUBTOPIC', 'OPEN_ENDED', ?, ?, ?, 'ACTIVE')",
+            code, topicId, "Explain the water cycle.", new BigDecimal("3.00"), "Water evaporates and condenses."
+        );
+        long questionId = jdbc.queryForObject("SELECT id FROM questions WHERE code = ?", Long.class, code);
+        jdbc.update(
+            "INSERT INTO marking_components (question_id, position, description, marks) VALUES (?, ?, ?, ?)",
+            questionId, 0, "Identifies the process", BigDecimal.ONE
+        );
+        jdbc.update(
+            "INSERT INTO marking_components (question_id, position, description, marks) VALUES (?, ?, ?, ?)",
+            questionId, 1, "Explains the outcome", new BigDecimal("2.00")
+        );
+        jdbc.update("INSERT INTO worksheet_questions (worksheet_id, question_id, position) VALUES (?, ?, 0)", worksheetId, questionId);
     }
 
     private String bearer(String role, long userId) {
