@@ -21,7 +21,7 @@ async function choose(user: ReturnType<typeof userEvent.setup>, label: string, o
 }
 
 async function fillValidForm(user: ReturnType<typeof userEvent.setup>) {
-  fireEvent.change(screen.getByLabelText("Question code"), { target: { value: "sci-water-002" } });
+  fireEvent.change(screen.getByLabelText("Question reference code"), { target: { value: "sci-water-002" } });
   await choose(user, "Subject", "Science");
   await choose(user, "Level", "Primary 5");
   await choose(user, "Theme", "Cycles");
@@ -54,7 +54,7 @@ describe("QuestionForm", () => {
     const submitQuestion = vi.fn();
     render(<QuestionForm mode="create" submitQuestion={submitQuestion} onComplete={vi.fn()} loadSyllabus={async () => syllabus} />);
     await user.click(screen.getByRole("button", { name: "Create question" }));
-    expect(screen.getByText("Question code is required.")).toBeVisible();
+    expect(screen.getByText("Question reference code is required.")).toBeVisible();
     expect(submitQuestion).not.toHaveBeenCalled();
 
     await fillValidForm(user);
@@ -90,9 +90,24 @@ describe("QuestionForm", () => {
     expect(await screen.findAllByText("This code is already in use.")).not.toHaveLength(0);
   }, 15_000);
 
-  it("prepopulates an editable multi-component question", () => {
+  it("explains the manual reference code and existing taxonomy path", async () => {
+    render(<QuestionForm mode="create" submitQuestion={vi.fn()} onComplete={vi.fn()} loadSyllabus={async () => syllabus} />);
+
+    expect(await screen.findByLabelText("Theme")).toBeVisible();
+    expect(screen.getByLabelText("Question reference code")).toBeVisible();
+    expect(screen.getByText(/unique, tutor-entered reference for question lookup and saved worksheet snapshots/i)).toBeVisible();
+    expect(screen.getByText(/existing Subject, Level, Theme, and Topic/i)).toBeVisible();
+  });
+
+  it("prepopulates an editable multi-component question with its theme path", async () => {
     render(<QuestionForm mode="edit" initialQuestion={{ ...savedQuestion, markingComponents: [...savedQuestion.markingComponents, { position: 1, description: "Uses scientific vocabulary", marks: 1, keywords: ["vocabulary"] }], totalMarks: 3 }} submitQuestion={vi.fn()} onComplete={vi.fn()} loadSyllabus={async () => syllabus} />);
-    expect(screen.getByLabelText("Question code")).toHaveValue("SCI-WATER-001");
+    expect(screen.getByLabelText("Question reference code")).toHaveValue("SCI-WATER-001");
+    await waitFor(() => {
+      expect(screen.getByLabelText("Subject")).toHaveTextContent("Science");
+      expect(screen.getByLabelText("Level")).toHaveTextContent("Primary 5");
+      expect(screen.getByLabelText("Theme")).toHaveTextContent("Cycles");
+      expect(screen.getByLabelText("Topic")).toHaveTextContent("Water");
+    });
     expect(screen.getByLabelText("Criterion 2")).toHaveValue("Uses scientific vocabulary");
     expect(screen.getByRole("button", { name: "Save changes" })).toBeVisible();
   });

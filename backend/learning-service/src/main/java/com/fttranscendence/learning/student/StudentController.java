@@ -24,6 +24,8 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -32,6 +34,8 @@ import java.util.Map;
 @RestController
 @RequestMapping(produces = MediaType.APPLICATION_JSON_VALUE)
 public class StudentController {
+
+    private static final Logger logger = LoggerFactory.getLogger(StudentController.class);
 
     private final StudentService studentService;
     private final TutorNoteService tutorNoteService;
@@ -136,11 +140,13 @@ public class StudentController {
 
     @ExceptionHandler(StudentService.StudentNotFoundException.class)
     ResponseEntity<ClassController.ApiError> studentNotFound(StudentService.StudentNotFoundException error) {
+        logger.info("student_not_found: {}", error.getMessage());
         return error(HttpStatus.NOT_FOUND, "STUDENT_NOT_FOUND", error.getMessage(), Map.of());
     }
 
     @ExceptionHandler(StudentService.ProfileNotFoundException.class)
     ResponseEntity<ClassController.ApiError> profileNotFound(StudentService.ProfileNotFoundException error) {
+        logger.info("student_profile_not_found");
         return error(HttpStatus.NOT_FOUND, "STUDENT_PROFILE_NOT_FOUND", "Student profile was not found", Map.of());
     }
 
@@ -166,6 +172,7 @@ public class StudentController {
 
     @ExceptionHandler(StudentService.InvalidStudentRequestException.class)
     ResponseEntity<ClassController.ApiError> invalid(StudentService.InvalidStudentRequestException error) {
+        logger.info("invalid_student_request: {}", error.getMessage());
         return error(HttpStatus.BAD_REQUEST, "INVALID_STUDENT_REQUEST", error.getMessage(), Map.of());
     }
 
@@ -186,6 +193,7 @@ public class StudentController {
 
     @ExceptionHandler({DataAccessException.class, StudentService.StudentPersistenceException.class})
     ResponseEntity<ClassController.ApiError> persistence(Exception error) {
+        logger.error("student_database_unavailable", error);
         return error(HttpStatus.SERVICE_UNAVAILABLE, "STUDENT_DATABASE_UNAVAILABLE",
             "Student data is temporarily unavailable", Map.of());
     }

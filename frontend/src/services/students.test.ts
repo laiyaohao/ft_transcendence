@@ -59,6 +59,26 @@ const profile = {
   },
 };
 
+const legacyStudentProfile = {
+  id: 32,
+  fullName: "Legacy Student",
+  classes: [],
+  metrics: { averageMastery: null, topicCount: 1, totalAttempts: 0, lastCalculatedAt: null },
+  mastery: [{ topicId: 43, topicCode: "SCI-P5-02", topicName: "Energy", score: 0, status: "NOT_STARTED", attemptCount: 0, calculatedAt: null }],
+  learningProfile: { strengths: [], focusAreas: [] },
+  history: [],
+  worksheets: [],
+  tutorOnly: { activeAlerts: [], reports: [], approvedWorksheetCount: 0 },
+} as const;
+
+const newStudentProfile = {
+  ...legacyStudentProfile,
+  id: 33,
+  fullName: "New Student",
+  metrics: { averageMastery: null, topicCount: 0, totalAttempts: 0, lastCalculatedAt: null },
+  mastery: [],
+} as const;
+
 describe("tutor student service", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
@@ -173,6 +193,18 @@ describe("tutor student service", () => {
     expect(parseTutorStudentProfile(profile)).toEqual(profile);
     expect(() => parseTutorStudentProfile({ ...profile, metrics: { ...profile.metrics, averageMastery: 120 } })).toThrow("invalid student profile");
     expect(() => parseTutorStudentProfile({ ...profile, tutorOnly: { activeAlerts: [], reports: [{ id: 6 }] } })).toThrow("invalid student profile");
+  });
+
+  it("accepts canonical NOT_STARTED mastery and explicit null/empty fields for a new profile", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify(newStudentProfile), { status: 200 }));
+    await expect(fetchTutorStudentProfile(33)).resolves.toEqual(newStudentProfile);
+    expect(parseTutorStudentProfile(newStudentProfile)).toEqual(newStudentProfile);
+
+    expect(parseTutorStudentProfile(legacyStudentProfile)).toEqual(legacyStudentProfile);
+    const selfProfile = { ...legacyStudentProfile, tutorOnly: null };
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify(selfProfile), { status: 200 }));
+    await expect(fetchStudentSelfProfile()).resolves.toEqual(selfProfile);
+    expect(parseStudentSelfProfile(selfProfile)).toEqual(selfProfile);
   });
 
   it("preserves missing and cross-owner profile errors", async () => {

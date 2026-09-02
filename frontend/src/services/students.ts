@@ -1,4 +1,5 @@
 import type { TutorClass } from "@/services/classes";
+import type { MasteryStatus } from "@/services/mastery";
 
 export interface StudentClassMembership {
   id: number;
@@ -30,8 +31,6 @@ export interface AvailableStudentAccount {
   email: string;
   level: string | null;
 }
-
-export type MasteryStatus = "MASTERED" | "IMPROVING" | "PRACTISING" | "LEARNING" | "NEEDS_REVISION";
 
 export interface StudentProfileClass {
   id: number;
@@ -191,8 +190,8 @@ function isOptionalPercentage(value: unknown): value is number | null {
 }
 
 function isMasteryStatus(value: unknown): value is MasteryStatus {
-  return value === "MASTERED" || value === "IMPROVING" || value === "PRACTISING"
-    || value === "LEARNING" || value === "NEEDS_REVISION";
+  return value === "NOT_STARTED" || value === "MASTERED" || value === "IMPROVING"
+    || value === "PRACTISING" || value === "LEARNING" || value === "NEEDS_REVISION";
 }
 
 function isOptionalMasteryStatus(value: unknown): value is MasteryStatus | null {

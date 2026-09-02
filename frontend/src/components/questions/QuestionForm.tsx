@@ -80,8 +80,8 @@ function preciseNumber(value: string): number | null {
 
 export function validateQuestionForm(values: FormValues): FieldErrors {
   const errors: FieldErrors = {};
-  if (!values.code.trim()) errors.code = "Question code is required.";
-  else if (values.code.trim().length > 120) errors.code = "Question code must be 120 characters or fewer.";
+  if (!values.code.trim()) errors.code = "Question reference code is required.";
+  else if (values.code.trim().length > 120) errors.code = "Question reference code must be 120 characters or fewer.";
   const topicId = Number(values.syllabusTopicId);
   if (!Number.isSafeInteger(topicId) || topicId <= 0) errors.syllabusTopicId = "Choose an existing syllabus topic or subtopic.";
   if (!values.prompt.trim()) errors.prompt = "Question prompt is required.";
@@ -152,8 +152,8 @@ export default function QuestionForm({ mode, initialQuestion, submitQuestion, on
   const submitLabel = mode === "create" ? "Create question" : "Save changes";
   return <Card component="form" noValidate onSubmit={submit} variant="outlined" sx={{ maxWidth: 940, p: { xs: 2.25, sm: 3 }, borderRadius: "14px", bgcolor: "#FFFDFA", borderColor: "#EBE4D9", boxShadow: "none" }}>
     <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "minmax(0, 1fr) minmax(0, 1fr)" }, gap: 2 }}>
-      <TextField required fullWidth label="Question code" value={values.code} onChange={(event) => update("code", event.target.value)} error={Boolean(errors.code)} helperText={errors.code || "A stable reference; it will be stored in uppercase."} slotProps={{ htmlInput: { maxLength: 120, "aria-label": "Question code" } }} sx={fieldSx} />
-      <Box sx={{ minWidth: 0 }}><SyllabusPicker value={Number(values.syllabusTopicId) || null} onChange={(topicId) => update("syllabusTopicId", topicId ? String(topicId) : "")} label="Syllabus topic" required error={errors.syllabusTopicId} helperText="Choose an active topic, then optionally refine it to a subtopic." loadSyllabus={loadSyllabus} /></Box>
+      <TextField required fullWidth label="Question reference code" value={values.code} onChange={(event) => update("code", event.target.value)} error={Boolean(errors.code)} helperText={errors.code || "A unique, tutor-entered reference for question lookup and saved worksheet snapshots. Stored in uppercase (for example, SCI-P6-SYS-000123)."} slotProps={{ htmlInput: { maxLength: 120, "aria-label": "Question reference code" } }} sx={fieldSx} />
+      <Box sx={{ minWidth: 0 }}><SyllabusPicker value={Number(values.syllabusTopicId) || null} onChange={(topicId) => update("syllabusTopicId", topicId ? String(topicId) : "")} label="Curriculum classification" required error={errors.syllabusTopicId} helperText="Choose the existing Subject, Level, Theme, and Topic; optionally refine it to a Subtopic. The final Topic or Subtopic is saved with the question." loadSyllabus={loadSyllabus} /></Box>
       <TextField select fullWidth required label="Question type" value={values.questionType} onChange={(event) => update("questionType", event.target.value as QuestionType)} sx={fieldSx}>{questionTypes.map((type) => <MenuItem key={type.value} value={type.value}>{type.label}</MenuItem>)}</TextField>
       <TextField select fullWidth required label="Difficulty" value={values.difficulty} onChange={(event) => update("difficulty", event.target.value as QuestionDifficulty)} sx={fieldSx}>{difficulties.map((item) => <MenuItem key={item.value} value={item.value}>{item.label}</MenuItem>)}</TextField>
       <TextField select fullWidth required label="Availability" value={values.archiveState} onChange={(event) => update("archiveState", event.target.value as QuestionArchiveState)} sx={fieldSx}><MenuItem value="ACTIVE">Active — can be used in worksheets</MenuItem><MenuItem value="ARCHIVED">Archived — kept for records only</MenuItem></TextField>

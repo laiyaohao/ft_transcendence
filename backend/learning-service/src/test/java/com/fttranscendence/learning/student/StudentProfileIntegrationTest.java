@@ -112,15 +112,17 @@ class StudentProfileIntegrationTest {
     }
 
     @Test
-    void returnsPartialAndNewProfilesWithoutInventingMetricsHistoryOrAssignments() throws Exception {
+    void returnsPartialAndNewProfilesWithExplicitNullableMetricsAndEmptyCollections() throws Exception {
         long studentId = insertStudent(OWNER_ID, null, "New Student");
 
         mockMvc.perform(get("/api/learning/tutor/students/{studentId}/profile", studentId)
                 .header("Authorization", "Bearer " + token("TUTOR", OWNER_ID)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.classes").isEmpty())
-            .andExpect(jsonPath("$.metrics.averageMastery").doesNotExist())
+            .andExpect(jsonPath("$.metrics.averageMastery").value(nullValue()))
             .andExpect(jsonPath("$.metrics.topicCount").value(0))
+            .andExpect(jsonPath("$.metrics.totalAttempts").value(0))
+            .andExpect(jsonPath("$.metrics.lastCalculatedAt").value(nullValue()))
             .andExpect(jsonPath("$.mastery").isEmpty())
             .andExpect(jsonPath("$.learningProfile.strengths").isEmpty())
             .andExpect(jsonPath("$.learningProfile.focusAreas").isEmpty())
@@ -129,6 +131,21 @@ class StudentProfileIntegrationTest {
             .andExpect(jsonPath("$.tutorOnly.activeAlerts").isEmpty())
             .andExpect(jsonPath("$.tutorOnly.reports").isEmpty())
             .andExpect(jsonPath("$.tutorOnly.approvedWorksheetCount").value(0));
+    }
+
+    @Test
+    void exposesNotStartedMasteryRecordsInTheCanonicalProfile() throws Exception {
+        long studentId = insertStudent(OWNER_ID, null, "Legacy Student");
+        long topicId = topicId("SCI_P5_CYCLES_MATTER_WATER_WATER");
+        insertMastery(studentId, topicId, 0, "NOT_STARTED", 0);
+
+        mockMvc.perform(get("/api/learning/tutor/students/{studentId}/profile", studentId)
+                .header("Authorization", "Bearer " + token("TUTOR", OWNER_ID)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.metrics.averageMastery").value(0))
+            .andExpect(jsonPath("$.metrics.totalAttempts").value(0))
+            .andExpect(jsonPath("$.mastery[0].status").value("NOT_STARTED"))
+            .andExpect(jsonPath("$.mastery[0].attemptCount").value(0));
     }
 
     @Test
