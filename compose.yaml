@@ -18,6 +18,10 @@ services:
 
   adminer:
     image: adminer
+    # This is an optional database browser. Keeping it outside the default
+    # application profile prevents a Docker Hub pull failure from blocking the
+    # API and frontend services needed for local development.
+    profiles: ["admin-tools"]
     restart: unless-stopped
     ports:
       - "8080:8080"

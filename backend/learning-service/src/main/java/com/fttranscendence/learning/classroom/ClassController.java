@@ -25,6 +25,8 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -33,6 +35,8 @@ import java.util.Map;
 @RestController
 @RequestMapping(value = "/api/learning/tutor/classes", produces = MediaType.APPLICATION_JSON_VALUE)
 public class ClassController {
+
+    private static final Logger logger = LoggerFactory.getLogger(ClassController.class);
 
     private final ClassService classService;
     private final StudentService studentService;
@@ -172,12 +176,14 @@ public class ClassController {
 
     @ExceptionHandler(DataAccessException.class)
     ResponseEntity<ApiError> persistence(DataAccessException exception) {
+        logger.error("class_database_unavailable", exception);
         return error(HttpStatus.SERVICE_UNAVAILABLE, "CLASS_DATABASE_UNAVAILABLE",
             "Class data is temporarily unavailable", Map.of());
     }
 
     @ExceptionHandler(ClassService.ClassPersistenceException.class)
     ResponseEntity<ApiError> persistence(ClassService.ClassPersistenceException exception) {
+        logger.error("class_database_unavailable", exception);
         return error(HttpStatus.SERVICE_UNAVAILABLE, "CLASS_DATABASE_UNAVAILABLE",
             "Class data is temporarily unavailable", Map.of());
     }
