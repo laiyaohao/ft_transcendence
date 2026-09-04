@@ -2,100 +2,372 @@ export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 const ACCEPTED_TYPES = new Set(["application/pdf", "image/jpeg", "image/png"]);
 const gradingUrl = process.env.NEXT_PUBLIC_GRADING_API_URL || "http://localhost:8082";
 
-export type UploadPage = { id: string; file: File; previewUrl: string | null; rotation: 0 | 90 | 180 | 270; warning: string | null };
-export type OcrPage = { pageId: number; extractionId: number; text: string; confidence: number; status: "READY" | "REQUIRES_REVIEW" | "UNREADABLE" };
-export class SubmissionApiError extends Error { constructor(message: string, readonly status = 0) { super(message); this.name = "SubmissionApiError"; } }
+export type UploadPage = {
+  id: string;
+  file: File;
+  previewUrl: string | null;
+  rotation: 0 | 90 | 180 | 270;
+  warning: string | null;
+};
+
+export type OcrPage = {
+  pageId: number;
+  extractionId: number;
+  text: string;
+  confidence: number;
+  status: "READY" | "REQUIRES_REVIEW" | "UNREADABLE";
+};
+
+export class SubmissionApiError extends Error {
+  constructor(
+    message: string,
+    readonly status = 0,
+  ) {
+    super(message);
+    this.name = "SubmissionApiError";
+  }
+}
 
 const fileKey = (file: File) => `${file.name}:${file.size}:${file.lastModified}`;
 const id = (file: File, index: number) => `${fileKey(file)}:${index}`;
-export function isAcceptedUpload(file: File) { return ACCEPTED_TYPES.has(file.type); }
-export function validateUploadFiles(files: File[], existing: UploadPage[] = []): { pages: UploadPage[]; errors: string[] } {
-  const seen = new Set(existing.map((page) => fileKey(page.file))); const pages: UploadPage[] = []; const errors: string[] = [];
+
+export function isAcceptedUpload(file: File) {
+  return ACCEPTED_TYPES.has(file.type);
+}
+
+export function validateUploadFiles(
+  files: File[],
+  existing: UploadPage[] = [],
+): { pages: UploadPage[]; errors: string[] } {
+  const seen = new Set(existing.map((page) => fileKey(page.file)));
+  const pages: UploadPage[] = [];
+  const errors: string[] = [];
+
   files.forEach((file, index) => {
-    if (!isAcceptedUpload(file)) errors.push(`${file.name}: use a JPG, PNG or PDF.`);
-    else if (file.size === 0) errors.push(`${file.name}: this file is empty.`);
-    else if (file.size > MAX_UPLOAD_BYTES) errors.push(`${file.name}: files must be 20 MB or smaller.`);
-    else if (seen.has(fileKey(file))) errors.push(`${file.name}: this page was already added.`);
-    else { seen.add(fileKey(file)); pages.push({ id: id(file, index), file, previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : null, rotation: 0, warning: file.type.startsWith("image/") && file.size < 12_000 ? "This image may be hard to read. Consider replacing it." : null }); }
+    if (!isAcceptedUpload(file)) {
+      errors.push(`${file.name}: use a JPG, PNG or PDF.`);
+    } else if (file.size === 0) {
+      errors.push(`${file.name}: this file is empty.`);
+    } else if (file.size > MAX_UPLOAD_BYTES) {
+      errors.push(`${file.name}: files must be 20 MB or smaller.`);
+    } else if (seen.has(fileKey(file))) {
+      errors.push(`${file.name}: this page was already added.`);
+    } else {
+      seen.add(fileKey(file));
+      const isImage = file.type.startsWith("image/");
+
+      pages.push({
+        id: id(file, index),
+        file,
+        previewUrl: isImage ? URL.createObjectURL(file) : null,
+        rotation: 0,
+        warning:
+          isImage && file.size < 12_000
+            ? "This image may be hard to read. Consider replacing it."
+            : null,
+      });
+    }
   });
+
   return { pages, errors };
 }
-export function releasePagePreview(page: UploadPage) { if (page.previewUrl) URL.revokeObjectURL(page.previewUrl); }
-function headers(): HeadersInit { const token = typeof window === "undefined" ? null : localStorage.getItem("jwt_token"); return token ? { Authorization: `Bearer ${token}` } : {}; }
+
+export function releasePagePreview(page: UploadPage) {
+  if (page.previewUrl) {
+    URL.revokeObjectURL(page.previewUrl);
+  }
+}
+
+function headers(): HeadersInit {
+  const token =
+    typeof window === "undefined" ? null : localStorage.getItem("jwt_token");
+
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 export type SubmissionDocument = {
-  id: number; classId: number | null; studentId: number; worksheetId: number;
-  uploadedByTutorId: number | null; status: "UPLOADING" | "READY" | "SUBMITTED_FOR_REVIEW"; createdAt: string;
+  id: number;
+  classId: number | null;
+  studentId: number;
+  worksheetId: number;
+  uploadedByTutorId: number | null;
+  status: "UPLOADING" | "READY" | "SUBMITTED_FOR_REVIEW";
+  createdAt: string;
   pages: OcrPage[];
 };
 
 function parseSubmissionDocument(value: unknown): SubmissionDocument {
-  if (!value || typeof value !== "object") throw new SubmissionApiError("The submission document response is invalid.");
-  const raw = value as Record<string, unknown>;
-  if (!Number.isSafeInteger(raw.id) || (raw.id as number) <= 0
-    || !Number.isSafeInteger(raw.studentId) || (raw.studentId as number) <= 0
-    || !Number.isSafeInteger(raw.worksheetId) || (raw.worksheetId as number) <= 0
-    || (raw.classId !== null && (!Number.isSafeInteger(raw.classId) || (raw.classId as number) <= 0))
-    || (raw.uploadedByTutorId !== null && (!Number.isSafeInteger(raw.uploadedByTutorId) || (raw.uploadedByTutorId as number) <= 0))
-    || (raw.status !== "UPLOADING" && raw.status !== "READY" && raw.status !== "SUBMITTED_FOR_REVIEW") || typeof raw.createdAt !== "string" || !Array.isArray(raw.pages)) {
+  if (!value || typeof value !== "object") {
     throw new SubmissionApiError("The submission document response is invalid.");
   }
+
+  const raw = value as Record<string, unknown>;
+
+  const hasInvalidDocumentDetails =
+    !Number.isSafeInteger(raw.id) ||
+    (raw.id as number) <= 0 ||
+    !Number.isSafeInteger(raw.studentId) ||
+    (raw.studentId as number) <= 0 ||
+    !Number.isSafeInteger(raw.worksheetId) ||
+    (raw.worksheetId as number) <= 0 ||
+    (raw.classId !== null &&
+      (!Number.isSafeInteger(raw.classId) || (raw.classId as number) <= 0)) ||
+    (raw.uploadedByTutorId !== null &&
+      (!Number.isSafeInteger(raw.uploadedByTutorId) ||
+        (raw.uploadedByTutorId as number) <= 0)) ||
+    (raw.status !== "UPLOADING" &&
+      raw.status !== "READY" &&
+      raw.status !== "SUBMITTED_FOR_REVIEW") ||
+    typeof raw.createdAt !== "string" ||
+    !Array.isArray(raw.pages);
+
+  if (hasInvalidDocumentDetails) {
+    throw new SubmissionApiError("The submission document response is invalid.");
+  }
+
   const pageIds = new Set<number>();
-  const pages = raw.pages.map((value): OcrPage => {
-    if (!value || typeof value !== "object") throw new SubmissionApiError("The submission document response is invalid.");
-    const page = value as Record<string, unknown>;
-    if (!Number.isSafeInteger(page.id) || (page.id as number) <= 0 || pageIds.has(page.id as number)
-      || !Number.isSafeInteger(page.extractionId) || (page.extractionId as number) <= 0
-      || typeof page.text !== "string" || typeof page.confidence !== "number"
-      || (page.status !== "READY" && page.status !== "REQUIRES_REVIEW" && page.status !== "UNREADABLE")) {
+  const pages = (raw.pages as unknown[]).map((value): OcrPage => {
+    if (!value || typeof value !== "object") {
       throw new SubmissionApiError("The submission document response is invalid.");
     }
+
+    const page = value as Record<string, unknown>;
+    const hasInvalidPageDetails =
+      !Number.isSafeInteger(page.id) ||
+      (page.id as number) <= 0 ||
+      pageIds.has(page.id as number) ||
+      !Number.isSafeInteger(page.extractionId) ||
+      (page.extractionId as number) <= 0 ||
+      typeof page.text !== "string" ||
+      typeof page.confidence !== "number" ||
+      (page.status !== "READY" &&
+        page.status !== "REQUIRES_REVIEW" &&
+        page.status !== "UNREADABLE");
+
+    if (hasInvalidPageDetails) {
+      throw new SubmissionApiError("The submission document response is invalid.");
+    }
+
     pageIds.add(page.id as number);
-    return { pageId: page.id as number, extractionId: page.extractionId as number, text: page.text, confidence: page.confidence, status: page.status };
+
+    return {
+      pageId: page.id as number,
+      extractionId: page.extractionId as number,
+      text: page.text as string,
+      confidence: page.confidence as number,
+      status: page.status as OcrPage["status"],
+    };
   });
-  return { id: raw.id as number, classId: raw.classId as number | null, studentId: raw.studentId as number, worksheetId: raw.worksheetId as number, uploadedByTutorId: raw.uploadedByTutorId as number | null, status: raw.status, createdAt: raw.createdAt, pages };
+
+  return {
+    id: raw.id as number,
+    classId: raw.classId as number | null,
+    studentId: raw.studentId as number,
+    worksheetId: raw.worksheetId as number,
+    uploadedByTutorId: raw.uploadedByTutorId as number | null,
+    status: raw.status as SubmissionDocument["status"],
+    createdAt: raw.createdAt as string,
+    pages,
+  };
 }
 
-export async function createOcrDocument(input:{classId?:number;studentId:number;worksheetId:number;worksheetQuestionId?:number;pages:UploadPage[]}):Promise<SubmissionDocument>{
-  if ((input.classId !== undefined && (!Number.isSafeInteger(input.classId) || input.classId <= 0)) || !Number.isSafeInteger(input.studentId) || input.studentId <= 0 || !Number.isSafeInteger(input.worksheetId) || input.worksheetId <= 0 || !input.pages.length) throw new SubmissionApiError("Submission details are invalid.",400);
-  const form=new FormData(); form.append("studentId",String(input.studentId)); form.append("worksheetId",String(input.worksheetId)); if(input.classId !== undefined)form.append("classId",String(input.classId)); if(input.worksheetQuestionId)form.append("worksheetQuestionId",String(input.worksheetQuestionId)); input.pages.forEach(p=>form.append("files",p.file));
-  const response=await fetch(`${gradingUrl}/api/grading/submission-documents`,{method:"POST",headers:headers(),body:form}); if(!response.ok){const b=await response.json().catch(()=>null) as {error?:string}|null;throw new SubmissionApiError(b?.error||"OCR could not be started.",response.status);}
+export async function createOcrDocument(input: {
+  classId?: number;
+  studentId: number;
+  worksheetId: number;
+  worksheetQuestionId?: number;
+  pages: UploadPage[];
+}): Promise<SubmissionDocument> {
+  const hasInvalidContext =
+    (input.classId !== undefined &&
+      (!Number.isSafeInteger(input.classId) || input.classId <= 0)) ||
+    !Number.isSafeInteger(input.studentId) ||
+    input.studentId <= 0 ||
+    !Number.isSafeInteger(input.worksheetId) ||
+    input.worksheetId <= 0 ||
+    !input.pages.length;
+
+  if (hasInvalidContext) {
+    throw new SubmissionApiError("Submission details are invalid.", 400);
+  }
+
+  const form = new FormData();
+  form.append("studentId", String(input.studentId));
+  form.append("worksheetId", String(input.worksheetId));
+
+  if (input.classId !== undefined) {
+    form.append("classId", String(input.classId));
+  }
+
+  if (input.worksheetQuestionId) {
+    form.append("worksheetQuestionId", String(input.worksheetQuestionId));
+  }
+
+  input.pages.forEach((page) => form.append("files", page.file));
+
+  const response = await fetch(
+    `${gradingUrl}/api/grading/submission-documents`,
+    {
+      method: "POST",
+      headers: headers(),
+      body: form,
+    },
+  );
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as {
+      error?: string;
+    } | null;
+
+    throw new SubmissionApiError(
+      body?.error || "OCR could not be started.",
+      response.status,
+    );
+  }
+
   return parseSubmissionDocument(await response.json());
 }
 
 export async function fetchSubmissionDocument(documentId: number): Promise<SubmissionDocument> {
-  if (!Number.isSafeInteger(documentId) || documentId <= 0) throw new SubmissionApiError("The submission ID is invalid.", 400);
-  const response = await fetch(`${gradingUrl}/api/grading/submission-documents/${documentId}`, { headers: headers() });
-  if (!response.ok) {
-    const body = await response.json().catch(() => null) as { error?: string } | null;
-    throw new SubmissionApiError(body?.error || "Submission document could not be loaded.", response.status);
+  if (!Number.isSafeInteger(documentId) || documentId <= 0) {
+    throw new SubmissionApiError("The submission ID is invalid.", 400);
   }
+
+  const response = await fetch(
+    `${gradingUrl}/api/grading/submission-documents/${documentId}`,
+    { headers: headers() },
+  );
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as {
+      error?: string;
+    } | null;
+
+    throw new SubmissionApiError(
+      body?.error || "Submission document could not be loaded.",
+      response.status,
+    );
+  }
+
   return parseSubmissionDocument(await response.json());
 }
-export async function correctOcrExtraction(extractionId:number,correctedText:string):Promise<OcrPage>{const response=await fetch(`${gradingUrl}/api/grading/ocr-extractions/${extractionId}`,{method:"PATCH",headers:{...headers(),"Content-Type":"application/json"},body:JSON.stringify({correctedText})});if(!response.ok)throw new SubmissionApiError("OCR correction could not be saved.",response.status);const b=await response.json() as {id:number;text:string;confidence:number;status:OcrPage["status"]};return {pageId:0,extractionId:b.id,text:b.text,confidence:b.confidence,status:b.status};}
 
-export type OcrAnswerMapping = { extractionId: number; questionBankId: number };
-export type SubmissionForTutorReview = { submissionDocumentId: number; submissionIds: number[]; status: "PENDING_REVIEW" };
+export async function correctOcrExtraction(
+  extractionId: number,
+  correctedText: string,
+): Promise<OcrPage> {
+  const response = await fetch(
+    `${gradingUrl}/api/grading/ocr-extractions/${extractionId}`,
+    {
+      method: "PATCH",
+      headers: {
+        ...headers(),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ correctedText }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new SubmissionApiError(
+      "OCR correction could not be saved.",
+      response.status,
+    );
+  }
+
+  const body = (await response.json()) as {
+    id: number;
+    text: string;
+    confidence: number;
+    status: OcrPage["status"];
+  };
+
+  return {
+    pageId: 0,
+    extractionId: body.id,
+    text: body.text,
+    confidence: body.confidence,
+    status: body.status,
+  };
+}
+
+export type OcrAnswerMapping = {
+  extractionId: number;
+  questionBankId: number;
+};
+
+export type SubmissionForTutorReview = {
+  submissionDocumentId: number;
+  submissionIds: number[];
+  status: "PENDING_REVIEW";
+};
 export async function submitOcrForTutorReview(documentId: number, answers: OcrAnswerMapping[]): Promise<SubmissionForTutorReview> {
-  if (!Number.isSafeInteger(documentId) || documentId <= 0 || !answers.length || answers.some((answer) => !Number.isSafeInteger(answer.extractionId) || answer.extractionId <= 0 || !Number.isSafeInteger(answer.questionBankId) || answer.questionBankId <= 0)) {
+  const hasInvalidAnswer = answers.some(
+    (answer) =>
+      !Number.isSafeInteger(answer.extractionId) ||
+      answer.extractionId <= 0 ||
+      !Number.isSafeInteger(answer.questionBankId) ||
+      answer.questionBankId <= 0,
+  );
+
+  if (
+    !Number.isSafeInteger(documentId) ||
+    documentId <= 0 ||
+    !answers.length ||
+    hasInvalidAnswer
+  ) {
     throw new SubmissionApiError("OCR submission details are invalid.", 400);
   }
-  const response = await fetch(`${gradingUrl}/api/grading/submission-documents/${documentId}/submit-for-review`, {
-    method: "POST", headers: { ...headers(), "Content-Type": "application/json" }, body: JSON.stringify({ answers }),
-  });
+
+  const response = await fetch(
+    `${gradingUrl}/api/grading/submission-documents/${documentId}/submit-for-review`,
+    {
+      method: "POST",
+      headers: {
+        ...headers(),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ answers }),
+    },
+  );
+
   if (!response.ok) {
-    const body = await response.json().catch(() => null) as { error?: string } | null;
-    throw new SubmissionApiError(body?.error || "The OCR submission could not be sent for Tutor review.", response.status);
+    const body = (await response.json().catch(() => null)) as {
+      error?: string;
+    } | null;
+
+    throw new SubmissionApiError(
+      body?.error || "The OCR submission could not be sent for Tutor review.",
+      response.status,
+    );
   }
+
   const body = await response.json() as Record<string, unknown>;
-  if (!Number.isSafeInteger(body.submissionDocumentId) || body.submissionDocumentId !== documentId || body.status !== "PENDING_REVIEW"
-    || !Array.isArray(body.submissionIds) || !body.submissionIds.length || body.submissionIds.some((id) => !Number.isSafeInteger(id) || (id as number) <= 0)) {
+  const hasInvalidResponse =
+    !Number.isSafeInteger(body.submissionDocumentId) ||
+    body.submissionDocumentId !== documentId ||
+    body.status !== "PENDING_REVIEW" ||
+    !Array.isArray(body.submissionIds) ||
+    !body.submissionIds.length ||
+    body.submissionIds.some(
+      (id) => !Number.isSafeInteger(id) || (id as number) <= 0,
+    );
+
+  if (hasInvalidResponse) {
     throw new SubmissionApiError("The OCR submission response is invalid.");
   }
-  return { submissionDocumentId: body.submissionDocumentId as number, submissionIds: body.submissionIds as number[], status: "PENDING_REVIEW" };
+
+  return {
+    submissionDocumentId: body.submissionDocumentId as number,
+    submissionIds: body.submissionIds as number[],
+    status: "PENDING_REVIEW",
+  };
 }
 
 /** OCR and typed answers are persisted through the same canonical submission records. */
-export type ManualAnswerEntry = { questionBankId: number; answer: string };
+export type ManualAnswerEntry = {
+  questionBankId: number;
+  answer: string;
+};
 export type ManualAnswerSubmission = {
   studentId: number;
   worksheetId: number;
@@ -115,64 +387,153 @@ export type ManualAnswerDraft = {
   status: "DRAFT" | "PENDING_REVIEW";
   inputMethod: "MANUAL";
 };
+
 function parseManualAnswerDraft(value: unknown): ManualAnswerDraft {
-  if (!value || typeof value !== "object") throw new SubmissionApiError("The manual answer response is invalid.");
-  const body = value as Record<string, unknown>;
-  const validId = (item: unknown) => Number.isSafeInteger(item) && (item as number) > 0;
-  if (!(body.submissionDocumentId === null || validId(body.submissionDocumentId))
-    || !Array.isArray(body.answers)
-    || body.answers.some((item) => !item || typeof item !== "object" || !validId((item as Record<string, unknown>).questionBankId) || typeof (item as Record<string, unknown>).answer !== "string")
-    || body.inputMethod !== "MANUAL"
-    || (body.status !== "DRAFT" && body.status !== "PENDING_REVIEW")) {
+  if (!value || typeof value !== "object") {
     throw new SubmissionApiError("The manual answer response is invalid.");
   }
+
+  const body = value as Record<string, unknown>;
+  const validId = (item: unknown) =>
+    Number.isSafeInteger(item) && (item as number) > 0;
+  const hasInvalidAnswer =
+    Array.isArray(body.answers) &&
+    body.answers.some((item) => {
+      if (!item || typeof item !== "object") {
+        return true;
+      }
+
+      const answer = item as Record<string, unknown>;
+      return !validId(answer.questionBankId) || typeof answer.answer !== "string";
+    });
+
+  const hasInvalidResponse =
+    !(body.submissionDocumentId === null || validId(body.submissionDocumentId)) ||
+    !Array.isArray(body.answers) ||
+    hasInvalidAnswer ||
+    body.inputMethod !== "MANUAL" ||
+    (body.status !== "DRAFT" && body.status !== "PENDING_REVIEW");
+
+  if (hasInvalidResponse) {
+    throw new SubmissionApiError("The manual answer response is invalid.");
+  }
+
   return {
     submissionDocumentId: body.submissionDocumentId as number | null,
-    answers: body.answers.map((item) => ({ questionBankId: (item as Record<string, unknown>).questionBankId as number, answer: (item as Record<string, unknown>).answer as string })),
-    status: body.status,
+    answers: (body.answers as unknown[]).map((item) => {
+      const answer = item as Record<string, unknown>;
+
+      return {
+        questionBankId: answer.questionBankId as number,
+        answer: answer.answer as string,
+      };
+    }),
+    status: body.status as ManualAnswerDraft["status"],
     inputMethod: "MANUAL",
   };
 }
-export async function fetchManualAnswerDraft(input: Pick<ManualAnswerSubmission, "studentId" | "worksheetId" | "classId">): Promise<ManualAnswerDraft> {
-  const validId = (value: unknown) => Number.isSafeInteger(value) && (value as number) > 0;
-  if (!validId(input.studentId) || !validId(input.worksheetId) || (input.classId !== undefined && !validId(input.classId))) {
+
+export async function fetchManualAnswerDraft(
+  input: Pick<ManualAnswerSubmission, "studentId" | "worksheetId" | "classId">,
+): Promise<ManualAnswerDraft> {
+  const validId = (value: unknown) =>
+    Number.isSafeInteger(value) && (value as number) > 0;
+  const hasInvalidContext =
+    !validId(input.studentId) ||
+    !validId(input.worksheetId) ||
+    (input.classId !== undefined && !validId(input.classId));
+
+  if (hasInvalidContext) {
     throw new SubmissionApiError("Manual answer details are invalid.", 400);
   }
-  const query = new URLSearchParams({ studentId: String(input.studentId), worksheetId: String(input.worksheetId) });
-  if (input.classId !== undefined) query.set("classId", String(input.classId));
-  const response = await fetch(`${gradingUrl}/api/grading/submission-documents/manual-answers?${query.toString()}`, { headers: headers() });
-  if (!response.ok) {
-    const body = await response.json().catch(() => null) as { error?: string } | null;
-    throw new SubmissionApiError(body?.error || "Your answers could not be loaded. Please try again.", response.status);
+
+  const query = new URLSearchParams({
+    studentId: String(input.studentId),
+    worksheetId: String(input.worksheetId),
+  });
+
+  if (input.classId !== undefined) {
+    query.set("classId", String(input.classId));
   }
+
+  const response = await fetch(
+    `${gradingUrl}/api/grading/submission-documents/manual-answers?${query.toString()}`,
+    { headers: headers() },
+  );
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as {
+      error?: string;
+    } | null;
+
+    throw new SubmissionApiError(
+      body?.error || "Your answers could not be loaded. Please try again.",
+      response.status,
+    );
+  }
+
   return parseManualAnswerDraft(await response.json());
 }
-export async function saveManualAnswers(input: ManualAnswerSubmission): Promise<ManualAnswerResponse> {
-  const validId = (value: unknown) => Number.isSafeInteger(value) && (value as number) > 0;
-  if (!validId(input.studentId) || !validId(input.worksheetId)
-    || (input.classId !== undefined && !validId(input.classId))
-    || !Array.isArray(input.answers) || input.answers.length === 0
-    || input.answers.some((entry) => !validId(entry.questionBankId) || typeof entry.answer !== "string")
-    || new Set(input.answers.map((entry) => entry.questionBankId)).size !== input.answers.length) {
+
+export async function saveManualAnswers(
+  input: ManualAnswerSubmission,
+): Promise<ManualAnswerResponse> {
+  const validId = (value: unknown) =>
+    Number.isSafeInteger(value) && (value as number) > 0;
+  const hasInvalidContext =
+    !validId(input.studentId) ||
+    !validId(input.worksheetId) ||
+    (input.classId !== undefined && !validId(input.classId));
+  const hasInvalidAnswers =
+    !Array.isArray(input.answers) ||
+    input.answers.length === 0 ||
+    input.answers.some(
+      (entry) => !validId(entry.questionBankId) || typeof entry.answer !== "string",
+    );
+  const hasDuplicateQuestion =
+    Array.isArray(input.answers) &&
+    new Set(input.answers.map((entry) => entry.questionBankId)).size !==
+      input.answers.length;
+
+  if (hasInvalidContext || hasInvalidAnswers || hasDuplicateQuestion) {
     throw new SubmissionApiError("Manual answer details are invalid.", 400);
   }
-  const response = await fetch(`${gradingUrl}/api/grading/submission-documents/manual-answers`, {
-    method: "POST",
-    headers: { ...headers(), "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
+
+  const response = await fetch(
+    `${gradingUrl}/api/grading/submission-documents/manual-answers`,
+    {
+      method: "POST",
+      headers: {
+        ...headers(),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(input),
+    },
+  );
+
   if (!response.ok) {
-    const body = await response.json().catch(() => null) as { error?: string } | null;
-    throw new SubmissionApiError(body?.error || "Your answers could not be saved. Please try again.", response.status);
+    const body = (await response.json().catch(() => null)) as {
+      error?: string;
+    } | null;
+
+    throw new SubmissionApiError(
+      body?.error || "Your answers could not be saved. Please try again.",
+      response.status,
+    );
   }
+
   const body = await response.json() as Record<string, unknown>;
-  if (!validId(body.submissionDocumentId)
-    || !Array.isArray(body.submissionIds)
-    || body.submissionIds.some((value) => !validId(value))
-    || body.inputMethod !== "MANUAL"
-    || (body.status !== "DRAFT" && body.status !== "PENDING_REVIEW")) {
+  const hasInvalidResponse =
+    !validId(body.submissionDocumentId) ||
+    !Array.isArray(body.submissionIds) ||
+    body.submissionIds.some((value) => !validId(value)) ||
+    body.inputMethod !== "MANUAL" ||
+    (body.status !== "DRAFT" && body.status !== "PENDING_REVIEW");
+
+  if (hasInvalidResponse) {
     throw new SubmissionApiError("The manual answer response is invalid.");
   }
+
   return {
     submissionDocumentId: body.submissionDocumentId as number,
     submissionIds: body.submissionIds as number[],
@@ -182,10 +543,32 @@ export async function saveManualAnswers(input: ManualAnswerSubmission): Promise<
 }
 
 export type MarkingReviewStatus = "PENDING_REVIEW" | "FLAGGED" | "APPROVED";
-export type DiagnosticCategory = "CONCEPT" | "KEYWORD" | "EXPRESSION" | "APPLICATION";
-export type MistakeType = "CONCEPT_MISUNDERSTANDING" | "CALCULATION_ERROR" | "MISREAD_QUESTION" | "INCOMPLETE_WORKING" | "INCORRECT_FORMULA" | "CARELESS_MISTAKE" | "WEAK_EXPLANATION" | "MISSING_KEY_POINT" | "WRONG_UNITS" | "ANSWER_FORMAT_ISSUE";
-export type DiagnosticEvidence = { mistakeType: MistakeType; category: DiagnosticCategory; description: string; missingKeywords: string[] };
-export type DiagnosticEvidenceInput = Pick<DiagnosticEvidence, "mistakeType" | "description" | "missingKeywords">;
+export type DiagnosticCategory =
+  | "CONCEPT"
+  | "KEYWORD"
+  | "EXPRESSION"
+  | "APPLICATION";
+export type MistakeType =
+  | "CONCEPT_MISUNDERSTANDING"
+  | "CALCULATION_ERROR"
+  | "MISREAD_QUESTION"
+  | "INCOMPLETE_WORKING"
+  | "INCORRECT_FORMULA"
+  | "CARELESS_MISTAKE"
+  | "WEAK_EXPLANATION"
+  | "MISSING_KEY_POINT"
+  | "WRONG_UNITS"
+  | "ANSWER_FORMAT_ISSUE";
+export type DiagnosticEvidence = {
+  mistakeType: MistakeType;
+  category: DiagnosticCategory;
+  description: string;
+  missingKeywords: string[];
+};
+export type DiagnosticEvidenceInput = Pick<
+  DiagnosticEvidence,
+  "mistakeType" | "description" | "missingKeywords"
+>;
 export type ManualResultRequest = {
   worksheetId: number;
   studentId: number;
@@ -206,14 +589,38 @@ export type ManualResultBatchRequest = {
   entries: ManualResultEntry[];
 };
 export type MarkingReview = {
-  id: number; studentId: number; worksheetId: number; worksheetQuestionId: number; questionBankId: number;
-  extractedAnswer: string; modelAnswer: string; maxMarks: number; aiSuggestedMarks: number | null;
-  aiSuggestedOutcome: string | null; aiErrorCategory: string | null; missingKeywords: string[];
-  aiSuggestedFeedback: string | null; reviewStatus: MarkingReviewStatus; approvedMarks: number | null;
-  approvedFeedback: string | null; reviewedByUserId: number | null; reviewedAt: string | null;
+  id: number;
+  studentId: number;
+  worksheetId: number;
+  worksheetQuestionId: number;
+  questionBankId: number;
+  extractedAnswer: string;
+  modelAnswer: string;
+  maxMarks: number;
+  aiSuggestedMarks: number | null;
+  aiSuggestedOutcome: string | null;
+  aiErrorCategory: string | null;
+  missingKeywords: string[];
+  aiSuggestedFeedback: string | null;
+  reviewStatus: MarkingReviewStatus;
+  approvedMarks: number | null;
+  approvedFeedback: string | null;
+  reviewedByUserId: number | null;
+  reviewedAt: string | null;
   providerResponseValid: boolean | null;
   diagnosticEvidence: DiagnosticEvidence[];
-  history: Array<{ id: number; action: "APPROVED" | "REVISED" | "FLAGGED" | "RESET_TO_AI"; reviewerUserId: number; previousStatus: MarkingReviewStatus; newStatus: MarkingReviewStatus; previousMarks: number | null; newMarks: number | null; previousFeedback: string | null; newFeedback: string | null; createdAt: string }>;
+  history: Array<{
+    id: number;
+    action: "APPROVED" | "REVISED" | "FLAGGED" | "RESET_TO_AI";
+    reviewerUserId: number;
+    previousStatus: MarkingReviewStatus;
+    newStatus: MarkingReviewStatus;
+    previousMarks: number | null;
+    newMarks: number | null;
+    previousFeedback: string | null;
+    newFeedback: string | null;
+    createdAt: string;
+  }>;
 };
 export type ManualResultStudentProgress = {
   studentId: number;
@@ -225,8 +632,12 @@ export type ManualResultsResponse = {
   students: ManualResultStudentProgress[];
 };
 
-/** A Student-visible marking result.  Final marks and feedback are supplied only after Tutor approval. */
-export type StudentWorksheetResultOutcome = "CORRECT" | "PARTIAL" | "INCORRECT" | "REVIEW_NEEDED";
+/** A Student-visible marking result. Final marks and feedback are supplied only after Tutor approval. */
+export type StudentWorksheetResultOutcome =
+  | "CORRECT"
+  | "PARTIAL"
+  | "INCORRECT"
+  | "REVIEW_NEEDED";
 export type StudentWorksheetResult = {
   submissionId: number;
   worksheetQuestionId: number;
@@ -240,7 +651,10 @@ export type StudentWorksheetResult = {
   explanation: string | null;
   reviewedAt: string | null;
 };
-export type StudentWorksheetResultsResponse = { worksheetId: number; results: StudentWorksheetResult[] };
+export type StudentWorksheetResultsResponse = {
+  worksheetId: number;
+  results: StudentWorksheetResult[];
+};
 
 /** A Tutor-confirmed diagnostic item shown in the authenticated Student's review history. */
 export type StudentMistakeReview = {

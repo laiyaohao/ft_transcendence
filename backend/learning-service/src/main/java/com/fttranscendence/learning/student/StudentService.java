@@ -1,9 +1,9 @@
 package com.fttranscendence.learning.student;
 
-import com.fttranscendence.learning.classroom.TutorClass;
-import com.fttranscendence.learning.classroom.TutorClassRepository;
 import com.fttranscendence.learning.alert.TutorAlert;
 import com.fttranscendence.learning.alert.TutorAlertRepository;
+import com.fttranscendence.learning.classroom.TutorClass;
+import com.fttranscendence.learning.classroom.TutorClassRepository;
 import com.fttranscendence.learning.mastery.MasteryHistory;
 import com.fttranscendence.learning.mastery.MasteryApprovedResultRepository;
 import com.fttranscendence.learning.mastery.MasteryRecord;
@@ -19,20 +19,26 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.time.LocalDateTime;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 public class StudentService {
+
+    private static final BigDecimal STRENGTH_SCORE_THRESHOLD = new BigDecimal("85.00");
+    private static final BigDecimal FOCUS_AREA_SCORE_THRESHOLD = new BigDecimal("70.00");
 
     private final StudentProfileRepository students;
     private final TutorClassRepository classes;
@@ -87,7 +93,7 @@ public class StudentService {
             .findAllByLoginUserIdInWithMemberships(accounts.stream()
                 .map(AuthStudentDirectoryClient.StudentAccount::id).toList())
             .stream()
-            .collect(java.util.stream.Collectors.toMap(
+            .collect(Collectors.toMap(
                 StudentProfile::getLoginUserId,
                 profile -> profile
             ));
@@ -116,7 +122,11 @@ public class StudentService {
         Map<Long, StudentProfile> profilesByLogin = students
             .findAllByLoginUserIdInWithMemberships(accounts.stream()
                 .map(AuthStudentDirectoryClient.StudentAccount::id).toList())
-            .stream().collect(java.util.stream.Collectors.toMap(StudentProfile::getLoginUserId, profile -> profile));
+            .stream()
+            .collect(Collectors.toMap(
+                StudentProfile::getLoginUserId,
+                profile -> profile
+            ));
         String normalizedSearch = search == null ? "" : search.trim().toLowerCase(Locale.ROOT);
         return accounts.stream()
             .filter(account -> {
@@ -158,7 +168,10 @@ public class StudentService {
             request.loginUserId(), bearerToken);
         StudentProfile profile = students.findByLoginUserId(account.id()).orElse(null);
         boolean claimingUnassignedProfile = profile != null && profile.getTutorId() == null;
-        if (profile != null && profile.getTutorId() != null && !Long.valueOf(tutorId).equals(profile.getTutorId())) {
+        boolean belongsToAnotherTutor = profile != null
+            && profile.getTutorId() != null
+            && !Long.valueOf(tutorId).equals(profile.getTutorId());
+        if (belongsToAnotherTutor) {
             // Do not let a Tutor claim or enumerate another Tutor's learner.
             throw new StudentNotFoundException(profile.getId());
         }
@@ -307,15 +320,23 @@ public class StudentService {
         student.setFullName(request.fullName().trim());
         student.setLoginUserId(request.loginUserId());
 
-        Set<Long> wantedIds = requestedClasses.keySet();
-        new ArrayList<>(student.getMemberships()).stream()
-            .filter(membership -> !wantedIds.contains(membership.getClassId()))
+        updateClassMemberships(student, requestedClasses.keySet());
+    }
+
+    private void updateClassMemberships(
+        StudentProfile student,
+        Set<Long> requestedClassIds
+    ) {
+        List<ClassMembership> existingMemberships = new ArrayList<>(student.getMemberships());
+        existingMemberships.stream()
+            .filter(membership -> !requestedClassIds.contains(membership.getClassId()))
             .forEach(student::removeClassMembership);
-        Set<Long> currentIds = student.getMemberships().stream()
+
+        Set<Long> currentClassIds = student.getMemberships().stream()
             .map(ClassMembership::getClassId)
-            .collect(java.util.stream.Collectors.toSet());
-        wantedIds.stream()
-            .filter(classId -> !currentIds.contains(classId))
+            .collect(Collectors.toSet());
+        requestedClassIds.stream()
+            .filter(classId -> !currentClassIds.contains(classId))
             .sorted()
             .forEach(student::addClassMembership);
     }
@@ -336,11 +357,11 @@ public class StudentService {
         return owned.entrySet().stream()
             .filter(entry -> uniqueIds.contains(entry.getKey()))
             .sorted(Map.Entry.comparingByKey())
-            .collect(java.util.stream.Collectors.toMap(
+            .collect(Collectors.toMap(
                 Map.Entry::getKey,
                 Map.Entry::getValue,
                 (left, right) -> left,
-                java.util.LinkedHashMap::new
+                LinkedHashMap::new
             ));
     }
 
@@ -358,92 +379,191 @@ public class StudentService {
     private StudentProfileResponse profileResponse(StudentProfile student, boolean includeTutorOnly) {
         List<MasteryRecord> records = masteryRecords
             .findProfileRecordsByStudentProfileIdWithTopicAndHistory(student.getId());
-        Map<Long, TutorClass> classMap = ownedClassMap(student.getTutorId());
-        List<StudentProfileResponse.ClassSummary> classResponses = student.getMemberships().stream()
-            .map(ClassMembership::getClassId)
-            .map(classMap::get)
-            .filter(java.util.Objects::nonNull)
-            .map(item -> new StudentProfileResponse.ClassSummary(
-                item.getId(), item.getClassName(), item.getSubject(), item.getLevel(), item.getStatus()))
-            .sorted(Comparator.comparing(StudentProfileResponse.ClassSummary::className,
-                Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER))
-                .thenComparing(StudentProfileResponse.ClassSummary::id))
+        List<StudentProfileResponse.ClassSummary> classResponses = classSummaries(student);
+        StudentProfileResponse.Metrics metrics = calculateMetrics(records);
+        List<StudentProfileResponse.MasteryTopic> masteryTopics = masteryTopics(records);
+        StudentProfileResponse.LearningProfile learningProfile = learningProfile(records);
+        List<StudentProfileResponse.HistoryItem> recentHistory = recentHistory(records);
+        List<Long> classIds = classResponses.stream()
+            .map(StudentProfileResponse.ClassSummary::id)
             .toList();
+        List<StudentProfileResponse.WorksheetAssignmentSummary> worksheetAssignments =
+            effectiveWorksheets(student, classIds);
+        StudentProfileResponse.TutorOnly tutorOnly = includeTutorOnly
+            ? tutorOnly(student)
+            : null;
 
-        BigDecimal total = records.stream().map(MasteryRecord::getScore)
+        return new StudentProfileResponse(
+            student.getId(),
+            student.getFullName(),
+            classResponses,
+            metrics,
+            masteryTopics,
+            learningProfile,
+            recentHistory,
+            worksheetAssignments,
+            tutorOnly
+        );
+    }
+
+    private List<StudentProfileResponse.ClassSummary> classSummaries(StudentProfile student) {
+        Map<Long, TutorClass> classesById = ownedClassMap(student.getTutorId());
+
+        return student.getMemberships().stream()
+            .map(ClassMembership::getClassId)
+            .map(classesById::get)
+            .filter(Objects::nonNull)
+            .map(this::classSummary)
+            .sorted(classSummaryComparator())
+            .toList();
+    }
+
+    private StudentProfileResponse.ClassSummary classSummary(TutorClass tutorClass) {
+        return new StudentProfileResponse.ClassSummary(
+            tutorClass.getId(),
+            tutorClass.getClassName(),
+            tutorClass.getSubject(),
+            tutorClass.getLevel(),
+            tutorClass.getStatus()
+        );
+    }
+
+    private Comparator<StudentProfileResponse.ClassSummary> classSummaryComparator() {
+        return Comparator.comparing(
+                StudentProfileResponse.ClassSummary::className,
+                Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER)
+            )
+            .thenComparing(StudentProfileResponse.ClassSummary::id);
+    }
+
+    private StudentProfileResponse.Metrics calculateMetrics(List<MasteryRecord> records) {
+        BigDecimal totalScore = records.stream()
+            .map(MasteryRecord::getScore)
             .reduce(BigDecimal.ZERO, BigDecimal::add);
-        int attempts = records.stream().mapToInt(MasteryRecord::getAttemptCount).sum();
+        int totalAttempts = records.stream()
+            .mapToInt(MasteryRecord::getAttemptCount)
+            .sum();
         LocalDateTime lastCalculatedAt = records.stream().map(MasteryRecord::getCalculatedAt)
-            .filter(java.util.Objects::nonNull)
+            .filter(Objects::nonNull)
             .max(LocalDateTime::compareTo)
             .orElse(null);
-        StudentProfileResponse.Metrics metrics = new StudentProfileResponse.Metrics(
-            records.isEmpty() ? null : average(total, records.size()), records.size(), attempts, lastCalculatedAt);
-        List<StudentProfileResponse.MasteryTopic> mastery = records.stream()
+
+        BigDecimal averageScore = records.isEmpty()
+            ? null
+            : average(totalScore, records.size());
+        return new StudentProfileResponse.Metrics(
+            averageScore,
+            records.size(),
+            totalAttempts,
+            lastCalculatedAt
+        );
+    }
+
+    private List<StudentProfileResponse.MasteryTopic> masteryTopics(List<MasteryRecord> records) {
+        return records.stream()
             .map(record -> new StudentProfileResponse.MasteryTopic(
-                record.getSyllabusTopic().getId(), record.getSyllabusTopic().getCode(),
-                record.getSyllabusTopic().getName(), record.getScore(), record.getMasteryStatus(),
-                record.getAttemptCount(), record.getCalculatedAt()))
+                record.getSyllabusTopic().getId(),
+                record.getSyllabusTopic().getCode(),
+                record.getSyllabusTopic().getName(),
+                record.getScore(),
+                record.getMasteryStatus(),
+                record.getAttemptCount(),
+                record.getCalculatedAt()
+            ))
             .toList();
+    }
+
+    private StudentProfileResponse.LearningProfile learningProfile(List<MasteryRecord> records) {
         List<StudentProfileResponse.TopicSummary> strengths = records.stream()
-            .filter(record -> record.getScore().compareTo(new BigDecimal("85.00")) >= 0)
+            .filter(record -> record.getScore().compareTo(STRENGTH_SCORE_THRESHOLD) >= 0)
             .map(this::topicSummary)
-            .sorted(Comparator.comparing(StudentProfileResponse.TopicSummary::score).reversed()
+            .sorted(Comparator.comparing(StudentProfileResponse.TopicSummary::score)
+                .reversed()
                 .thenComparing(StudentProfileResponse.TopicSummary::topicName)
                 .thenComparing(StudentProfileResponse.TopicSummary::topicId))
             .toList();
         List<StudentProfileResponse.TopicSummary> focusAreas = records.stream()
-            .filter(record -> record.getScore().compareTo(new BigDecimal("70.00")) < 0
-                || record.getMasteryStatus() == MasteryRecord.MasteryStatus.NEEDS_REVISION)
+            .filter(record -> isFocusArea(record))
             .map(this::topicSummary)
             .sorted(Comparator.comparing(StudentProfileResponse.TopicSummary::score)
                 .thenComparing(StudentProfileResponse.TopicSummary::topicName)
                 .thenComparing(StudentProfileResponse.TopicSummary::topicId))
             .toList();
-        List<StudentProfileResponse.HistoryItem> history = records.stream()
+
+        return new StudentProfileResponse.LearningProfile(strengths, focusAreas);
+    }
+
+    private boolean isFocusArea(MasteryRecord record) {
+        boolean hasBelowTargetScore = record.getScore()
+            .compareTo(FOCUS_AREA_SCORE_THRESHOLD) < 0;
+        boolean needsRevision = record.getMasteryStatus()
+            == MasteryRecord.MasteryStatus.NEEDS_REVISION;
+        return hasBelowTargetScore || needsRevision;
+    }
+
+    private List<StudentProfileResponse.HistoryItem> recentHistory(List<MasteryRecord> records) {
+        return records.stream()
             .flatMap(record -> record.getHistory().stream().map(item -> historyItem(record, item)))
-            .sorted(Comparator.comparing(StudentProfileResponse.HistoryItem::occurredAt,
-                Comparator.nullsLast(Comparator.reverseOrder()))
+            .sorted(Comparator.comparing(
+                    StudentProfileResponse.HistoryItem::occurredAt,
+                    Comparator.nullsLast(Comparator.reverseOrder())
+                )
                 .thenComparing(StudentProfileResponse.HistoryItem::topicId))
             .limit(50)
             .toList();
-
-        List<StudentProfileResponse.WorksheetAssignmentSummary> worksheetAssignments = effectiveWorksheets(
-            student, classResponses.stream().map(StudentProfileResponse.ClassSummary::id).toList());
-        StudentProfileResponse.TutorOnly tutorOnly = includeTutorOnly
-            ? tutorOnly(student)
-            : null;
-        return new StudentProfileResponse(student.getId(), student.getFullName(), classResponses,
-            metrics, mastery, new StudentProfileResponse.LearningProfile(strengths, focusAreas),
-            history, worksheetAssignments, tutorOnly);
     }
 
     private List<StudentProfileResponse.WorksheetAssignmentSummary> effectiveWorksheets(
         StudentProfile student,
         List<Long> classIds
     ) {
-        List<StudentProfileResponse.WorksheetAssignmentSummary> result = new ArrayList<>();
-        for (Worksheet worksheet : worksheets.findApprovedStudentAssignedWorksheetsByTutorId(
-            student.getTutorId(), student.getId())) {
+        List<StudentProfileResponse.WorksheetAssignmentSummary> assignmentSummaries = new ArrayList<>();
+        addStudentWorksheetAssignments(student, assignmentSummaries);
+        addClassWorksheetAssignments(student, classIds, assignmentSummaries);
+
+        return assignmentSummaries.stream()
+            .sorted(Comparator.comparing(
+                    StudentProfileResponse.WorksheetAssignmentSummary::assignedAt,
+                    Comparator.nullsLast(Comparator.reverseOrder())
+                )
+                .thenComparing(StudentProfileResponse.WorksheetAssignmentSummary::worksheetId))
+            .toList();
+    }
+
+    private void addStudentWorksheetAssignments(
+        StudentProfile student,
+        List<StudentProfileResponse.WorksheetAssignmentSummary> assignmentSummaries
+    ) {
+        List<Worksheet> studentWorksheets = worksheets
+            .findApprovedStudentAssignedWorksheetsByTutorId(student.getTutorId(), student.getId());
+        for (Worksheet worksheet : studentWorksheets) {
             worksheet.getAssignments().stream()
                 .filter(assignment -> assignment.getAssignmentType() == Worksheet.AudienceType.STUDENT)
                 .filter(assignment -> student.getId().equals(assignment.getStudentProfileId()))
-                .forEach(assignment -> result.add(assignmentSummary(worksheet, assignment)));
+                .forEach(assignment -> assignmentSummaries.add(assignmentSummary(worksheet, assignment)));
         }
+    }
+
+    private void addClassWorksheetAssignments(
+        StudentProfile student,
+        List<Long> classIds,
+        List<StudentProfileResponse.WorksheetAssignmentSummary> assignmentSummaries
+    ) {
         for (Long classId : classIds) {
-            for (Worksheet worksheet : worksheets.findClassAssignedWorksheetsByTutorId(student.getTutorId(), classId)) {
-                if (worksheet.getStatus() != Worksheet.Status.APPROVED) continue;
+            List<Worksheet> classWorksheets = worksheets
+                .findClassAssignedWorksheetsByTutorId(student.getTutorId(), classId);
+            for (Worksheet worksheet : classWorksheets) {
+                if (worksheet.getStatus() != Worksheet.Status.APPROVED) {
+                    continue;
+                }
                 worksheet.getAssignments().stream()
                     .filter(assignment -> assignment.getAssignmentType() == Worksheet.AudienceType.CLASS)
                     .filter(assignment -> classId.equals(assignment.getClassId()))
-                    .forEach(assignment -> result.add(assignmentSummary(worksheet, assignment)));
+                    .forEach(assignment -> assignmentSummaries.add(
+                        assignmentSummary(worksheet, assignment)
+                    ));
             }
         }
-        return result.stream()
-            .sorted(Comparator.comparing(StudentProfileResponse.WorksheetAssignmentSummary::assignedAt,
-                Comparator.nullsLast(Comparator.reverseOrder()))
-                .thenComparing(StudentProfileResponse.WorksheetAssignmentSummary::worksheetId))
-            .toList();
     }
 
     private StudentProfileResponse.WorksheetAssignmentSummary assignmentSummary(
@@ -451,8 +571,13 @@ public class StudentService {
         WorksheetAssignment assignment
     ) {
         return new StudentProfileResponse.WorksheetAssignmentSummary(
-            worksheet.getId(), worksheet.getTitle(), assignment.getAssignmentType(), assignment.getClassId(),
-            assignment.getAssignedAt(), assignment.getDueAt());
+            worksheet.getId(),
+            worksheet.getTitle(),
+            assignment.getAssignmentType(),
+            assignment.getClassId(),
+            assignment.getAssignedAt(),
+            assignment.getDueAt()
+        );
     }
 
     private StudentProfileResponse.TutorOnly tutorOnly(StudentProfile student) {

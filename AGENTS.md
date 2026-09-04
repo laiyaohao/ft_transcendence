@@ -270,3 +270,282 @@ At completion report:
 - tests executed
 - test results
 - remaining limitations or risks
+
+# Code Quality and Readability Guidelines
+
+When creating, modifying, or refactoring code in this repository, optimize primarily for human readability and maintainability.
+
+## Core Principle
+
+Code should be written so that another developer can understand its purpose without having to mentally decode compressed expressions or trace unnecessary abstractions.
+
+Prefer:
+
+* clear;
+* explicit;
+* predictable;
+* boring;
+* well-named;
+
+code over clever or compact code.
+
+---
+
+## Human Readability
+
+Do not optimize for the fewest number of lines.
+
+Use additional lines when they make code easier to scan.
+
+For example:
+
+```ts
+const activeMemberTasks = memberTasks.filter(
+  (task) => task.status === "active"
+);
+```
+
+is preferred over an unnecessarily long single line.
+
+---
+
+## Line Length
+
+Keep lines approximately 80–100 characters where practical.
+
+This is a readability guideline rather than an absolute rule.
+
+When a function call, conditional, object, array, JSX element, or expression becomes difficult to scan horizontally, break it onto multiple lines.
+
+Prefer:
+
+```ts
+const board = await createBoard({
+  presetId: preset.id,
+  presetName: preset.name,
+  createdBy: currentUser.id,
+});
+```
+
+instead of putting every argument on one line.
+
+---
+
+## Naming
+
+Use names that describe business meaning.
+
+Prefer:
+
+```text
+outstandingTasks
+presetMembers
+createdBoard
+assignedMember
+hasActiveSubtasks
+shouldCreateTaskCard
+```
+
+over vague names such as:
+
+```text
+data
+obj
+res
+tmp
+val
+x
+thing
+```
+
+Boolean names should usually communicate a true/false question:
+
+```text
+isActive
+hasPermission
+canCreateBoard
+shouldDisplayCard
+```
+
+---
+
+## Functions
+
+Functions should generally perform one understandable responsibility.
+
+If a function contains multiple distinct phases, consider extracting clearly named helpers.
+
+Do not create unnecessary microscopic functions.
+
+Extraction is useful only when it improves comprehension, reuse, testing, or separation of responsibilities.
+
+---
+
+## Complex Logic
+
+Do not compress substantial business logic into a single expression.
+
+Use intermediate variables with meaningful names where they help explain the logic.
+
+Prefer:
+
+```ts
+const isAssignedToMember =
+  task.memberId === member.id;
+
+const isOutstanding =
+  task.status !== "completed";
+
+if (isAssignedToMember && isOutstanding) {
+  // ...
+}
+```
+
+when this is easier to understand than a dense condition.
+
+---
+
+## Control Flow
+
+Prefer early returns and guard clauses when they reduce nesting.
+
+Avoid deeply nested:
+
+```text
+if
+  if
+    if
+      if
+```
+
+structures where the same behavior can be expressed clearly through guard clauses.
+
+---
+
+## Comments
+
+Comments should primarily explain:
+
+* business reasons;
+* important constraints;
+* non-obvious decisions;
+* compatibility concerns;
+* why an unusual implementation exists.
+
+Do not add comments that merely translate the syntax into English.
+
+---
+
+## Business Rules
+
+Important business rules should be easy to locate.
+
+Where practical, place them behind clearly named domain functions instead of duplicating them across UI, APIs, and database operations.
+
+The name of the function should help explain the rule.
+
+---
+
+## Frontend Code
+
+Avoid putting substantial business logic directly inside JSX.
+
+Prefer descriptive event handlers and computed variables.
+
+Break very large components into meaningful subcomponents when doing so improves comprehension.
+
+Do not fragment components merely to make files shorter.
+
+---
+
+## TypeScript
+
+Prefer useful explicit domain types.
+
+Avoid `any` unless genuinely necessary.
+
+Do not introduce advanced generic types when a simpler type communicates the intent more clearly.
+
+---
+
+## Abstractions
+
+Do not abstract code simply because two pieces of code look slightly similar.
+
+A shared abstraction should make the system easier to understand.
+
+Do not introduce:
+
+* unnecessary wrapper classes;
+* unnecessary factories;
+* unnecessary indirection;
+* generic helpers with unclear purposes;
+* architecture patterns that do not solve an actual problem.
+
+---
+
+## Refactoring Safety
+
+When performing cleanup or readability refactoring:
+
+* preserve existing behavior;
+* preserve API contracts;
+* preserve database behavior;
+* preserve authorization rules;
+* preserve routes;
+* preserve integration behavior;
+* preserve user-facing workflows.
+
+Do not mix unrelated feature changes into a readability refactor.
+
+---
+
+## Validation
+
+After meaningful code changes, use the project's existing validation tools where applicable:
+
+* tests;
+* type checking;
+* lint;
+* formatter;
+* build.
+
+Do not remove or weaken tests simply to make a refactor pass.
+
+---
+
+## Existing Conventions
+
+Follow existing project conventions where they are reasonable.
+
+When existing conventions conflict with readability, prefer the clearer implementation while minimizing unnecessary repository-wide churn.
+
+---
+
+## Code Review Test
+
+Before considering code complete, ask:
+
+1. Is the purpose obvious?
+2. Are the names meaningful?
+3. Are any lines unnecessarily long?
+4. Is any logic unnecessarily compressed?
+5. Is there excessive nesting?
+6. Is business logic mixed with presentation logic?
+7. Are abstractions helping or hurting comprehension?
+8. Could a new developer safely modify this code?
+
+If the answer to the last question is no, simplify further.
+
+---
+
+## Priority
+
+Always favor:
+
+```text
+Clarity > cleverness
+Explicitness > compression
+Maintainability > fewer lines
+Human readability > abstraction for abstraction's sake
+```

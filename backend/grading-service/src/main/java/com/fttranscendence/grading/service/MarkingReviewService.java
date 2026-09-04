@@ -19,7 +19,14 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /** Coordinates advisory marking while keeping final marks behind Tutor approval. */
 @Service
@@ -68,22 +75,30 @@ public class MarkingReviewService {
             throw new InvalidReviewRequest("Question maximum marks must be positive.");
         }
 
-        List<OcrExtraction> questionExtractions = extractions.findByPageDocumentIdOrderByPagePageNumberAsc(document.getId())
-            .stream().filter(extraction -> request.worksheetQuestionId().equals(extraction.getWorksheetQuestionId())).toList();
+        List<OcrExtraction> questionExtractions = extractions
+            .findByPageDocumentIdOrderByPagePageNumberAsc(document.getId())
+            .stream()
+            .filter(extraction -> request.worksheetQuestionId().equals(
+                extraction.getWorksheetQuestionId()
+            ))
+            .toList();
         if (questionExtractions.isEmpty()) {
             throw new InvalidReviewRequest("No OCR text is associated with this worksheet question.");
         }
-        String answer = questionExtractions.stream().map(this::effectiveText)
-            .filter(text -> !text.isBlank()).collect(java.util.stream.Collectors.joining("\n\n"));
+        String answer = answerFromExtractions(questionExtractions, false);
 
-        Submission submission = Submission.createAnswer(document, request.worksheetQuestionId(), request.questionBankId(),
-            answer, question.modelAnswer(), question.totalMarks(), question.syllabusTopicId(), question.syllabusTopicCode());
-        AiGradingService.AiMarkingResult suggestion = ai.evaluateMarking(question.prompt(), question.modelAnswer(),
-            question.markingCriteria(), question.markingComponents().stream()
-                .map(LearningAuthorizationClient.MarkingComponentContext::toRuleComponent).toList(),
-            question.keywords(), answer, question.totalMarks());
-        submission.recordAiSuggestion(suggestion.suggestedMarks(), suggestion.correctness(), suggestion.errorCategory(),
-            suggestion.missingKeywords(), suggestion.feedback());
+        Submission submission = createAnswerSubmission(
+            document,
+            request.worksheetQuestionId(),
+            request.questionBankId(),
+            answer,
+            question
+        );
+        AiGradingService.AiMarkingResult suggestion = evaluateAndRecordSuggestion(
+            submission,
+            question,
+            answer
+        );
         submission.nextMasterySyncRevision();
         Submission saved = submissions.saveAndFlush(submission);
         enqueueReviewState(saved, user.userId(), "PENDING_REVIEW");
@@ -101,60 +116,60 @@ public class MarkingReviewService {
         AuthenticatedUser user, long submissionDocumentId, OcrSubmissionRequest request
     ) {
         requirePositive(submissionDocumentId, "Submission document id");
-        if (user == null || (!"STUDENT".equals(user.role()) && !"TUTOR".equals(user.role()))) {
-            throw new LearningAuthorizationClient.Forbidden();
-        }
+        requireSubmissionActor(user);
+
         SubmissionDocument document = documents.findByIdAndOwnerUserIdAndOwnerRole(
-            submissionDocumentId, user.userId(), SubmissionDocument.OwnerRole.valueOf(user.role())
+            submissionDocumentId,
+            user.userId(),
+            SubmissionDocument.OwnerRole.valueOf(user.role())
         ).orElseThrow(ReviewNotFound::new);
-        List<Submission> existing = submissions.findBySubmissionDocumentIdOrderByWorksheetQuestionIdAsc(document.getId());
+        List<Submission> existingSubmissions = submissions
+            .findBySubmissionDocumentIdOrderByWorksheetQuestionIdAsc(document.getId());
         if (document.getStatus() == SubmissionDocument.Status.SUBMITTED_FOR_REVIEW) {
-            if (existing.isEmpty()) throw new IllegalStateException("Submitted document is missing its answer records.");
-            return SubmissionForTutorReviewResponse.from(document.getId(), existing);
+            if (existingSubmissions.isEmpty()) {
+                throw new IllegalStateException(
+                    "Submitted document is missing its answer records."
+                );
+            }
+            return SubmissionForTutorReviewResponse.from(document.getId(), existingSubmissions);
         }
         if (document.getStatus() != SubmissionDocument.Status.READY) {
             throw new InvalidReviewRequest("The submission document is not ready for review.");
         }
-        if (!existing.isEmpty()) {
+        if (!existingSubmissions.isEmpty()) {
             throw new IllegalStateException("Ready document already has answer records.");
         }
-        List<OcrExtraction> documentExtractions = extractions.findByPageDocumentIdOrderByPagePageNumberAsc(document.getId());
-        java.util.Map<Long, Long> mappings = validatedMappings(request, documentExtractions);
+
+        List<OcrExtraction> documentExtractions = extractions
+            .findByPageDocumentIdOrderByPagePageNumberAsc(document.getId());
+        Map<Long, Long> questionBankIdByExtractionId = validatedMappings(
+            request,
+            documentExtractions
+        );
         LearningAuthorizationClient.SubmissionMarkingContext context = learning.loadSubmissionMarkingContext(
-            user, document.getStudentId(), document.getWorksheetId(), document.getClassId()
+            user,
+            document.getStudentId(),
+            document.getWorksheetId(),
+            document.getClassId()
         );
 
-        java.util.Map<Long, List<OcrExtraction>> byQuestion = new java.util.LinkedHashMap<>();
-        for (OcrExtraction extraction : documentExtractions) {
-            Long questionBankId = mappings.get(extraction.getId());
-            LearningAuthorizationClient.QuestionContext question = context.questionsByQuestionBankId().get(questionBankId);
-            if (question == null) throw new InvalidReviewRequest("Choose a question from this worksheet for every OCR page.");
-            extraction.assignToWorksheetQuestion(questionBankId);
-            byQuestion.computeIfAbsent(questionBankId, ignored -> new java.util.ArrayList<>()).add(extraction);
-        }
+        Map<Long, List<OcrExtraction>> extractionsByQuestionBankId =
+            assignExtractionsToQuestions(
+                documentExtractions,
+                questionBankIdByExtractionId,
+                context.questionsByQuestionBankId()
+            );
 
-        List<Submission> pending = new java.util.ArrayList<>();
-        for (var item : byQuestion.entrySet()) {
-            LearningAuthorizationClient.QuestionContext question = context.questionsByQuestionBankId().get(item.getKey());
-            String answer = item.getValue().stream().map(this::effectiveText)
-                .collect(java.util.stream.Collectors.joining("\n\n")).trim();
-            if (answer.isBlank()) throw new InvalidReviewRequest("Each mapped OCR page needs corrected text before submission.");
-            Submission submission = Submission.createAnswer(document, item.getKey(), item.getKey(), answer,
-                question.modelAnswer(), question.totalMarks(), question.syllabusTopicId(), question.syllabusTopicCode());
-            AiGradingService.AiMarkingResult suggestion = ai.evaluateMarking(question.prompt(), question.modelAnswer(),
-                question.markingCriteria(), question.markingComponents().stream()
-                    .map(LearningAuthorizationClient.MarkingComponentContext::toRuleComponent).toList(),
-                question.keywords(), answer, question.totalMarks());
-            submission.recordAiSuggestion(suggestion.suggestedMarks(), suggestion.correctness(), suggestion.errorCategory(),
-                suggestion.missingKeywords(), suggestion.feedback());
-            submission.nextMasterySyncRevision();
-            pending.add(submission);
-        }
-        List<Submission> saved = submissions.saveAllAndFlush(pending);
+        List<Submission> pendingSubmissions = createOcrSubmissions(
+            document,
+            extractionsByQuestionBankId,
+            context.questionsByQuestionBankId()
+        );
+        List<Submission> savedSubmissions = submissions.saveAllAndFlush(pendingSubmissions);
         document.markSubmittedForReview();
         documents.saveAndFlush(document);
-        for (Submission submission : saved) enqueueReviewState(submission, context.tutorUserId(), "PENDING_REVIEW");
-        return SubmissionForTutorReviewResponse.from(document.getId(), saved);
+        enqueuePendingReviewStates(savedSubmissions, context.tutorUserId());
+        return SubmissionForTutorReviewResponse.from(document.getId(), savedSubmissions);
     }
 
     /**
@@ -167,77 +182,70 @@ public class MarkingReviewService {
     public ManualAnswerResponse saveManualAnswers(
         AuthenticatedUser user, ManualAnswerRequest request
     ) {
-        if (user == null || (!"STUDENT".equals(user.role()) && !"TUTOR".equals(user.role()))) {
-            throw new LearningAuthorizationClient.Forbidden();
-        }
+        requireSubmissionActor(user);
         requirePositive(request == null ? null : request.studentId(), "Student id");
         requirePositive(request == null ? null : request.worksheetId(), "Worksheet id");
-        if ("TUTOR".equals(user.role()) && (request.classId() == null || request.classId() <= 0)) {
-            throw new InvalidReviewRequest("Class id is required when a Tutor enters answers for a student.");
-        }
+        requireClassForTutorManualAnswer(user, request.classId());
 
         LearningAuthorizationClient.SubmissionMarkingContext context = learning.loadSubmissionMarkingContext(
-            user, request.studentId(), request.worksheetId(), request.classId()
+            user,
+            request.studentId(),
+            request.worksheetId(),
+            request.classId()
         );
         SubmissionDocument document = manualDocument(
-            user.userId(), SubmissionDocument.OwnerRole.valueOf(user.role()), request.worksheetId(), request.studentId(), request.classId()
+            user.userId(),
+            SubmissionDocument.OwnerRole.valueOf(user.role()),
+            request.worksheetId(),
+            request.studentId(),
+            request.classId()
         );
-        List<Submission> existing = submissions.findBySubmissionDocumentIdOrderByWorksheetQuestionIdAsc(document.getId());
+        List<Submission> existingSubmissions = submissions
+            .findBySubmissionDocumentIdOrderByWorksheetQuestionIdAsc(document.getId());
         if (document.getStatus() == SubmissionDocument.Status.SUBMITTED_FOR_REVIEW) {
-            return ManualAnswerResponse.submitted(document.getId(), existing);
+            return ManualAnswerResponse.submitted(document.getId(), existingSubmissions);
         }
         if (document.getStatus() != SubmissionDocument.Status.READY) {
             throw new InvalidReviewRequest("The manual submission is not ready.");
         }
 
-        java.util.Map<Long, Submission> existingByQuestion = existing.stream().collect(java.util.stream.Collectors.toMap(
-            Submission::getWorksheetQuestionId, java.util.function.Function.identity()
-        ));
-        java.util.Set<Long> seen = new java.util.HashSet<>();
-        List<Submission> changed = new java.util.ArrayList<>();
+        Map<Long, Submission> submissionByQuestionBankId = existingSubmissions.stream()
+            .collect(Collectors.toMap(
+                Submission::getWorksheetQuestionId,
+                Function.identity()
+            ));
+        Set<Long> enteredQuestionBankIds = new HashSet<>();
+        List<Submission> changedSubmissions = new ArrayList<>();
         if (request.answers() != null) {
             for (ManualAnswerEntry entry : request.answers()) {
-                if (entry == null || entry.questionBankId() == null || entry.questionBankId() <= 0) {
-                    throw new InvalidReviewRequest("Each manual answer requires a worksheet question.");
+                Submission changedSubmission = updateManualAnswer(
+                    entry,
+                    document,
+                    context.questionsByQuestionBankId(),
+                    submissionByQuestionBankId,
+                    enteredQuestionBankIds
+                );
+                if (changedSubmission != null) {
+                    changedSubmissions.add(changedSubmission);
                 }
-                if (!seen.add(entry.questionBankId())) {
-                    throw new InvalidReviewRequest("Each worksheet question may be entered only once.");
-                }
-                LearningAuthorizationClient.QuestionContext question = context.questionsByQuestionBankId().get(entry.questionBankId());
-                if (question == null) {
-                    throw new InvalidReviewRequest("A manual answer does not belong to this worksheet.");
-                }
-                String answer = entry.answer() == null ? "" : entry.answer().trim();
-                // Empty fields represent an unanswered question.  They stay out
-                // of the canonical answer table until the learner enters text.
-                if (answer.isEmpty()) continue;
-                Submission submission = existingByQuestion.get(entry.questionBankId());
-                if (submission == null) {
-                    submission = Submission.createDraftAnswer(document, entry.questionBankId(), entry.questionBankId(), answer,
-                        question.modelAnswer(), question.totalMarks(), question.syllabusTopicId(), question.syllabusTopicCode());
-                } else {
-                    submission.replacePendingAnswer(answer);
-                }
-                AiGradingService.AiMarkingResult suggestion = ai.evaluateMarking(question.prompt(), question.modelAnswer(),
-                    question.markingCriteria(), question.markingComponents().stream()
-                        .map(LearningAuthorizationClient.MarkingComponentContext::toRuleComponent).toList(),
-                    question.keywords(), answer, question.totalMarks());
-                submission.recordAiSuggestion(suggestion.suggestedMarks(), suggestion.correctness(), suggestion.errorCategory(),
-                    suggestion.missingKeywords(), suggestion.feedback());
-                changed.add(submission);
             }
         }
-        if (!changed.isEmpty()) submissions.saveAllAndFlush(changed);
-        List<Submission> canonical = submissions.findBySubmissionDocumentIdOrderByWorksheetQuestionIdAsc(document.getId());
-        if (!Boolean.TRUE.equals(request.submit())) {
-            return ManualAnswerResponse.draft(document.getId(), canonical);
+        if (!changedSubmissions.isEmpty()) {
+            submissions.saveAllAndFlush(changedSubmissions);
         }
-        if (canonical.isEmpty()) {
+
+        List<Submission> canonicalSubmissions = submissions
+            .findBySubmissionDocumentIdOrderByWorksheetQuestionIdAsc(document.getId());
+        if (!Boolean.TRUE.equals(request.submit())) {
+            return ManualAnswerResponse.draft(document.getId(), canonicalSubmissions);
+        }
+        if (canonicalSubmissions.isEmpty()) {
             throw new InvalidReviewRequest("Enter at least one answer before submitting for Tutor review.");
         }
+
         document.markSubmittedForReview();
         documents.saveAndFlush(document);
-        for (Submission submission : canonical) {
+        for (Submission submission : canonicalSubmissions) {
             // A draft may be saved many times, but this state event is emitted
             // once when the document is made immutable and reviewable.
             submission.submitForTutorReview();
@@ -245,7 +253,7 @@ public class MarkingReviewService {
             Submission saved = submissions.saveAndFlush(submission);
             enqueueReviewState(saved, context.tutorUserId(), "PENDING_REVIEW");
         }
-        return ManualAnswerResponse.submitted(document.getId(), canonical);
+        return ManualAnswerResponse.submitted(document.getId(), canonicalSubmissions);
     }
 
     /** Reloads an actor's own manual draft after independently revalidating its worksheet scope. */
@@ -253,24 +261,21 @@ public class MarkingReviewService {
     public ManualAnswerResponse loadManualAnswers(
         AuthenticatedUser user, long studentId, long worksheetId, Long classId
     ) {
-        if (user == null || (!"STUDENT".equals(user.role()) && !"TUTOR".equals(user.role()))) {
-            throw new LearningAuthorizationClient.Forbidden();
-        }
+        requireSubmissionActor(user);
         requirePositive(studentId, "Student id");
         requirePositive(worksheetId, "Worksheet id");
-        if ("TUTOR".equals(user.role()) && (classId == null || classId <= 0)) {
-            throw new InvalidReviewRequest("Class id is required when a Tutor enters answers for a student.");
-        }
+        requireClassForTutorManualAnswer(user, classId);
+
         learning.loadSubmissionMarkingContext(user, studentId, worksheetId, classId);
         return documents.findByOwnerUserIdAndOwnerRoleAndWorksheetIdAndStudentIdAndSourceType(
-            user.userId(), SubmissionDocument.OwnerRole.valueOf(user.role()), worksheetId, studentId,
+            user.userId(),
+            SubmissionDocument.OwnerRole.valueOf(user.role()),
+            worksheetId,
+            studentId,
             SubmissionDocument.SourceType.MANUAL
-        ).map(document -> document.getStatus() == SubmissionDocument.Status.SUBMITTED_FOR_REVIEW
-            ? ManualAnswerResponse.submitted(document.getId(),
-                submissions.findBySubmissionDocumentIdOrderByWorksheetQuestionIdAsc(document.getId()))
-            : ManualAnswerResponse.draft(document.getId(),
-                submissions.findBySubmissionDocumentIdOrderByWorksheetQuestionIdAsc(document.getId()))
-        ).orElseGet(ManualAnswerResponse::empty);
+        )
+            .map(this::manualAnswerResponse)
+            .orElseGet(ManualAnswerResponse::empty);
     }
 
     /**
@@ -308,51 +313,79 @@ public class MarkingReviewService {
             throw new InvalidManualResultRequest("Enter at least one question result.");
         }
 
-        var contexts = new java.util.LinkedHashMap<Long, LearningAuthorizationClient.QuestionContext>();
-        var normalized = new java.util.ArrayList<ManualResultEntry>();
+        Map<Long, LearningAuthorizationClient.QuestionContext> questionContextByQuestionBankId =
+            new LinkedHashMap<>();
+        List<ManualResultEntry> normalizedEntries = new ArrayList<>();
         for (ManualResultEntry entry : request.entries()) {
             if (entry == null) {
                 throw new InvalidManualResultRequest("Each question result is required.");
             }
             requirePositiveManual(entry.questionBankId(), "Question id");
-            if (contexts.containsKey(entry.questionBankId())) {
+            if (questionContextByQuestionBankId.containsKey(entry.questionBankId())) {
                 throw new InvalidManualResultRequest("Each worksheet question may be entered only once.");
             }
             String answer = requireText(entry.answer(), "Student answer");
             String feedback = requireText(entry.feedback(), "Tutor feedback");
-            LearningAuthorizationClient.QuestionContext question = learning.validateManualResultContext(
-                user, bearer, request.studentId(), request.worksheetId(), entry.questionBankId());
+            LearningAuthorizationClient.QuestionContext question =
+                learning.validateManualResultContext(
+                    user,
+                    bearer,
+                    request.studentId(),
+                    request.worksheetId(),
+                    entry.questionBankId()
+                );
             validateManualScore(entry.marks(), question.totalMarks());
-            contexts.put(entry.questionBankId(), question);
-            normalized.add(new ManualResultEntry(entry.questionBankId(), answer, entry.marks(), feedback));
+            questionContextByQuestionBankId.put(entry.questionBankId(), question);
+            normalizedEntries.add(
+                new ManualResultEntry(entry.questionBankId(), answer, entry.marks(), feedback)
+            );
         }
 
-        SubmissionDocument document = manualDocument(user.userId(), SubmissionDocument.OwnerRole.TUTOR,
-            request.worksheetId(), request.studentId(), null);
-        for (ManualResultEntry entry : normalized) {
-            if (submissions.findBySubmissionDocumentIdAndWorksheetQuestionId(document.getId(), entry.questionBankId()).isPresent()) {
+        SubmissionDocument document = manualDocument(
+            user.userId(),
+            SubmissionDocument.OwnerRole.TUTOR,
+            request.worksheetId(),
+            request.studentId(),
+            null
+        );
+        for (ManualResultEntry entry : normalizedEntries) {
+            boolean answerAlreadyExists = submissions
+                .findBySubmissionDocumentIdAndWorksheetQuestionId(
+                    document.getId(),
+                    entry.questionBankId()
+                )
+                .isPresent();
+            if (answerAlreadyExists) {
                 throw new ManualResultAlreadyExists();
             }
         }
         try {
-            List<Submission> saved = new java.util.ArrayList<>();
-            for (ManualResultEntry entry : normalized) {
-                LearningAuthorizationClient.QuestionContext question = contexts.get(entry.questionBankId());
+            List<Submission> pendingSubmissions = new ArrayList<>();
+            for (ManualResultEntry entry : normalizedEntries) {
+                LearningAuthorizationClient.QuestionContext question =
+                    questionContextByQuestionBankId.get(entry.questionBankId());
                 // The Learning worksheet response currently identifies its
                 // question instance by question-bank ID. Persist that stable
                 // ID on both sides until it exposes a distinct instance ID.
-                Submission submission = Submission.createAnswer(document, entry.questionBankId(), entry.questionBankId(),
-                    entry.answer(), question.modelAnswer(), question.totalMarks(), question.syllabusTopicId(), question.syllabusTopicCode());
+                Submission submission = createAnswerSubmission(
+                    document,
+                    entry.questionBankId(),
+                    entry.questionBankId(),
+                    entry.answer(),
+                    question
+                );
                 submission.approve(user.userId(), entry.marks(), entry.feedback());
                 submission.nextMasterySyncRevision();
-                saved.add(submission);
+                pendingSubmissions.add(submission);
             }
-            List<Submission> persisted = submissions.saveAllAndFlush(saved);
-            for (Submission submission : persisted) {
+            List<Submission> savedSubmissions = submissions.saveAllAndFlush(pendingSubmissions);
+            for (Submission submission : savedSubmissions) {
                 enqueueMasterySync(submission, user.userId(), "APPROVED");
                 enqueueReviewState(submission, user.userId(), "RESOLVED");
             }
-            return persisted.stream().map(submission -> MarkingReview.from(submission, null)).toList();
+            return savedSubmissions.stream()
+                .map(submission -> MarkingReview.from(submission, null))
+                .toList();
         } catch (DataIntegrityViolationException exception) {
             throw new ManualResultAlreadyExists();
         }
@@ -454,6 +487,224 @@ public class MarkingReviewService {
         return MarkingReview.from(saved, null);
     }
 
+    private void requireSubmissionActor(AuthenticatedUser user) {
+        boolean isStudent = user != null && "STUDENT".equals(user.role());
+        boolean isTutor = user != null && "TUTOR".equals(user.role());
+        if (!isStudent && !isTutor) {
+            throw new LearningAuthorizationClient.Forbidden();
+        }
+    }
+
+    private void requireClassForTutorManualAnswer(
+        AuthenticatedUser user,
+        Long classId
+    ) {
+        boolean isTutorMissingClass = "TUTOR".equals(user.role())
+            && (classId == null || classId <= 0);
+        if (isTutorMissingClass) {
+            throw new InvalidReviewRequest(
+                "Class id is required when a Tutor enters answers for a student."
+            );
+        }
+    }
+
+    private Submission updateManualAnswer(
+        ManualAnswerEntry entry,
+        SubmissionDocument document,
+        Map<Long, LearningAuthorizationClient.QuestionContext> questionsByQuestionBankId,
+        Map<Long, Submission> submissionByQuestionBankId,
+        Set<Long> enteredQuestionBankIds
+    ) {
+        validateManualAnswerEntry(entry, enteredQuestionBankIds);
+
+        LearningAuthorizationClient.QuestionContext question =
+            questionsByQuestionBankId.get(entry.questionBankId());
+        if (question == null) {
+            throw new InvalidReviewRequest(
+                "A manual answer does not belong to this worksheet."
+            );
+        }
+
+        String answer = entry.answer() == null ? "" : entry.answer().trim();
+        // Empty fields represent unanswered questions. They are intentionally
+        // absent from the canonical answer table until the learner adds text.
+        if (answer.isEmpty()) {
+            return null;
+        }
+
+        Submission submission = submissionByQuestionBankId.get(entry.questionBankId());
+        if (submission == null) {
+            submission = Submission.createDraftAnswer(
+                document,
+                entry.questionBankId(),
+                entry.questionBankId(),
+                answer,
+                question.modelAnswer(),
+                question.totalMarks(),
+                question.syllabusTopicId(),
+                question.syllabusTopicCode()
+            );
+        } else {
+            submission.replacePendingAnswer(answer);
+        }
+
+        evaluateAndRecordSuggestion(submission, question, answer);
+        return submission;
+    }
+
+    private void validateManualAnswerEntry(
+        ManualAnswerEntry entry,
+        Set<Long> enteredQuestionBankIds
+    ) {
+        if (entry == null || entry.questionBankId() == null || entry.questionBankId() <= 0) {
+            throw new InvalidReviewRequest(
+                "Each manual answer requires a worksheet question."
+            );
+        }
+        if (!enteredQuestionBankIds.add(entry.questionBankId())) {
+            throw new InvalidReviewRequest(
+                "Each worksheet question may be entered only once."
+            );
+        }
+    }
+
+    private Map<Long, List<OcrExtraction>> assignExtractionsToQuestions(
+        List<OcrExtraction> documentExtractions,
+        Map<Long, Long> questionBankIdByExtractionId,
+        Map<Long, LearningAuthorizationClient.QuestionContext> questionsByQuestionBankId
+    ) {
+        Map<Long, List<OcrExtraction>> extractionsByQuestionBankId = new LinkedHashMap<>();
+
+        for (OcrExtraction extraction : documentExtractions) {
+            Long questionBankId = questionBankIdByExtractionId.get(extraction.getId());
+            LearningAuthorizationClient.QuestionContext question =
+                questionsByQuestionBankId.get(questionBankId);
+            if (question == null) {
+                throw new InvalidReviewRequest(
+                    "Choose a question from this worksheet for every OCR page."
+                );
+            }
+
+            extraction.assignToWorksheetQuestion(questionBankId);
+            extractionsByQuestionBankId
+                .computeIfAbsent(questionBankId, ignored -> new ArrayList<>())
+                .add(extraction);
+        }
+
+        return extractionsByQuestionBankId;
+    }
+
+    private List<Submission> createOcrSubmissions(
+        SubmissionDocument document,
+        Map<Long, List<OcrExtraction>> extractionsByQuestionBankId,
+        Map<Long, LearningAuthorizationClient.QuestionContext> questionsByQuestionBankId
+    ) {
+        List<Submission> pendingSubmissions = new ArrayList<>();
+
+        for (Map.Entry<Long, List<OcrExtraction>> questionEntry
+            : extractionsByQuestionBankId.entrySet()) {
+            Long questionBankId = questionEntry.getKey();
+            String answer = answerFromExtractions(questionEntry.getValue(), true);
+            if (answer.isBlank()) {
+                throw new InvalidReviewRequest(
+                    "Each mapped OCR page needs corrected text before submission."
+                );
+            }
+
+            LearningAuthorizationClient.QuestionContext question =
+                questionsByQuestionBankId.get(questionBankId);
+            Submission submission = createAnswerSubmission(
+                document,
+                questionBankId,
+                questionBankId,
+                answer,
+                question
+            );
+            evaluateAndRecordSuggestion(submission, question, answer);
+            submission.nextMasterySyncRevision();
+            pendingSubmissions.add(submission);
+        }
+
+        return pendingSubmissions;
+    }
+
+    private Submission createAnswerSubmission(
+        SubmissionDocument document,
+        long worksheetQuestionId,
+        long questionBankId,
+        String answer,
+        LearningAuthorizationClient.QuestionContext question
+    ) {
+        return Submission.createAnswer(
+            document,
+            worksheetQuestionId,
+            questionBankId,
+            answer,
+            question.modelAnswer(),
+            question.totalMarks(),
+            question.syllabusTopicId(),
+            question.syllabusTopicCode()
+        );
+    }
+
+    private AiGradingService.AiMarkingResult evaluateAndRecordSuggestion(
+        Submission submission,
+        LearningAuthorizationClient.QuestionContext question,
+        String answer
+    ) {
+        AiGradingService.AiMarkingResult suggestion = ai.evaluateMarking(
+            question.prompt(),
+            question.modelAnswer(),
+            question.markingCriteria(),
+            question.markingComponents()
+                .stream()
+                .map(LearningAuthorizationClient.MarkingComponentContext::toRuleComponent)
+                .toList(),
+            question.keywords(),
+            answer,
+            question.totalMarks()
+        );
+        submission.recordAiSuggestion(
+            suggestion.suggestedMarks(),
+            suggestion.correctness(),
+            suggestion.errorCategory(),
+            suggestion.missingKeywords(),
+            suggestion.feedback()
+        );
+        return suggestion;
+    }
+
+    private String answerFromExtractions(
+        List<OcrExtraction> questionExtractions,
+        boolean trimAnswer
+    ) {
+        var answerTexts = questionExtractions.stream().map(this::effectiveText);
+        if (!trimAnswer) {
+            return answerTexts
+                .filter(text -> !text.isBlank())
+                .collect(Collectors.joining("\n\n"));
+        }
+        return answerTexts.collect(Collectors.joining("\n\n")).trim();
+    }
+
+    private void enqueuePendingReviewStates(
+        List<Submission> submissions,
+        long tutorUserId
+    ) {
+        for (Submission submission : submissions) {
+            enqueueReviewState(submission, tutorUserId, "PENDING_REVIEW");
+        }
+    }
+
+    private ManualAnswerResponse manualAnswerResponse(SubmissionDocument document) {
+        List<Submission> documentSubmissions = submissions
+            .findBySubmissionDocumentIdOrderByWorksheetQuestionIdAsc(document.getId());
+        if (document.getStatus() == SubmissionDocument.Status.SUBMITTED_FOR_REVIEW) {
+            return ManualAnswerResponse.submitted(document.getId(), documentSubmissions);
+        }
+        return ManualAnswerResponse.draft(document.getId(), documentSubmissions);
+    }
+
     private Submission ownedSubmission(AuthenticatedUser user, String bearer, long submissionId) {
         requirePositive(submissionId, "Submission id");
         Submission submission = submissions.findById(submissionId).orElseThrow(ReviewNotFound::new);
@@ -461,8 +712,13 @@ public class MarkingReviewService {
         return submission;
     }
 
-    private SubmissionDocument manualDocument(long ownerUserId, SubmissionDocument.OwnerRole ownerRole,
-                                              long worksheetId, long studentId, Long classId) {
+    private SubmissionDocument manualDocument(
+        long ownerUserId,
+        SubmissionDocument.OwnerRole ownerRole,
+        long worksheetId,
+        long studentId,
+        Long classId
+    ) {
         return documents.findByOwnerUserIdAndOwnerRoleAndWorksheetIdAndStudentIdAndSourceType(
             ownerUserId,
             ownerRole,
@@ -498,28 +754,45 @@ public class MarkingReviewService {
         return corrected != null && !corrected.isBlank() ? corrected : extraction.getExtractedText();
     }
 
-    private static java.util.Map<Long, Long> validatedMappings(
-        OcrSubmissionRequest request, List<OcrExtraction> documentExtractions
+    private static Map<Long, Long> validatedMappings(
+        OcrSubmissionRequest request,
+        List<OcrExtraction> documentExtractions
     ) {
-        if (request == null || request.answers() == null || request.answers().size() != documentExtractions.size()
-            || documentExtractions.isEmpty()) {
+        boolean hasIncorrectMappingCount = request == null
+            || request.answers() == null
+            || request.answers().size() != documentExtractions.size();
+        if (hasIncorrectMappingCount || documentExtractions.isEmpty()) {
             throw new InvalidReviewRequest("Assign every OCR page to a worksheet question before submitting.");
         }
-        java.util.Set<Long> extractionIds = documentExtractions.stream().map(OcrExtraction::getId)
-            .collect(java.util.stream.Collectors.toSet());
-        java.util.Map<Long, Long> result = new java.util.LinkedHashMap<>();
+
+        Set<Long> extractionIds = documentExtractions.stream()
+            .map(OcrExtraction::getId)
+            .collect(Collectors.toSet());
+        Map<Long, Long> questionBankIdByExtractionId = new LinkedHashMap<>();
         for (OcrAnswerMapping mapping : request.answers()) {
-            if (mapping == null || mapping.extractionId() == null || mapping.questionBankId() == null
-                || mapping.extractionId() <= 0 || mapping.questionBankId() <= 0
-                || !extractionIds.contains(mapping.extractionId()) || result.putIfAbsent(mapping.extractionId(), mapping.questionBankId()) != null) {
+            boolean isValidMapping = mapping != null
+                && mapping.extractionId() != null
+                && mapping.questionBankId() != null
+                && mapping.extractionId() > 0
+                && mapping.questionBankId() > 0
+                && extractionIds.contains(mapping.extractionId())
+                && questionBankIdByExtractionId.putIfAbsent(
+                    mapping.extractionId(),
+                    mapping.questionBankId()
+                ) == null;
+            if (!isValidMapping) {
                 throw new InvalidReviewRequest("OCR page mappings are invalid.");
             }
         }
-        if (result.size() != extractionIds.size() || documentExtractions.stream()
-            .anyMatch(extraction -> extraction.getStatus() != OcrExtraction.Status.READY)) {
+
+        boolean isMissingExtractionMapping = questionBankIdByExtractionId.size()
+            != extractionIds.size();
+        boolean hasUncorrectedExtraction = documentExtractions.stream()
+            .anyMatch(extraction -> extraction.getStatus() != OcrExtraction.Status.READY);
+        if (isMissingExtractionMapping || hasUncorrectedExtraction) {
             throw new InvalidReviewRequest("Correct all OCR pages and assign each one before submitting.");
         }
-        return result;
+        return questionBankIdByExtractionId;
     }
 
     private static void requirePositive(Long value, String field) {
@@ -556,49 +829,94 @@ public class MarkingReviewService {
     }
 
     private List<Submission.DiagnosticEvidenceInput> diagnosticInputs(
-        Submission submission, List<DiagnosticEvidenceRequest> evidence
+        Submission submission,
+        List<DiagnosticEvidenceRequest> evidence
     ) {
         if (evidence == null) {
-            return submission.getApprovedDiagnosticEvidence().stream().map(item -> new Submission.DiagnosticEvidenceInput(
-                item.getSyllabusTopicId(), item.getMistakeType(), item.getDescription(), item.getMissingKeywords()
-            )).toList();
+            return submission.getApprovedDiagnosticEvidence()
+                .stream()
+                .map(item -> new Submission.DiagnosticEvidenceInput(
+                    item.getSyllabusTopicId(),
+                    item.getMistakeType(),
+                    item.getDescription(),
+                    item.getMissingKeywords()
+                ))
+                .toList();
         }
-        return evidence.stream().map(item -> {
-            if (item == null || item.mistakeType() == null || item.description() == null || item.description().isBlank()) {
-                throw new InvalidReviewRequest("Each diagnostic evidence item requires a mistake type and description.");
-            }
-            if (item.category() != null && item.category() != item.mistakeType().getDiagnosticCategory()) {
-                throw new InvalidReviewRequest("Diagnostic category does not match the selected mistake type.");
-            }
-            if (item.missingKeywords() != null && item.missingKeywords().stream().anyMatch(
-                keyword -> keyword == null || keyword.isBlank()
-            )) {
-                throw new InvalidReviewRequest("Diagnostic keywords cannot be blank.");
-            }
-            return new Submission.DiagnosticEvidenceInput(
-                submission.getSyllabusTopicId(), item.mistakeType(), item.description(), item.missingKeywords()
-            );
-        }).toList();
+        return evidence.stream()
+            .map(item -> diagnosticInput(submission, item))
+            .toList();
     }
 
-    private static boolean sameDiagnosticEvidence(Submission submission, List<Submission.DiagnosticEvidenceInput> requested) {
-        List<com.fttranscendence.grading.model.ApprovedDiagnosticEvidence> existing = submission.getApprovedDiagnosticEvidence();
-        if (existing.size() != requested.size()) return false;
-        for (int index = 0; index < existing.size(); index++) {
-            var stored = existing.get(index);
-            var incoming = requested.get(index);
-            if (!stored.getSyllabusTopicId().equals(incoming.syllabusTopicId())
-                || stored.getMistakeType() != incoming.mistakeType()
-                || !stored.getDescription().equals(incoming.description().trim())
-                || !stored.getMissingKeywords().equals(normalizeKeywords(incoming.missingKeywords()))) return false;
+    private Submission.DiagnosticEvidenceInput diagnosticInput(
+        Submission submission,
+        DiagnosticEvidenceRequest evidence
+    ) {
+        boolean hasRequiredFields = evidence != null
+            && evidence.mistakeType() != null
+            && evidence.description() != null
+            && !evidence.description().isBlank();
+        if (!hasRequiredFields) {
+            throw new InvalidReviewRequest(
+                "Each diagnostic evidence item requires a mistake type and description."
+            );
+        }
+        if (evidence.category() != null
+            && evidence.category() != evidence.mistakeType().getDiagnosticCategory()) {
+            throw new InvalidReviewRequest(
+                "Diagnostic category does not match the selected mistake type."
+            );
+        }
+
+        boolean hasBlankKeyword = evidence.missingKeywords() != null
+            && evidence.missingKeywords().stream()
+                .anyMatch(keyword -> keyword == null || keyword.isBlank());
+        if (hasBlankKeyword) {
+            throw new InvalidReviewRequest("Diagnostic keywords cannot be blank.");
+        }
+        return new Submission.DiagnosticEvidenceInput(
+            submission.getSyllabusTopicId(),
+            evidence.mistakeType(),
+            evidence.description(),
+            evidence.missingKeywords()
+        );
+    }
+
+    private static boolean sameDiagnosticEvidence(
+        Submission submission,
+        List<Submission.DiagnosticEvidenceInput> requestedEvidence
+    ) {
+        List<com.fttranscendence.grading.model.ApprovedDiagnosticEvidence> existingEvidence =
+            submission.getApprovedDiagnosticEvidence();
+        if (existingEvidence.size() != requestedEvidence.size()) {
+            return false;
+        }
+        for (int index = 0; index < existingEvidence.size(); index++) {
+            var storedEvidence = existingEvidence.get(index);
+            var requestedItem = requestedEvidence.get(index);
+            boolean matchesStoredEvidence = storedEvidence.getSyllabusTopicId()
+                .equals(requestedItem.syllabusTopicId())
+                && storedEvidence.getMistakeType() == requestedItem.mistakeType()
+                && storedEvidence.getDescription().equals(requestedItem.description().trim())
+                && storedEvidence.getMissingKeywords()
+                    .equals(normalizeKeywords(requestedItem.missingKeywords()));
+            if (!matchesStoredEvidence) {
+                return false;
+            }
         }
         return true;
     }
 
     private static List<String> normalizeKeywords(List<String> values) {
-        if (values == null) return List.of();
-        return values.stream().filter(java.util.Objects::nonNull).map(String::trim)
-            .filter(value -> !value.isBlank()).distinct().toList();
+        if (values == null) {
+            return List.of();
+        }
+        return values.stream()
+            .filter(java.util.Objects::nonNull)
+            .map(String::trim)
+            .filter(value -> !value.isBlank())
+            .distinct()
+            .toList();
     }
 
     private void enqueueMasterySync(Submission submission, long tutorUserId, String state) {
