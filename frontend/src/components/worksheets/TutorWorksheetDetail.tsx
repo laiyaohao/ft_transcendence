@@ -61,9 +61,17 @@ export default function TutorWorksheetDetail({ worksheet, approve = approveWorks
   const [dueAt, setDueAt] = React.useState(datetimeLocal(worksheet.dueAt));
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
+  const [approvalConfirmed, setApprovalConfirmed] = React.useState(false);
+  const approvalInProgress = React.useRef(false);
   const [questionBank, setQuestionBank] = React.useState<QuestionBankItem[] | null>(null);
   const [loadingQuestionBank, setLoadingQuestionBank] = React.useState(false);
   const [replacingQuestionId, setReplacingQuestionId] = React.useState<number | null>(null);
+
+  React.useEffect(() => {
+    if (!approvalConfirmed) return;
+    const dismissConfirmation = window.setTimeout(() => setApprovalConfirmed(false), 3600);
+    return () => window.clearTimeout(dismissConfirmation);
+  }, [approvalConfirmed]);
 
   const resetForm = React.useCallback((value: TutorWorksheet) => {
     setTitle(value.title);
@@ -80,7 +88,27 @@ export default function TutorWorksheetDetail({ worksheet, approve = approveWorks
       setError(caught instanceof Error ? caught.message : "Worksheet could not be updated.");
     } finally { setBusy(false); }
   };
-  const approveDraft = () => run(() => approve(current.id, dueAt || undefined));
+  const approveDraft = async () => {
+    if (current.status !== "DRAFT" || approvalInProgress.current) return;
+
+    approvalInProgress.current = true;
+    setBusy(true);
+    setError(null);
+    setApprovalConfirmed(false);
+
+    try {
+      const approvedWorksheet = await approve(current.id, dueAt || undefined);
+      setCurrent(approvedWorksheet);
+      resetForm(approvedWorksheet);
+      setEditing(false);
+      setApprovalConfirmed(true);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Worksheet could not be approved.");
+    } finally {
+      approvalInProgress.current = false;
+      setBusy(false);
+    }
+  };
   const saveDraft = () => run(() => update(current.id, { title: title.trim(), instructions: instructions.trim() || null, questionIds } satisfies UpdateWorksheetRequest));
   const moveQuestion = (index: number, direction: -1 | 1) => {
     const destination = index + direction;
@@ -168,6 +196,7 @@ export default function TutorWorksheetDetail({ worksheet, approve = approveWorks
     {current.status === "ARCHIVED" && <Box role="status" sx={{ bgcolor: "#F6EFE6", borderLeft: "3px solid #B4573F", borderRadius: "0 10px 10px 0", p: 1.5, mb: 2.5, color: "#5A544C", fontSize: 13 }}>This worksheet is archived and remains available as a read-only record.</Box>}
     {editable && current.questions.length === 0 && <Box role="status" sx={{ bgcolor: "#F6EFE6", borderLeft: "3px solid #B4573F", borderRadius: "0 10px 10px 0", p: 1.5, mb: 2.5, color: "#5A544C", fontSize: 13 }}>Add at least one question before approval can assign this worksheet.</Box>}
     {error && <Box role="alert" sx={{ bgcolor: "#F6EFE6", borderLeft: "3px solid #B4573F", borderRadius: "0 10px 10px 0", p: 1.5, mb: 2.5, color: "#5A544C", fontSize: 13 }}>{error}</Box>}
+    {approvalConfirmed && <Box role="status" aria-live="polite" aria-atomic="true" sx={{ position: "fixed", bottom: 26, left: "50%", transform: "translateX(-50%)", zIndex: 90, maxWidth: "92vw", bgcolor: "#1B1917", color: "#F4EFE6", borderRadius: "11px", px: 2.75, py: 1.75, boxShadow: "0 12px 34px rgba(42,38,34,.28)", fontSize: 13.5 }}>Worksheet Sent to Students</Box>}
     {editing && editable && <Card component="section" variant="outlined" sx={{ ...lightCard, p: { xs: 2, sm: 3 }, mb: 2.5 }}>
       <Typography component="h2" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 23, mb: 0.5 }}>Edit generated draft</Typography>
       <Typography sx={{ color: "#6F675E", fontSize: 13, mb: 2 }}>Change the content and question order before the Tutor approves assignment.</Typography>

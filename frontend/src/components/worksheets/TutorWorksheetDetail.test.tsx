@@ -1,6 +1,7 @@
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { TutorWorksheet } from "@/services/worksheets";
 import TutorWorksheetDetail from "./TutorWorksheetDetail";
 
 const draft = {
@@ -28,8 +29,37 @@ describe("TutorWorksheetDetail", () => {
     await userEvent.setup().click(screen.getByRole("button", { name: "Approve & assign worksheet" }));
     expect(approve).toHaveBeenCalledWith(1, undefined);
     expect(await screen.findByText("ASSIGNED")).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent("Worksheet Sent to Students");
     expect(screen.getByRole("link", { name: "Upload student work" })).toHaveAttribute("href", "/upload?worksheetId=1");
     expect(screen.getByRole("link", { name: "Enter result manually" })).toHaveAttribute("href", "/tutor/worksheets/1/results/new");
+  });
+
+  it("shows an approval error instead of the sent confirmation when assignment fails", async () => {
+    const approve = vi.fn().mockRejectedValue(new Error("Assignment service is unavailable."));
+    render(<TutorWorksheetDetail worksheet={draft} approve={approve} />);
+
+    await userEvent.setup().click(screen.getByRole("button", { name: "Approve & assign worksheet" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Assignment service is unavailable.");
+    expect(screen.queryByText("Worksheet Sent to Students")).not.toBeInTheDocument();
+  });
+
+  it("submits detail approval once while the request is pending", async () => {
+    let resolveApproval: (worksheet: TutorWorksheet) => void;
+    const approvalPending = new Promise<TutorWorksheet>((resolve) => { resolveApproval = resolve; });
+    const approve = vi.fn().mockReturnValue(approvalPending);
+    render(<TutorWorksheetDetail worksheet={draft} approve={approve} />);
+
+    const approveButton = screen.getByRole("button", { name: "Approve & assign worksheet" });
+    fireEvent.click(approveButton);
+    fireEvent.click(approveButton);
+    expect(approve).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Worksheet Sent to Students")).not.toBeInTheDocument();
+
+    await act(async () => {
+      resolveApproval!({ ...draft, status: "APPROVED", assignments: [{ id: 4, assignmentType: "CLASS", classId: 3, studentProfileId: null, assignedAt: "2026-08-27T10:00:00", dueAt: null }] });
+    });
+    expect(screen.getByRole("status")).toHaveTextContent("Worksheet Sent to Students");
   });
 
   it("edits a draft and wires approved PDF export", async () => {

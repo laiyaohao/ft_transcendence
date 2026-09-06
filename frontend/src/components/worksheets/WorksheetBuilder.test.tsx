@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -105,6 +105,43 @@ describe("WorksheetBuilder", () => {
     expect(generate).toHaveBeenCalledWith(1, expect.objectContaining({ topicIds: [4], questionType: "OPEN_ENDED", difficulty: "CHALLENGE" }), expect.any(String));
     await user.click(screen.getByRole("button", { name: "Approve & assign worksheet" }));
     expect(approve).toHaveBeenCalledWith(9, undefined);
+    expect(await screen.findByRole("status")).toHaveTextContent("Worksheet Sent to Students");
+  });
+
+  it("shows an approval error instead of the sent confirmation when the assignment fails", async () => {
+    const user = userEvent.setup();
+    const generate = vi.fn().mockResolvedValue({ id: 1, status: "SUCCEEDED", message: "Ready", worksheet: { id: 9, code: "GEN-9", title: "Water drill", instructions: null, targetMode: "CLASS", status: "DRAFT", dueAt: null, questions: [{ id: 2, code: "Q", prompt: "Explain evaporation.", totalMarks: 2, questionType: "OPEN_ENDED", topicName: "Water" }], assignments: [] } });
+    const approve = vi.fn().mockRejectedValue(new Error("Assignment service is unavailable."));
+    render(<WorksheetBuilder generate={generate} approve={approve} loadClasses={async () => classes} loadSyllabus={async () => syllabus} loadQuestions={questions} />);
+
+    await chooseClass(user); await continueToConfiguration(user);
+    await user.click(screen.getByRole("button", { name: "Generate worksheet draft" }));
+    await user.click(await screen.findByRole("button", { name: "Approve & assign worksheet" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Assignment service is unavailable.");
+    expect(screen.queryByText("Worksheet Sent to Students")).not.toBeInTheDocument();
+  });
+
+  it("submits builder approval once while the request is pending", async () => {
+    const user = userEvent.setup();
+    const generate = vi.fn().mockResolvedValue({ id: 1, status: "SUCCEEDED", message: "Ready", worksheet: { id: 9, code: "GEN-9", title: "Water drill", instructions: null, targetMode: "CLASS", status: "DRAFT", dueAt: null, questions: [{ id: 2, code: "Q", prompt: "Explain evaporation.", totalMarks: 2, questionType: "OPEN_ENDED", topicName: "Water" }], assignments: [] } });
+    let resolveApproval: (worksheet: { id: number; code: string; title: string; instructions: null; targetMode: "CLASS"; status: "APPROVED"; dueAt: null; questions: []; assignments: [] }) => void;
+    const approvalPending = new Promise<{ id: number; code: string; title: string; instructions: null; targetMode: "CLASS"; status: "APPROVED"; dueAt: null; questions: []; assignments: [] }>((resolve) => { resolveApproval = resolve; });
+    const approve = vi.fn().mockReturnValue(approvalPending);
+    render(<WorksheetBuilder generate={generate} approve={approve} loadClasses={async () => classes} loadSyllabus={async () => syllabus} loadQuestions={questions} />);
+
+    await chooseClass(user); await continueToConfiguration(user);
+    await user.click(screen.getByRole("button", { name: "Generate worksheet draft" }));
+    const approveButton = await screen.findByRole("button", { name: "Approve & assign worksheet" });
+    fireEvent.click(approveButton);
+    fireEvent.click(approveButton);
+    expect(approve).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Worksheet Sent to Students")).not.toBeInTheDocument();
+
+    await act(async () => {
+      resolveApproval!({ id: 9, code: "GEN-9", title: "Water drill", instructions: null, targetMode: "CLASS", status: "APPROVED", dueAt: null, questions: [], assignments: [] });
+    });
+    expect(screen.getByRole("status")).toHaveTextContent("Worksheet Sent to Students");
   });
 
   it("loads class-filtered students, requires a student selection, and presents diagnostics as a suggestion", async () => {
