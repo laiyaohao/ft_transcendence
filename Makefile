@@ -219,12 +219,16 @@ help:
 	@echo "fclean also runs a broad Docker system prune; use it deliberately."
 
 .PHONY: all \
-	compose-config compose-build compose-up compose-ps compose-logs compose-down compose-restart compose-reset \
+	compose-config compose-build compose-up compose-ps compose-logs compose-down \
+	compose-restart compose-reset \
 	build up down clean re fclean \
 	deps frontend-deps frontend-lint frontend-typecheck frontend-test frontend-build \
 	backend-auth-test backend-grading-test backend-learning-test \
-	backend-auth-build backend-grading-build backend-learning-build backend-test backend-build test test-integration \
+	backend-auth-build backend-grading-build backend-learning-build backend-test \
+	backend-build test test-integration \
 	ci-frontend ci-backend security-audit ci-compose ci \
-	e2e-config e2e-build e2e-up e2e-test e2e-chrome e2e-chrome-linux e2e-down e2e-reset e2e \
-	production-config production-secrets vm-tls production-build production-up production-ps production-logs production-down production-restart production-reset \
+	e2e-config e2e-build e2e-up e2e-test e2e-chrome e2e-chrome-linux e2e-down \
+	e2e-reset e2e \
+	production-config production-secrets vm-tls production-build production-up \
+	production-ps production-logs production-down production-restart production-reset \
 	help

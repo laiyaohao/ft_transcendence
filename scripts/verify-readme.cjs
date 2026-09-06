@@ -44,13 +44,19 @@ function withoutFencedCode(markdown) {
 function localLinkTargets(markdown) {
   const targets = [];
   const expression = /!?\[[^\]]*\]\(([^)\s]+)(?:\s+[^)]*)?\)/g;
+
   for (const match of markdown.matchAll(expression)) {
     const target = match[1].replace(/^<|>$/g, "");
-    if (!target || target.startsWith("#") || /^(?:https?:|mailto:|tel:)/i.test(target)) {
+    const isFragmentLink = target.startsWith("#");
+    const isExternalLink = /^(?:https?:|mailto:|tel:)/i.test(target);
+
+    if (!target || isFragmentLink || isExternalLink) {
       continue;
     }
+
     targets.push(target);
   }
+
   return targets;
 }
 
@@ -61,8 +67,13 @@ function targetPath(target) {
 function validateLocalLinks(markdown, sourceDirectory, errors, label = "") {
   for (const target of localLinkTargets(markdown)) {
     const relative = targetPath(target);
-    if (!relative) continue;
+
+    if (!relative) {
+      continue;
+    }
+
     const resolved = path.resolve(sourceDirectory, relative);
+
     if (!fs.existsSync(resolved)) {
       errors.push(`broken local link${label}: ${target}`);
     }
@@ -77,27 +88,40 @@ function findModuleRows(markdown, errors) {
     return [];
   }
 
-  const lines = markdown.slice(start, end).split("\n").filter((line) => line.trim().startsWith("|"));
-  if (lines.length < 3) {
+  const scorecardSection = markdown.slice(start, end);
+  const tableLines = scorecardSection
+    .split("\n")
+    .filter((line) => line.trim().startsWith("|"));
+
+  if (tableLines.length < 3) {
     errors.push("module scorecard needs a header, separator, and at least one row");
     return [];
   }
 
-  return lines.slice(2).map((line, index) => {
-    const cells = line.trim().split("|").slice(1, -1).map((cell) => cell.trim());
-    if (cells.length !== 6) {
-      errors.push(`module scorecard row ${index + 1} must contain six columns`);
-      return null;
-    }
-    return {
-      catalogueId: cells[0],
-      title: cells[1],
-      points: Number(cells[2]),
-      implementation: cells[3],
-      test: cells[4],
-      status: cells[5].toUpperCase(),
-    };
-  }).filter(Boolean);
+  return tableLines
+    .slice(2)
+    .map((line, index) => {
+      const cells = line
+        .trim()
+        .split("|")
+        .slice(1, -1)
+        .map((cell) => cell.trim());
+
+      if (cells.length !== 6) {
+        errors.push(`module scorecard row ${index + 1} must contain six columns`);
+        return null;
+      }
+
+      return {
+        catalogueId: cells[0],
+        title: cells[1],
+        points: Number(cells[2]),
+        implementation: cells[3],
+        test: cells[4],
+        status: cells[5].toUpperCase(),
+      };
+    })
+    .filter(Boolean);
 }
 
 function verifyEvidenceCell(value, label, errors) {
@@ -108,7 +132,8 @@ function verifyEvidenceCell(value, label, errors) {
 }
 
 function parseDeclaredTotal(markdown, errors) {
-  const match = markdown.match(/\*\*Verified module total:\*\*\s*`?(\d+)\s*\/\s*14`?/i);
+  const totalPattern = /\*\*Verified module total:\*\*\s*`?(\d+)\s*\/\s*14`?/i;
+  const match = markdown.match(totalPattern);
   if (!match) {
     errors.push("missing 'Verified module total: N / 14' declaration");
     return null;
@@ -136,14 +161,19 @@ function validateReadme(markdown, rootDirectory) {
   validateLocalLinks(markdown, rootDirectory, errors);
 
   const rows = findModuleRows(markdown, errors);
-  const catalogueStatus = (markdown.match(/\*\*Module catalogue status:\*\*\s*`?(VERIFIED|BLOCKED)`?/i) || [])[1];
+  const statusPattern = /\*\*Module catalogue status:\*\*\s*`?(VERIFIED|BLOCKED)`?/i;
+  const statusMatch = markdown.match(statusPattern);
+  const catalogueStatus = statusMatch ? statusMatch[1] : undefined;
+
   if (!catalogueStatus) {
     errors.push("missing module catalogue status");
   }
 
   let verifiedTotal = 0;
   for (const row of rows) {
-    if (!Number.isInteger(row.points) || row.points < 0) {
+    const hasValidPointValue = Number.isInteger(row.points) && row.points >= 0;
+
+    if (!hasValidPointValue) {
       errors.push(`invalid point value for module '${row.title}'`);
       continue;
     }
@@ -152,10 +182,16 @@ function validateReadme(markdown, rootDirectory) {
       continue;
     }
     if (row.status === "VERIFIED") {
-      if (row.points === 0 || row.catalogueId === "N/A") {
+      const hasCatalogueEvidence = row.points > 0 && row.catalogueId !== "N/A";
+
+      if (!hasCatalogueEvidence) {
         errors.push(`verified module '${row.title}' needs a catalogue ID and positive points`);
       }
-      verifyEvidenceCell(row.implementation, `implementation for '${row.title}'`, errors);
+      verifyEvidenceCell(
+        row.implementation,
+        `implementation for '${row.title}'`,
+        errors,
+      );
       verifyEvidenceCell(row.test, `test for '${row.title}'`, errors);
       verifiedTotal += row.points;
     } else if (row.points !== 0) {
@@ -165,22 +201,33 @@ function validateReadme(markdown, rootDirectory) {
 
   const declaredTotal = parseDeclaredTotal(markdown, errors);
   if (declaredTotal !== null && declaredTotal !== verifiedTotal) {
-    errors.push(`declared module total ${declaredTotal} does not equal evidence total ${verifiedTotal}`);
+    errors.push(
+      `declared module total ${declaredTotal} does not equal evidence total ${verifiedTotal}`,
+    );
   }
   if (catalogueStatus === "BLOCKED") {
-    if (verifiedTotal !== 0) errors.push("blocked catalogue status cannot contain verified points");
+    if (verifiedTotal !== 0) {
+      errors.push("blocked catalogue status cannot contain verified points");
+    }
     warnings.push("module point validation is blocked until the official catalogue is added");
   }
 
   const quickStartHeading = /^##\s+Clean-checkout quick start[ \t]*$/mi.exec(markdown);
   let quickStart = "";
+
   if (quickStartHeading) {
-    const following = markdown.slice(quickStartHeading.index + quickStartHeading[0].length);
+    const following = markdown.slice(
+      quickStartHeading.index + quickStartHeading[0].length,
+    );
     const nextHeading = following.search(/^##\s+/m);
+
     quickStart = nextHeading < 0 ? following : following.slice(0, nextHeading);
   }
+
   for (const command of ["make deps", "make compose-config", "make compose-up"]) {
-    if (!quickStart.includes(command)) errors.push(`clean-checkout instructions omit '${command}'`);
+    if (!quickStart.includes(command)) {
+      errors.push(`clean-checkout instructions omit '${command}'`);
+    }
   }
 
   return { errors, warnings, verifiedTotal, catalogueStatus };
@@ -189,6 +236,7 @@ function validateReadme(markdown, rootDirectory) {
 function validateRepository(rootDirectory) {
   const readme = fs.readFileSync(path.join(rootDirectory, "README.md"), "utf8");
   const result = validateReadme(readme, rootDirectory);
+
   for (const relativePath of [
     "docs/architecture.md",
     "docs/database-schema.md",
@@ -199,6 +247,7 @@ function validateRepository(rootDirectory) {
       result.errors.push(`required documentation file is missing: ${relativePath}`);
       continue;
     }
+
     validateLocalLinks(
       fs.readFileSync(absolutePath, "utf8"),
       path.dirname(absolutePath),
@@ -215,17 +264,33 @@ function run() {
   const result = validateRepository(rootDirectory);
 
   if (requireFourteen && result.verifiedTotal < 14) {
-    result.errors.push(`at least 14 verified module points are required; found ${result.verifiedTotal}`);
+    result.errors.push(
+      `at least 14 verified module points are required; found ${result.verifiedTotal}`,
+    );
   }
-  for (const warning of result.warnings) console.warn(`warning: ${warning}`);
+
+  for (const warning of result.warnings) {
+    console.warn(`warning: ${warning}`);
+  }
+
   if (result.errors.length > 0) {
-    for (const error of result.errors) console.error(`error: ${error}`);
+    for (const error of result.errors) {
+      console.error(`error: ${error}`);
+    }
+
     process.exitCode = 1;
     return;
   }
-  console.log(`README evidence validated: ${result.verifiedTotal} verified module point(s); catalogue ${result.catalogueStatus}.`);
+
+  console.log(
+    "README evidence validated: " +
+      `${result.verifiedTotal} verified module point(s); ` +
+      `catalogue ${result.catalogueStatus}.`,
+  );
 }
 
-if (require.main === module) run();
+if (require.main === module) {
+  run();
+}
 
 module.exports = { REQUIRED_HEADINGS, validateReadme, validateRepository };

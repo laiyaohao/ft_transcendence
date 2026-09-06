@@ -13,12 +13,12 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 
-import java.security.Key;
 import java.nio.charset.StandardCharsets;
+import java.security.Key;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.Map;
 import java.util.Locale;
+import java.util.Map;
 import java.util.function.Function;
 
 @Service
@@ -31,10 +31,13 @@ public class JwtService {
 
   @PostConstruct
   void validateConfiguration() {
-    if (!isUsableSecret(secretKey)) {
+    boolean hasUsableSecret = isUsableSecret(secretKey);
+    if (!hasUsableSecret) {
       throw new IllegalArgumentException("JWT_SECRET must contain at least 32 non-placeholder bytes");
     }
-    if (jwtExpiration == null || jwtExpiration <= 0) {
+
+    boolean hasPositiveExpiration = jwtExpiration != null && jwtExpiration > 0;
+    if (!hasPositiveExpiration) {
       throw new IllegalArgumentException("JWT_EXPIRATION_MS must be positive");
     }
   }
@@ -69,11 +72,20 @@ public class JwtService {
   }
 
   public String generateToken(Map<String, Object> extraClaims, UserDetails userDetails) {
-    if (!(userDetails instanceof User user)
-        || user.getRole() == null
-        || user.getId() <= 0) {
+    if (!(userDetails instanceof User user)) {
       throw new IllegalArgumentException("A persisted user identity and role are required to issue a token");
     }
+
+    boolean hasRole = user.getRole() != null;
+    if (!hasRole) {
+      throw new IllegalArgumentException("A persisted user identity and role are required to issue a token");
+    }
+
+    boolean hasPersistedId = user.getId() > 0;
+    if (!hasPersistedId) {
+      throw new IllegalArgumentException("A persisted user identity and role are required to issue a token");
+    }
+
     Map<String, Object> claims = new HashMap<>(extraClaims);
     claims.put("role", user.getRole().name());
     claims.put("userId", user.getId());
@@ -89,16 +101,35 @@ public class JwtService {
 
   public boolean isTokenValid(String token, UserDetails userDetails) {
     try {
-      if (!(userDetails instanceof User user) || user.getRole() == null) {
+      if (!(userDetails instanceof User user)) {
         return false;
       }
+
+      boolean hasRole = user.getRole() != null;
+      if (!hasRole) {
+        return false;
+      }
+
       final String email = extractEmail(token);
       final UserRole role = extractRole(token);
       final long userId = extractUserId(token);
-      return email.equalsIgnoreCase(userDetails.getUsername())
-          && role == user.getRole()
-          && userId == user.getId()
-          && !isTokenExpired(token);
+
+      boolean hasMatchingEmail = email.equalsIgnoreCase(userDetails.getUsername());
+      if (!hasMatchingEmail) {
+        return false;
+      }
+
+      boolean hasMatchingRole = role == user.getRole();
+      if (!hasMatchingRole) {
+        return false;
+      }
+
+      boolean hasMatchingUserId = userId == user.getId();
+      if (!hasMatchingUserId) {
+        return false;
+      }
+
+      return !isTokenExpired(token);
     } catch (JwtException | IllegalArgumentException ex) {
       return false;
     }

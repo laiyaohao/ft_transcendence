@@ -17,8 +17,17 @@ public class AuthUserDetailsService implements UserDetailsService {
 
   @Override
   public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
-    String normalizedEmail = email.trim().toLowerCase(Locale.ROOT);
+    String normalizedEmail = normalizeEmail(email);
+
     return userRepository.findByEmail(normalizedEmail)
-        .orElseThrow(() -> new UsernameNotFoundException("User not found with email: " + email));
+        .orElseThrow(() -> userNotFound(email));
+  }
+
+  private String normalizeEmail(String email) {
+    return email.trim().toLowerCase(Locale.ROOT);
+  }
+
+  private UsernameNotFoundException userNotFound(String email) {
+    return new UsernameNotFoundException("User not found with email: " + email);
   }
 }

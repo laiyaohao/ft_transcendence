@@ -11,11 +11,12 @@ import java.util.Map;
 @RequestMapping("/actuator")
 public class HealthController {
 
-  @GetMapping("/health")
-  public Map<String, String> healthCheck() {
-    Map<String, String> status = new HashMap<>();
-    status.put("status", "UP");
-    status.put("service", "auth-service");
-    return status;
-  }
+    @GetMapping("/health")
+    public Map<String, String> healthCheck() {
+        Map<String, String> healthStatus = new HashMap<>();
+        healthStatus.put("status", "UP");
+        healthStatus.put("service", "auth-service");
+
+        return healthStatus;
+    }
 }

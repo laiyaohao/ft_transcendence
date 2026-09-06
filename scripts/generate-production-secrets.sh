@@ -1,10 +1,10 @@
 #!/bin/sh
 set -eu
 
-secrets_path="${1:-../secrets.txt}"
+secrets_file="${1:-../secrets.txt}"
 
-if [ -e "$secrets_path" ] || [ -L "$secrets_path" ]; then
-  echo "Refusing to overwrite existing secrets file: $secrets_path" >&2
+if [ -e "$secrets_file" ] || [ -L "$secrets_file" ]; then
+  echo "Refusing to overwrite existing secrets file: $secrets_file" >&2
   exit 1
 fi
 
@@ -19,7 +19,7 @@ umask 077
   printf '%s\n' 'BOOTSTRAP_TUTOR_EMAIL=admin@lumina.sg'
   printf '%s\n' 'BOOTSTRAP_TUTOR_FULL_NAME="Lumina Administrator"'
   printf '%s\n' 'AI_ENGINE_API_KEY=REPLACE_WITH_AN_APPROVED_AI_PROVIDER_KEY'
-} > "$secrets_path"
+} > "$secrets_file"
 
-chmod 600 "$secrets_path"
-echo "Created $secrets_path with owner-only permissions."
+chmod 600 "$secrets_file"
+echo "Created $secrets_file with owner-only permissions."

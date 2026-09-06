@@ -3,6 +3,7 @@ package com.fttranscendence.authservice.config;
 
 import com.fttranscendence.authservice.security.JwtAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -14,17 +15,16 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.UserDetailsService;
-import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
 
 import java.util.Arrays;
 import java.util.List;
@@ -44,8 +44,13 @@ public class SecurityConfig {
         .cors(cors -> {})
         .csrf(AbstractHttpConfigurer::disable)
         .authorizeHttpRequests(auth -> auth
-            .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login").permitAll()
-            .requestMatchers(HttpMethod.GET, "/api/auth/tutor/students").hasRole("TUTOR")
+            .requestMatchers(
+                HttpMethod.POST,
+                "/api/auth/register",
+                "/api/auth/login")
+            .permitAll()
+            .requestMatchers(HttpMethod.GET, "/api/auth/tutor/students")
+            .hasRole("TUTOR")
             .requestMatchers("/actuator/health").permitAll() // Container health check only
             .anyRequest().denyAll() // Each exposed route must be explicitly allowed
         )
@@ -79,7 +84,8 @@ public class SecurityConfig {
 
   @Bean
   public CorsConfigurationSource corsConfigurationSource(
-      @Value("${security.cors.allowed-origins:http://localhost:3000}") String configuredOrigins) {
+      @Value("${security.cors.allowed-origins:http://localhost:3000}")
+      String configuredOrigins) {
     CorsConfiguration configuration = new CorsConfiguration();
 
     List<String> allowedOrigins = Arrays.stream(configuredOrigins.split(","))
@@ -92,9 +98,19 @@ public class SecurityConfig {
     }
 
     configuration.setAllowedOrigins(allowedOrigins);
-    configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+    configuration.setAllowedMethods(List.of(
+        "GET",
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE",
+        "OPTIONS"));
     configuration.setAllowedHeaders(List.of(
-        HttpHeaders.AUTHORIZATION, HttpHeaders.CONTENT_TYPE, HttpHeaders.ACCEPT, "X-Requested-With", "Idempotency-Key"));
+        HttpHeaders.AUTHORIZATION,
+        HttpHeaders.CONTENT_TYPE,
+        HttpHeaders.ACCEPT,
+        "X-Requested-With",
+        "Idempotency-Key"));
     // Tokens are sent in Authorization headers; cross-origin cookies are not used.
     configuration.setAllowCredentials(false);
     configuration.setMaxAge(3600L);

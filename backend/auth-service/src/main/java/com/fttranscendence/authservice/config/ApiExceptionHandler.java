@@ -12,20 +12,24 @@ import java.util.Map;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
-  @ExceptionHandler(ResponseStatusException.class)
-  public ResponseEntity<Map<String, String>> handleResponseStatusException(ResponseStatusException ex) {
-    return ResponseEntity.status(ex.getStatusCode()).body(Map.of("message", ex.getReason()));
-  }
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<Map<String, String>> handleResponseStatusException(
+            ResponseStatusException exception) {
+        return ResponseEntity.status(exception.getStatusCode())
+                .body(Map.of("message", exception.getReason()));
+    }
 
-  @ExceptionHandler(DataIntegrityViolationException.class)
-  public ResponseEntity<Map<String, String>> handleDataIntegrityViolation(DataIntegrityViolationException ex) {
-    return ResponseEntity.status(HttpStatus.CONFLICT)
-        .body(Map.of("message", "Email already registered"));
-  }
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<Map<String, String>> handleDataIntegrityViolation(
+            DataIntegrityViolationException exception) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(Map.of("message", "Email already registered"));
+    }
 
-  @ExceptionHandler(AuthenticationException.class)
-  public ResponseEntity<Map<String, String>> handleAuthenticationException(AuthenticationException ex) {
-    return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-        .body(Map.of("message", "Invalid email or password"));
-  }
+    @ExceptionHandler(AuthenticationException.class)
+    public ResponseEntity<Map<String, String>> handleAuthenticationException(
+            AuthenticationException exception) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(Map.of("message", "Invalid email or password"));
+    }
 }

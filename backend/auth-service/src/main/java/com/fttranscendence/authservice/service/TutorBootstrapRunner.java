@@ -16,7 +16,14 @@ import java.util.regex.Pattern;
 @Component
 public class TutorBootstrapRunner implements ApplicationRunner {
 
-    private static final Pattern EMAIL = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
+    private static final int MAXIMUM_EMAIL_LENGTH = 254;
+    private static final int MINIMUM_FULL_NAME_LENGTH = 2;
+    private static final int MAXIMUM_FULL_NAME_LENGTH = 100;
+    private static final int MINIMUM_PASSWORD_LENGTH = 12;
+    private static final int MAXIMUM_PASSWORD_LENGTH = 128;
+
+    private static final Pattern EMAIL_PATTERN =
+        Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
     private static final Pattern STRONG_PASSWORD = Pattern.compile(
         "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[^A-Za-z0-9]).+$"
     );
@@ -42,43 +49,106 @@ public class TutorBootstrapRunner implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
-        boolean anyConfigured = StringUtils.hasText(email)
-            || StringUtils.hasText(password)
-            || StringUtils.hasText(fullName);
-        if (!anyConfigured) {
+        if (!hasAnyBootstrapValue()) {
             return;
         }
-        if (!StringUtils.hasText(email)
-                || !StringUtils.hasText(password)
-                || !StringUtils.hasText(fullName)) {
-            throw new IllegalStateException("All Tutor bootstrap values must be supplied together");
-        }
 
-        String normalizedEmail = email.trim().toLowerCase(Locale.ROOT);
-        String normalizedName = fullName.trim();
-        if (normalizedEmail.length() > 254 || !EMAIL.matcher(normalizedEmail).matches()) {
+        requireCompleteBootstrapConfiguration();
+
+        String normalizedEmail = normalizeEmail(email);
+        String normalizedFullName = fullName.trim();
+        validateBootstrapValues(normalizedEmail, normalizedFullName);
+
+        userRepository.findByEmail(normalizedEmail).ifPresentOrElse(
+            this::validateExistingAccount,
+            () -> createTutor(normalizedEmail, normalizedFullName)
+        );
+    }
+
+    private boolean hasAnyBootstrapValue() {
+        return StringUtils.hasText(email)
+            || StringUtils.hasText(password)
+            || StringUtils.hasText(fullName);
+    }
+
+    private void requireCompleteBootstrapConfiguration() {
+        boolean hasCompleteConfiguration = StringUtils.hasText(email)
+            && StringUtils.hasText(password)
+            && StringUtils.hasText(fullName);
+
+        if (!hasCompleteConfiguration) {
+            throw new IllegalStateException(
+                "All Tutor bootstrap values must be supplied together"
+            );
+        }
+    }
+
+    private String normalizeEmail(String bootstrapEmail) {
+        return bootstrapEmail.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private void validateBootstrapValues(
+        String normalizedEmail,
+        String normalizedFullName
+    ) {
+        validateEmail(normalizedEmail);
+        validateFullName(normalizedFullName);
+        validatePassword();
+    }
+
+    private void validateEmail(String normalizedEmail) {
+        boolean exceedsMaximumLength = normalizedEmail.length() > MAXIMUM_EMAIL_LENGTH;
+        boolean hasInvalidFormat = !EMAIL_PATTERN.matcher(normalizedEmail).matches();
+
+        if (exceedsMaximumLength || hasInvalidFormat) {
             throw new IllegalStateException("BOOTSTRAP_TUTOR_EMAIL is invalid");
         }
-        if (normalizedName.length() < 2 || normalizedName.length() > 100) {
-            throw new IllegalStateException("BOOTSTRAP_TUTOR_FULL_NAME must contain 2 to 100 characters");
+    }
+
+    private void validateFullName(String normalizedFullName) {
+        boolean isTooShort = normalizedFullName.length() < MINIMUM_FULL_NAME_LENGTH;
+        boolean isTooLong = normalizedFullName.length() > MAXIMUM_FULL_NAME_LENGTH;
+
+        if (isTooShort || isTooLong) {
+            throw new IllegalStateException(
+                "BOOTSTRAP_TUTOR_FULL_NAME must contain 2 to 100 characters"
+            );
         }
-        if (password.length() < 12
-                || password.length() > 128
-                || !STRONG_PASSWORD.matcher(password).matches()) {
-            throw new IllegalStateException("BOOTSTRAP_TUTOR_PASSWORD does not meet the password policy");
+    }
+
+    private void validatePassword() {
+        boolean isTooShort = password.length() < MINIMUM_PASSWORD_LENGTH;
+        boolean isTooLong = password.length() > MAXIMUM_PASSWORD_LENGTH;
+
+        if (isTooShort || isTooLong) {
+            throw new IllegalStateException(
+                "BOOTSTRAP_TUTOR_PASSWORD does not meet the password policy"
+            );
         }
 
-        userRepository.findByEmail(normalizedEmail).ifPresentOrElse(existing -> {
-            if (existing.getRole() != UserRole.TUTOR) {
-                throw new IllegalStateException("Tutor bootstrap email belongs to a non-Tutor account");
-            }
-        }, () -> {
-            User tutor = new User();
-            tutor.setEmail(normalizedEmail);
-            tutor.setPassword(passwordEncoder.encode(password));
-            tutor.setFullName(normalizedName);
-            tutor.setRole(UserRole.TUTOR);
-            userRepository.save(tutor);
-        });
+        boolean meetsComplexityRequirements = STRONG_PASSWORD.matcher(password).matches();
+        if (!meetsComplexityRequirements) {
+            throw new IllegalStateException(
+                "BOOTSTRAP_TUTOR_PASSWORD does not meet the password policy"
+            );
+        }
+    }
+
+    private void validateExistingAccount(User existingUser) {
+        if (existingUser.getRole() != UserRole.TUTOR) {
+            throw new IllegalStateException(
+                "Tutor bootstrap email belongs to a non-Tutor account"
+            );
+        }
+    }
+
+    private void createTutor(String normalizedEmail, String normalizedFullName) {
+        User tutor = new User();
+        tutor.setEmail(normalizedEmail);
+        tutor.setPassword(passwordEncoder.encode(password));
+        tutor.setFullName(normalizedFullName);
+        tutor.setRole(UserRole.TUTOR);
+
+        userRepository.save(tutor);
     }
 }
