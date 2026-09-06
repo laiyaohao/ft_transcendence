@@ -17,6 +17,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -121,6 +122,31 @@ class WorksheetGenerationTest {
             .toList();
         assertEquals(2, selectedCodes.size());
         assertTrue(selectedCodes.containsAll(List.of("SCI-ALL-01", "SCI-ALL-02")));
+    }
+
+    @Test
+    void failsOnlyWhenTheUnrestrictedTopicSelectorHasNoMatchingQuestions() {
+        TutorClass tutorClass = tutorClass();
+
+        WorksheetRequests.GenerationRequestResponse response = service.generate(
+            TUTOR_ID,
+            tutorClass.getId(),
+            "worksheet-no-matches-key",
+            new WorksheetRequests.GenerateWorksheetRequest(
+                WorksheetGenerationRequest.TargetMode.CLASS,
+                null,
+                1,
+                Question.QuestionType.TRUE_FALSE,
+                null,
+                null,
+                null,
+                null
+            )
+        );
+
+        assertEquals(WorksheetGenerationRequest.Status.FAILED, response.status());
+        assertEquals("INSUFFICIENT_ACTIVE_QUESTIONS", response.failureCode());
+        assertNull(response.worksheet());
     }
 
     @Test

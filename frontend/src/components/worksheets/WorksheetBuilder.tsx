@@ -180,7 +180,17 @@ export function WorksheetBuilder({ classId, generate = generateWorksheet, genera
     const questionCount = Number(count); if (!selectedClassId) { setError("Choose a valid class before generating a worksheet."); return; }
     if (!Number.isSafeInteger(questionCount) || questionCount < topicIds.length || questionCount > 100) { setError("Choose at least one question for every selected topic, up to 100 questions."); return; }
     if (targetMode === "STUDENTS" && !selectedStudents.length) { setError("Choose at least one student target."); return; }
-    setBusy(true); setError(null); const input = { targetMode, studentIds: targetMode === "STUDENTS" ? selectedStudents : undefined, ...(topicIds.length ? { topicIds } : {}), questionCount, questionType: questionType || undefined, difficulty: difficulty || undefined, dueAt: dueAt || undefined, title: title || undefined, instructions: instructions || undefined };
+    setBusy(true); setError(null); const input = {
+      targetMode,
+      ...(targetMode === "STUDENTS" ? { studentIds: selectedStudents } : {}),
+      ...(topicIds.length ? { topicIds } : {}),
+      questionCount,
+      ...(questionType ? { questionType } : {}),
+      ...(difficulty ? { difficulty } : {}),
+      ...(dueAt ? { dueAt } : {}),
+      ...(title ? { title } : {}),
+      ...(instructions ? { instructions } : {}),
+    };
     try { const response = diagnostic ? await generateDiagnostic(selectedClassId, { ...input, topicIds }, randomKey()) : await generate(selectedClassId, input, randomKey()); if (!response.worksheet) throw new Error(response.message || "Worksheet generation did not produce a draft."); setDraft(response.worksheet); const questionFilters = { questionType: questionType || undefined, difficulty: difficulty || undefined, archiveState: "ACTIVE" as const, size: 100 }; const pages = await Promise.all(topicIds.length ? topicIds.map((selectedTopicId) => loadQuestions({ ...questionFilters, topicId: selectedTopicId })) : [loadQuestions(questionFilters)]); setBank(pages.flatMap((page) => page.items)); } catch (reason) { setError(reason instanceof Error ? reason.message : "Worksheet generation could not be started."); } finally { setBusy(false); }
   };
   const saveQuestions = async (questionIds: number[]) => { if (!draft || !questionIds.length) { setError("A worksheet needs at least one question."); return; } setBusy(true); setError(null); try { setDraft(await update(draft.id, { title: title || draft.title, instructions: instructions || draft.instructions, questionIds })); } catch (reason) { setError(reason instanceof Error ? reason.message : "The draft could not be updated."); } finally { setBusy(false); } };

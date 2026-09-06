@@ -45,9 +45,46 @@ describe("WorksheetBuilder", () => {
     await user.click(screen.getByRole("button", { name: "Generate worksheet draft" }));
     expect(generate).toHaveBeenCalledWith(
       1,
-      expect.not.objectContaining({ topicIds: expect.anything() }),
+      expect.not.objectContaining({
+        topicIds: expect.anything(),
+        questionType: expect.anything(),
+        difficulty: expect.anything(),
+      }),
       expect.any(String),
     );
+  });
+
+  it("keeps Any question type and difficulty unrestricted for a specific topic", async () => {
+    const user = userEvent.setup();
+    const generate = vi.fn().mockResolvedValue({ id: 1, status: "SUCCEEDED", message: "Ready", worksheet: { id: 9, code: "GEN-9", title: "Water practice", instructions: null, targetMode: "CLASS", status: "DRAFT", dueAt: null, questions: [{ id: 2, code: "Q", prompt: "Explain evaporation.", totalMarks: 2, questionType: "OPEN_ENDED", topicName: "Water" }], assignments: [] } });
+    render(<WorksheetBuilder generate={generate} loadClasses={async () => classes} loadSyllabus={async () => syllabus} loadQuestions={questions} />);
+
+    await chooseClass(user); await continueToConfiguration(user); await configureWaterTopic(user);
+    await user.click(screen.getByRole("button", { name: "Generate worksheet draft" }));
+    expect(generate).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ topicIds: [4] }),
+      expect.any(String),
+    );
+    expect(generate.mock.calls[0]?.[1]).not.toHaveProperty("questionType");
+    expect(generate.mock.calls[0]?.[1]).not.toHaveProperty("difficulty");
+  });
+
+  it("keeps Any Topic unrestricted when filtering by question type", async () => {
+    const user = userEvent.setup();
+    const generate = vi.fn().mockResolvedValue({ id: 1, status: "SUCCEEDED", message: "Ready", worksheet: { id: 9, code: "GEN-9", title: "Open-ended practice", instructions: null, targetMode: "CLASS", status: "DRAFT", dueAt: null, questions: [{ id: 2, code: "Q", prompt: "Explain evaporation.", totalMarks: 2, questionType: "OPEN_ENDED", topicName: "Water" }], assignments: [] } });
+    render(<WorksheetBuilder generate={generate} loadClasses={async () => classes} loadSyllabus={async () => syllabus} loadQuestions={questions} />);
+
+    await chooseClass(user); await continueToConfiguration(user);
+    await choose(user, "Question type", "Open ended");
+    await user.click(screen.getByRole("button", { name: "Generate worksheet draft" }));
+    expect(generate).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ questionType: "OPEN_ENDED" }),
+      expect.any(String),
+    );
+    expect(generate.mock.calls[0]?.[1]).not.toHaveProperty("topicIds");
+    expect(generate.mock.calls[0]?.[1]).not.toHaveProperty("difficulty");
   });
 
   it("loads Tutor classes in the generator, selects a class, then generates and approves a draft", async () => {
