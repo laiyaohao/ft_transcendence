@@ -19,14 +19,22 @@ interface GuardResult {
   roleHome: string;
 }
 
-export default function AuthGuard({ children }: { children: React.ReactNode }) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const [result, setResult] = useState<GuardResult>({
+function loadingResult(): GuardResult {
+  return {
     pathname: null,
     state: 'loading',
     roleHome: '/',
-  });
+  };
+}
+
+function stateForPath(result: GuardResult, pathname: string | null): GuardState {
+  return result.pathname === pathname ? result.state : 'loading';
+}
+
+export default function AuthGuard({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const [result, setResult] = useState<GuardResult>(loadingResult);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -50,7 +58,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     return () => window.clearTimeout(timer);
   }, [pathname, router]);
 
-  const state = result.pathname === pathname ? result.state : 'loading';
+  const state = stateForPath(result, pathname);
 
   if (state === 'authorized') return children;
 

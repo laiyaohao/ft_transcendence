@@ -1,6 +1,183 @@
-import { beforeEach, describe, expect, it, vi } from "vitest"; import { MAX_UPLOAD_BYTES, approveMarkingReview, createManualResult, createManualResults, createMarkingReview, createOcrDocument, fetchManualAnswerDraft, fetchManualResults, fetchMarkingReview, fetchStudentMistakes, fetchStudentWorksheetResults, parseMarkingReview, parseStudentMistakeReviews, parseStudentWorksheetResultsResponse, saveManualAnswers, submitOcrForTutorReview, validateUploadFiles } from "./submissions";
-const file = (name: string, type = "image/jpeg", size = 4) => new File([new Uint8Array(size)], name, { type, lastModified: 1 });
-describe("submissions service", () => { beforeEach(() => { vi.stubGlobal("URL", { createObjectURL: vi.fn(() => "blob:page"), revokeObjectURL: vi.fn() }); vi.stubGlobal("fetch", vi.fn()); }); it("accepts images and PDFs while rejecting invalid, duplicate, empty and oversized files", () => { const first = file("one.jpg"); expect(validateUploadFiles([first, file("two.pdf", "application/pdf")]).pages).toHaveLength(2); expect(validateUploadFiles([first], validateUploadFiles([first]).pages).errors[0]).toMatch(/already/); expect(validateUploadFiles([file("bad.gif", "image/gif"), file("empty.jpg", "image/jpeg", 0), file("large.jpg", "image/jpeg", MAX_UPLOAD_BYTES + 1)]).errors).toHaveLength(3); }); it("creates one durable submission document with its selected context and pages", async () => { const pages = validateUploadFiles([file("one.jpg"), file("two.png", "image/png")]).pages; vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ id: 7, classId: 3, studentId: 2, worksheetId: 1, uploadedByTutorId: 9, status: "READY", createdAt: "2026-08-30T09:00:00", pages: [{ id: 11, extractionId: 12, text: "answer", confidence: .8, status: "READY" }] }), { status: 201 })); await expect(createOcrDocument({ classId: 3, studentId: 2, worksheetId: 1, pages })).resolves.toMatchObject({ id: 7, classId: 3, studentId: 2, worksheetId: 1 }); const [, request] = vi.mocked(fetch).mock.calls[0]!; expect(request).toMatchObject({ method: "POST" }); const form = (request as RequestInit).body as FormData; expect(form.get("classId")).toBe("3"); expect(form.getAll("files")).toHaveLength(2); }); it("loads and validates tutor marking reviews before approval", async () => { const review = { id: 1, studentId: 2, worksheetId: 3, worksheetQuestionId: 4, questionBankId: 5, extractedAnswer: "Answer", modelAnswer: "Model", maxMarks: 2, aiSuggestedMarks: 1, aiSuggestedOutcome: "Partial", aiErrorCategory: null, missingKeywords: [], aiSuggestedFeedback: "Feedback", reviewStatus: "PENDING_REVIEW", approvedMarks: null, approvedFeedback: null, reviewedByUserId: null, reviewedAt: null, providerResponseValid: true, diagnosticEvidence: [], history: [] }; vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify(review), { status: 200 })).mockResolvedValueOnce(new Response(JSON.stringify({ ...review, reviewStatus: "APPROVED", approvedMarks: 2, approvedFeedback: "Tutor feedback" }), { status: 200 })).mockResolvedValueOnce(new Response(JSON.stringify(review), { status: 201 })); await expect(fetchMarkingReview(1)).resolves.toMatchObject({ id: 1, reviewStatus: "PENDING_REVIEW" }); await expect(approveMarkingReview(1, 2, "Tutor feedback", [{ mistakeType: "CONCEPT_MISUNDERSTANDING", description: "Tutor confirmed a concept gap.", missingKeywords: ["heat transfer"] }])).resolves.toMatchObject({ diagnosticEvidence: [] }); expect(fetch).toHaveBeenNthCalledWith(2, expect.stringContaining("/approve"), expect.objectContaining({ body: JSON.stringify({ marks: 2, feedback: "Tutor feedback", diagnosticEvidence: [{ mistakeType: "CONCEPT_MISUNDERSTANDING", description: "Tutor confirmed a concept gap.", missingKeywords: ["heat transfer"] }] }) })); await expect(createMarkingReview({ submissionDocumentId: 8, worksheetQuestionId: 4, questionBankId: 5 })).resolves.toMatchObject({ id: 1 }); expect(fetch).toHaveBeenLastCalledWith(expect.stringContaining("/tutor/reviews"), expect.objectContaining({ method: "POST" })); expect(() => parseMarkingReview({ id: 1 })).toThrow(/invalid/i); }); });
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import {
+  MAX_UPLOAD_BYTES,
+  approveMarkingReview,
+  createManualResult,
+  createManualResults,
+  createMarkingReview,
+  createOcrDocument,
+  fetchManualAnswerDraft,
+  fetchManualResults,
+  fetchMarkingReview,
+  fetchStudentMistakes,
+  fetchStudentWorksheetResults,
+  parseMarkingReview,
+  parseStudentMistakeReviews,
+  parseStudentWorksheetResultsResponse,
+  saveManualAnswers,
+  submitOcrForTutorReview,
+  validateUploadFiles,
+} from "./submissions";
+
+const file = (name: string, type = "image/jpeg", size = 4) =>
+  new File([new Uint8Array(size)], name, { type, lastModified: 1 });
+
+function stubBrowserApis(): void {
+  vi.stubGlobal("URL", {
+    createObjectURL: vi.fn(() => "blob:page"),
+    revokeObjectURL: vi.fn(),
+  });
+  vi.stubGlobal("fetch", vi.fn());
+}
+
+const pendingReview = {
+  id: 1,
+  studentId: 2,
+  worksheetId: 3,
+  worksheetQuestionId: 4,
+  questionBankId: 5,
+  extractedAnswer: "Answer",
+  modelAnswer: "Model",
+  maxMarks: 2,
+  aiSuggestedMarks: 1,
+  aiSuggestedOutcome: "Partial",
+  aiErrorCategory: null,
+  missingKeywords: [],
+  aiSuggestedFeedback: "Feedback",
+  reviewStatus: "PENDING_REVIEW",
+  approvedMarks: null,
+  approvedFeedback: null,
+  reviewedByUserId: null,
+  reviewedAt: null,
+  providerResponseValid: true,
+  diagnosticEvidence: [],
+  history: [],
+};
+
+describe("submissions service", () => {
+  beforeEach(stubBrowserApis);
+
+  it("accepts images and PDFs while rejecting invalid, duplicate, empty and oversized files", () => {
+    const first = file("one.jpg");
+    const acceptedPages = validateUploadFiles([
+      first,
+      file("two.pdf", "application/pdf"),
+    ]).pages;
+    const duplicatePages = validateUploadFiles([first]).pages;
+    const duplicateError = validateUploadFiles([first], duplicatePages).errors[0];
+    const invalidFiles = validateUploadFiles([
+      file("bad.gif", "image/gif"),
+      file("empty.jpg", "image/jpeg", 0),
+      file("large.jpg", "image/jpeg", MAX_UPLOAD_BYTES + 1),
+    ]);
+
+    expect(acceptedPages).toHaveLength(2);
+    expect(duplicateError).toMatch(/already/);
+    expect(invalidFiles.errors).toHaveLength(3);
+  });
+
+  it("creates one durable submission document with its selected context and pages", async () => {
+    const pages = validateUploadFiles([
+      file("one.jpg"),
+      file("two.png", "image/png"),
+    ]).pages;
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: 7,
+          classId: 3,
+          studentId: 2,
+          worksheetId: 1,
+          uploadedByTutorId: 9,
+          status: "READY",
+          createdAt: "2026-08-30T09:00:00",
+          pages: [
+            {
+              id: 11,
+              extractionId: 12,
+              text: "answer",
+              confidence: 0.8,
+              status: "READY",
+            },
+          ],
+        }),
+        { status: 201 },
+      ),
+    );
+
+    await expect(
+      createOcrDocument({ classId: 3, studentId: 2, worksheetId: 1, pages }),
+    ).resolves.toMatchObject({ id: 7, classId: 3, studentId: 2, worksheetId: 1 });
+
+    const [, request] = vi.mocked(fetch).mock.calls[0]!;
+    const form = (request as RequestInit).body as FormData;
+
+    expect(request).toMatchObject({ method: "POST" });
+    expect((request as RequestInit).headers).not.toHaveProperty("Content-Type");
+    expect(form.get("classId")).toBe("3");
+    expect(form.getAll("files")).toHaveLength(2);
+  });
+
+  it("loads and validates tutor marking reviews before approval", async () => {
+    const approvedReview = {
+      ...pendingReview,
+      reviewStatus: "APPROVED",
+      approvedMarks: 2,
+      approvedFeedback: "Tutor feedback",
+    };
+    const diagnosticEvidence = [
+      {
+        mistakeType: "CONCEPT_MISUNDERSTANDING" as const,
+        description: "Tutor confirmed a concept gap.",
+        missingKeywords: ["heat transfer"],
+      },
+    ];
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(pendingReview), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(approvedReview), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(pendingReview), { status: 201 }),
+      );
+
+    await expect(fetchMarkingReview(1)).resolves.toMatchObject({
+      id: 1,
+      reviewStatus: "PENDING_REVIEW",
+    });
+    await expect(
+      approveMarkingReview(1, 2, "Tutor feedback", diagnosticEvidence),
+    ).resolves.toMatchObject({ diagnosticEvidence: [] });
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining("/approve"),
+      expect.objectContaining({
+        body: JSON.stringify({
+          marks: 2,
+          feedback: "Tutor feedback",
+          diagnosticEvidence,
+        }),
+      }),
+    );
+
+    await expect(
+      createMarkingReview({
+        submissionDocumentId: 8,
+        worksheetQuestionId: 4,
+        questionBankId: 5,
+      }),
+    ).resolves.toMatchObject({ id: 1 });
+    expect(fetch).toHaveBeenLastCalledWith(
+      expect.stringContaining("/tutor/reviews"),
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(() => parseMarkingReview({ id: 1 })).toThrow(/invalid/i);
+  });
+});
 
 describe("Student submission document client", () => {
   beforeEach(() => { vi.stubGlobal("URL", { createObjectURL: vi.fn(() => "blob:page"), revokeObjectURL: vi.fn() }); vi.stubGlobal("fetch", vi.fn()); localStorage.setItem("jwt_token", "student-token"); });

@@ -286,6 +286,48 @@ Validation: run the closest package tests after each package, then
 mastery, insight, alerts, or report work, include their integration tests and
 exercise the affected critical flow from the validation checklist.
 
+### Phase 3 completion record — 2026-09-06
+
+Completed a behavior-preserving readability pass over the Learning service's
+most complex business, integration, and output paths.
+
+- Refactored student, classroom, question, and syllabus workflows into named
+  validation, lookup, domain-decision, and response-assembly steps.
+- Made worksheet generation, assignment idempotency, status handling, PDF
+  response construction, and PDF header generation easier to follow without
+  changing generated output or persistence behavior.
+- Clarified mastery calculation, approved-marking synchronization, dashboard
+  selection, and alert creation/deduplication logic while retaining transaction
+  boundaries, query ordering, authoritative tutor approval, and event flows.
+- Improved the JWT/security and internal synchronization controllers using
+  named constants and explicit parsing/authorization stages. Routes, response
+  contracts, headers, CORS, and access policy remain unchanged.
+
+During independent validation, an early-rounding regression was identified in
+the refactored mastery calculation. It was repaired before completion: the
+running average again uses the original six-decimal intermediate value, while
+the public adjusted-attempt percentage remains rounded to two decimals. A
+focused fractional-mark regression test now protects that behavior.
+
+Passed checks:
+
+- `git diff --check`
+- Focused core-domain suite: 46 tests passed
+- Focused mastery suite: 11 tests passed, plus 3 calculator tests after the
+  precision repair
+- Focused alert/dashboard suite: 11 tests passed
+- Related mastery/insight/report regression suite: 35 tests passed
+- Focused security/controller suites: 13 tests passed
+- `make backend-learning-test`: 196 tests passed (80 unit and 116
+  integration); 2 PostgreSQL/Testcontainers tests skipped because Docker is
+  unavailable
+- `make backend-learning-build`: passed
+
+No intentional API, database, migration, authorization, security, CORS,
+idempotency, ordering, PDF, or user-visible behavior changes were made. Run
+the PostgreSQL/Testcontainers migration and class-detail tests in Docker-enabled
+CI before release.
+
 ## Phase 4 — Grading service
 
 ### Scope and order
@@ -314,6 +356,44 @@ Validation: focused OCR/manual-result/approval tests after each workflow, then
 `make backend-grading-test` and `make backend-grading-build`. Run the full
 offline E2E marking flow after a grading controller, event, or OCR change.
 
+### Phase 4 completion record — 2026-09-06
+
+Completed a behavior-preserving readability pass across the Grading service.
+
+- Separated the dense marking-review workflow into named internal stages for
+  validation, idempotency, canonical submission creation, review state changes,
+  and outbox-event construction, without moving transaction boundaries or
+  creating new public services.
+- Clarified Learning-service authorization requests, marking-context parsing,
+  scope resolution, and outbox dispatch/retry flow while retaining exact
+  endpoints, headers, fields, error mappings, batch ordering, and payloads.
+- Made OCR/storage validation, owner-scoped file handling, atomic cleanup,
+  provider request construction, fallback behavior, and deterministic rule
+  checks easier to follow.
+- Improved controller, security, configuration, repository, and response
+  assembly layout without changing routes, JSON shapes, error bodies, JWT,
+  CORS, or security policy.
+
+Passed checks:
+
+- `git diff --check`
+- Focused protected workflow/security suite: 47 tests passed
+- Grading unit suite: 44 tests passed
+- Grading integration workflow, document, OCR, approval/retraction, student
+  result, security, and authorization checks passed
+- `make backend-grading-build`: passed
+
+`make backend-grading-test` still reports two pre-existing stale assertions in
+`MigrationIntegrationTest`: it expects eight migrations/version six although
+the unchanged repository contains eleven migrations through version twelve.
+The Docker/Testcontainers PostgreSQL migration test is also skipped because
+Docker is unavailable. Both limitations are recorded in `ISSUES.md` and are
+not caused by this refactor.
+
+No intentional route, API, authorization, document-storage, OCR, AI-provider,
+review-state, outbox, database, migration, or user-visible behavior changes
+were made.
+
 ## Phase 5 — Frontend foundations and API clients
 
 ### Scope
@@ -338,6 +418,33 @@ offline E2E marking flow after a grading controller, event, or OCR change.
 
 Validation: focused service/lib tests, then `make frontend-lint`,
 `make frontend-typecheck`, `make frontend-test`, and `make frontend-build`.
+
+### Phase 5 completion record — 2026-09-06
+
+Completed a behavior-preserving readability pass across frontend foundations,
+API clients, and shared navigation.
+
+- Made authentication, API parsing, validation, provider state, navigation,
+  and theme setup easier to scan without changing token/cookie storage, proxy
+  routing, public types, responsive behavior, or accessible navigation.
+- Clarified service request construction and runtime parsing while preserving
+  exported functions, URLs, methods, headers, request bodies, parsed shapes,
+  and user-facing errors. Multipart submission uploads still omit a manual
+  `Content-Type` header.
+- Added a focused multipart-header regression assertion; no API contract or
+  user-visible behavior was intentionally changed.
+
+Passed checks:
+
+- `git diff --check`
+- Focused service, foundation, navigation, and submission test runs passed
+- `make frontend-lint`
+- `make frontend-typecheck`
+- `make frontend-test`: 69 files and 321 tests passed
+- `make frontend-build`
+
+No intentional route, API, authentication, authorization, storage, theme,
+accessibility, or responsive-layout behavior changes were made.
 
 ## Phase 6 — Frontend pages and components
 

@@ -24,15 +24,21 @@ import java.util.Set;
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
+    private static final String AUTHORIZATION_HEADER = "Authorization";
+    private static final String BEARER_TOKEN_PREFIX = "Bearer ";
     private static final Set<String> ALLOWED_ROLES = Set.of("TUTOR", "STUDENT");
+
     private final byte[] signingKey;
     private final StudentProfileProvisioningService profiles;
 
-    public JwtAuthenticationFilter(@Value("${jwt.secret}") String secret, StudentProfileProvisioningService profiles) {
-        if (secret == null || secret.getBytes(StandardCharsets.UTF_8).length < 32
-                || secret.toLowerCase(Locale.ROOT).contains("change-me")) {
+    public JwtAuthenticationFilter(
+        @Value("${jwt.secret}") String secret,
+        StudentProfileProvisioningService profiles
+    ) {
+        if (isMissingOrPlaceholderSecret(secret)) {
             throw new IllegalArgumentException("JWT_SECRET must contain at least 32 non-placeholder bytes");
         }
+
         this.signingKey = secret.getBytes(StandardCharsets.UTF_8);
         this.profiles = profiles;
     }
@@ -42,44 +48,84 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             HttpServletRequest request,
             HttpServletResponse response,
             FilterChain filterChain) throws ServletException, IOException {
-        String authorization = request.getHeader("Authorization");
-        if (!StringUtils.hasText(authorization) || !authorization.startsWith("Bearer ")) {
+        String authorizationHeader = request.getHeader(AUTHORIZATION_HEADER);
+        if (!hasBearerToken(authorizationHeader)) {
             filterChain.doFilter(request, response);
             return;
         }
 
         try {
-            Claims claims = Jwts.parserBuilder()
-                .setSigningKey(Keys.hmacShaKeyFor(signingKey))
-                .build()
-                .parseClaimsJws(authorization.substring(7))
-                .getBody();
-            String email = claims.getSubject();
-            String role = claims.get("role", String.class);
-            String fullName = claims.get("fullName", String.class);
-            Number userIdClaim = claims.get("userId", Number.class);
-
-            if (StringUtils.hasText(email)
-                    && ALLOWED_ROLES.contains(role)
-                    && userIdClaim != null
-                    && userIdClaim.longValue() > 0
-                    && SecurityContextHolder.getContext().getAuthentication() == null) {
-                AuthenticatedUser principal = new AuthenticatedUser(
-                    userIdClaim.longValue(), email, role, StringUtils.hasText(fullName) ? fullName : email);
-                var authentication = new UsernamePasswordAuthenticationToken(
-                    principal,
-                    null,
-                    List.of(new SimpleGrantedAuthority("ROLE_" + role))
-                );
-                SecurityContextHolder.getContext().setAuthentication(authentication);
-                if ("STUDENT".equals(role)) {
-                    profiles.ensureProfile(principal);
-                }
-            }
+            authenticateRequest(authorizationHeader);
         } catch (RuntimeException ex) {
             SecurityContextHolder.clearContext();
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private boolean isMissingOrPlaceholderSecret(String secret) {
+        return secret == null
+            || secret.getBytes(StandardCharsets.UTF_8).length < 32
+            || secret.toLowerCase(Locale.ROOT).contains("change-me");
+    }
+
+    private boolean hasBearerToken(String authorizationHeader) {
+        return StringUtils.hasText(authorizationHeader)
+            && authorizationHeader.startsWith(BEARER_TOKEN_PREFIX);
+    }
+
+    private void authenticateRequest(String authorizationHeader) {
+        Claims claims = parseClaims(authorizationHeader);
+        String email = claims.getSubject();
+        String role = claims.get("role", String.class);
+        String fullName = claims.get("fullName", String.class);
+        Number userIdClaim = claims.get("userId", Number.class);
+
+        if (!hasValidAuthenticationClaims(email, role, userIdClaim)) {
+            return;
+        }
+
+        if (SecurityContextHolder.getContext().getAuthentication() != null) {
+            return;
+        }
+
+        AuthenticatedUser principal = new AuthenticatedUser(
+            userIdClaim.longValue(),
+            email,
+            role,
+            StringUtils.hasText(fullName) ? fullName : email
+        );
+        var authentication = new UsernamePasswordAuthenticationToken(
+            principal,
+            null,
+            List.of(new SimpleGrantedAuthority("ROLE_" + role))
+        );
+
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        if ("STUDENT".equals(role)) {
+            profiles.ensureProfile(principal);
+        }
+    }
+
+    private Claims parseClaims(String authorizationHeader) {
+        String token = authorizationHeader.substring(BEARER_TOKEN_PREFIX.length());
+
+        return Jwts.parserBuilder()
+            .setSigningKey(Keys.hmacShaKeyFor(signingKey))
+            .build()
+            .parseClaimsJws(token)
+            .getBody();
+    }
+
+    private boolean hasValidAuthenticationClaims(
+        String email,
+        String role,
+        Number userIdClaim
+    ) {
+        return StringUtils.hasText(email)
+            && ALLOWED_ROLES.contains(role)
+            && userIdClaim != null
+            && userIdClaim.longValue() > 0;
     }
 }

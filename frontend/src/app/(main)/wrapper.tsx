@@ -7,11 +7,12 @@ import Sidebar from '@/components/sidebar';
 import Topbar from '@/components/topbar';
 
 export default function Wrapper({ children }: Readonly<{ children: React.ReactNode }>) {
-  const [layoutContainer, setLayoutContainer] = React.useState<HTMLDivElement | null>(null);
+  const [sidebarContainer, setSidebarContainer] =
+    React.useState<HTMLDivElement | null>(null);
 
   return (
     <Box
-      ref={setLayoutContainer}
+      ref={setSidebarContainer}
       sx={{
         position: 'relative',
         display: 'flex',
@@ -19,7 +20,7 @@ export default function Wrapper({ children }: Readonly<{ children: React.ReactNo
         width: '100%',
       }}
     >
-      <Sidebar container={layoutContainer ?? undefined} showRail={false} />
+      <Sidebar container={sidebarContainer ?? undefined} showRail={false} />
       <Box
         sx={{
           display: 'flex',
@@ -29,7 +30,7 @@ export default function Wrapper({ children }: Readonly<{ children: React.ReactNo
         }}
       >
         <Topbar />
-        <Sidebar container={layoutContainer ?? undefined} showDesktop={false} />
+        <Sidebar container={sidebarContainer ?? undefined} showDesktop={false} />
         <Box
           component="main"
           id="main-content"

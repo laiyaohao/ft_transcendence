@@ -17,50 +17,81 @@ import java.security.MessageDigest;
 @RestController
 @RequestMapping("/api/learning/internal/submission-authorization")
 public class SubmissionAuthorizationController {
+
+    private static final String INTEGRATION_KEY_HEADER = "X-Learning-Integration-Key";
+
     private final DomainAuthorizationService authorization;
     private final byte[] integrationKey;
 
-    public SubmissionAuthorizationController(DomainAuthorizationService authorization,
-                                             @Value("${learning.marking-sync-key}") String integrationKey) {
+    public SubmissionAuthorizationController(
+        DomainAuthorizationService authorization,
+        @Value("${learning.marking-sync-key}") String integrationKey
+    ) {
         if (integrationKey == null || integrationKey.isBlank()) {
             throw new IllegalArgumentException("LEARNING_MARKING_SYNC_KEY is required");
         }
+
         this.authorization = authorization;
         this.integrationKey = integrationKey.getBytes(StandardCharsets.UTF_8);
     }
 
     @PostMapping
     public ResponseEntity<Void> authorize(
-        @RequestHeader(value = "X-Learning-Integration-Key", required = false) String key,
+        @RequestHeader(value = INTEGRATION_KEY_HEADER, required = false)
+        String integrationKeyHeader,
         @RequestBody SubmissionContext request
     ) {
-        if (!matches(key)) throw new IntegrationForbiddenException();
-        if (request == null || request.actorUserId() <= 0 || request.studentId() <= 0 || request.worksheetId() <= 0) {
-            throw new DomainAuthorizationService.ResourceNotFoundException();
-        }
-        DomainAuthorizationService.ActorRole role;
-        try { role = DomainAuthorizationService.ActorRole.valueOf(request.actorRole()); }
-        catch (RuntimeException exception) { throw new DomainAuthorizationService.ResourceNotFoundException(); }
-        authorization.requireSubmissionContext(request.actorUserId(), role, request.studentId(), request.worksheetId(), request.worksheetQuestionId(), request.classId());
+        verifyIntegrationKey(integrationKeyHeader);
+
+        DomainAuthorizationService.ActorRole actorRole = requireActorRole(request);
+        authorization.requireSubmissionContext(
+            request.actorUserId(),
+            actorRole,
+            request.studentId(),
+            request.worksheetId(),
+            request.worksheetQuestionId(),
+            request.classId()
+        );
+
         return ResponseEntity.noContent().build();
     }
 
     /** Gives grading a server-only worksheet rubric after the same scope check used for uploads. */
     @PostMapping("/marking-context")
     public DomainAuthorizationService.SubmissionMarkingContext markingContext(
-        @RequestHeader(value = "X-Learning-Integration-Key", required = false) String key,
+        @RequestHeader(value = INTEGRATION_KEY_HEADER, required = false)
+        String integrationKeyHeader,
         @RequestBody SubmissionContext request
     ) {
-        if (!matches(key)) throw new IntegrationForbiddenException();
+        verifyIntegrationKey(integrationKeyHeader);
+
+        DomainAuthorizationService.ActorRole actorRole = requireActorRole(request);
+
+        return authorization.requireSubmissionMarkingContext(
+            request.actorUserId(),
+            actorRole,
+            request.studentId(),
+            request.worksheetId(),
+            request.classId()
+        );
+    }
+
+    private void verifyIntegrationKey(String integrationKeyHeader) {
+        if (!matches(integrationKeyHeader)) {
+            throw new IntegrationForbiddenException();
+        }
+    }
+
+    private DomainAuthorizationService.ActorRole requireActorRole(SubmissionContext request) {
         if (request == null || request.actorUserId() <= 0 || request.studentId() <= 0 || request.worksheetId() <= 0) {
             throw new DomainAuthorizationService.ResourceNotFoundException();
         }
-        DomainAuthorizationService.ActorRole role;
-        try { role = DomainAuthorizationService.ActorRole.valueOf(request.actorRole()); }
-        catch (RuntimeException exception) { throw new DomainAuthorizationService.ResourceNotFoundException(); }
-        return authorization.requireSubmissionMarkingContext(
-            request.actorUserId(), role, request.studentId(), request.worksheetId(), request.classId()
-        );
+
+        try {
+            return DomainAuthorizationService.ActorRole.valueOf(request.actorRole());
+        } catch (RuntimeException exception) {
+            throw new DomainAuthorizationService.ResourceNotFoundException();
+        }
     }
 
     private boolean matches(String candidate) {
@@ -69,20 +100,39 @@ public class SubmissionAuthorizationController {
 
     @ExceptionHandler(IntegrationForbiddenException.class)
     ResponseEntity<ApiError> forbidden() {
-        return error(HttpStatus.FORBIDDEN, "SUBMISSION_AUTHORIZATION_FORBIDDEN", "Submission authorization is not permitted.");
+        return error(
+            HttpStatus.FORBIDDEN,
+            "SUBMISSION_AUTHORIZATION_FORBIDDEN",
+            "Submission authorization is not permitted."
+        );
     }
 
     @ExceptionHandler(DomainAuthorizationService.ResourceNotFoundException.class)
     ResponseEntity<ApiError> notFound() {
-        return error(HttpStatus.NOT_FOUND, "SUBMISSION_CONTEXT_NOT_FOUND", "Submission context was not found.");
+        return error(
+            HttpStatus.NOT_FOUND,
+            "SUBMISSION_CONTEXT_NOT_FOUND",
+            "Submission context was not found."
+        );
     }
 
     private ResponseEntity<ApiError> error(HttpStatus status, String code, String message) {
         return ResponseEntity.status(status).body(new ApiError(code, message));
     }
 
-    record SubmissionContext(long actorUserId, String actorRole, long studentId, long worksheetId,
-                             Long worksheetQuestionId, Long classId) { }
-    record ApiError(String code, String message) { }
-    static class IntegrationForbiddenException extends RuntimeException { }
+    record SubmissionContext(
+        long actorUserId,
+        String actorRole,
+        long studentId,
+        long worksheetId,
+        Long worksheetQuestionId,
+        Long classId
+    ) {
+    }
+
+    record ApiError(String code, String message) {
+    }
+
+    static class IntegrationForbiddenException extends RuntimeException {
+    }
 }

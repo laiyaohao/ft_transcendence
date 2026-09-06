@@ -23,7 +23,10 @@ public class MistakeHistoryController {
     private final MistakeHistoryService history;
     private final LearningAuthorizationClient authorization;
 
-    public MistakeHistoryController(MistakeHistoryService history, LearningAuthorizationClient authorization) {
+    public MistakeHistoryController(
+        MistakeHistoryService history,
+        LearningAuthorizationClient authorization
+    ) {
         this.history = history;
         this.authorization = authorization;
     }
@@ -34,7 +37,11 @@ public class MistakeHistoryController {
         @RequestHeader("Authorization") String bearer,
         @PathVariable long studentId
     ) {
-        long scopedStudentId = authorization.resolveMistakeHistoryStudent(user, bearer, studentId);
+        long scopedStudentId = authorization.resolveMistakeHistoryStudent(
+            user,
+            bearer,
+            studentId
+        );
         return history.historyFor(scopedStudentId);
     }
 
@@ -54,7 +61,11 @@ public class MistakeHistoryController {
 
     @ExceptionHandler(LearningAuthorizationClient.Forbidden.class)
     ResponseEntity<Map<String, String>> forbidden() {
-        return error(HttpStatus.FORBIDDEN, "MISTAKE_HISTORY_FORBIDDEN", "You are not allowed to view this mistake history.");
+        return error(
+            HttpStatus.FORBIDDEN,
+            "MISTAKE_HISTORY_FORBIDDEN",
+            "You are not allowed to view this mistake history."
+        );
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

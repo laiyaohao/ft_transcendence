@@ -21,7 +21,7 @@ import java.time.LocalDateTime;
 @Table(name = "ocr_extractions")
 public class OcrExtraction {
 
-    private static final double REVIEW_CONFIDENCE_THRESHOLD = .85;
+    private static final double REVIEW_CONFIDENCE_THRESHOLD = 0.85;
 
     public enum Status {
         READY,
@@ -71,31 +71,32 @@ public class OcrExtraction {
 
     public OcrExtraction(
         SubmissionPage page,
-        Long questionId,
-        String text,
+        Long worksheetQuestionId,
+        String extractedText,
         double confidence,
         String provider
     ) {
         this.page = page;
-        this.worksheetQuestionId = questionId;
-        this.extractedText = text;
+        this.worksheetQuestionId = worksheetQuestionId;
+        this.extractedText = extractedText;
         this.confidence = confidence;
         this.provider = provider;
-        this.status = determineInitialStatus(text, confidence);
+        this.status = determineInitialStatus(extractedText, confidence);
     }
 
-    public void correct(String text) {
-        correctedText = text.trim();
+    public void correct(String correctedText) {
+        this.correctedText = correctedText.trim();
         status = Status.READY;
     }
 
-    public void assignToWorksheetQuestion(Long questionId) {
-        boolean hasValidQuestionId = questionId != null && questionId > 0;
+    public void assignToWorksheetQuestion(Long worksheetQuestionId) {
+        boolean hasValidQuestionId =
+            worksheetQuestionId != null && worksheetQuestionId > 0;
         if (!hasValidQuestionId) {
             throw new IllegalArgumentException("Worksheet question is required.");
         }
 
-        worksheetQuestionId = questionId;
+        this.worksheetQuestionId = worksheetQuestionId;
     }
 
     @PrePersist
@@ -136,8 +137,8 @@ public class OcrExtraction {
         return status;
     }
 
-    private Status determineInitialStatus(String text, double confidence) {
-        if (text.isBlank()) {
+    private Status determineInitialStatus(String extractedText, double confidence) {
+        if (extractedText.isBlank()) {
             return Status.UNREADABLE;
         }
 

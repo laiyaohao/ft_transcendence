@@ -1,8 +1,9 @@
-'use client'
+'use client';
+
 import * as React from 'react';
 import ListSubheader from '@mui/material/ListSubheader';
 import type {} from '@mui/material/themeCssVarsAugmentation';
-import SidebarContext from '../context/sidebar-context';
+import SidebarContext from '@/context/sidebar-context';
 import { DRAWER_WIDTH } from '@/utils/constants';
 import getDrawerSxTransitionMixin from '@/utils/mixins';
 
@@ -17,11 +18,8 @@ export default function SidebarHeaderItem({
   if (!sidebarContext) {
     throw new Error('Sidebar context was used without a provider.');
   }
-  const {
-    mini = false,
-    isFullyExpanded = true,
-    hasDrawerTransitions,
-  } = sidebarContext;
+  const { mini = false, isFullyExpanded = true, hasDrawerTransitions } =
+    sidebarContext;
 
   return (
     <ListSubheader

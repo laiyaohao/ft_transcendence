@@ -85,19 +85,15 @@ public class StudentService {
     ) {
         requireTutor(tutorId);
         requireOwnedClass(tutorId, classId);
-        List<AuthStudentDirectoryClient.StudentAccount> accounts = studentDirectory.listStudents(bearerToken);
-        if (accounts.isEmpty()) {
+        List<AuthStudentDirectoryClient.StudentAccount> studentAccounts =
+            studentDirectory.listStudents(bearerToken);
+        if (studentAccounts.isEmpty()) {
             return List.of();
         }
-        Map<Long, StudentProfile> profilesByLogin = students
-            .findAllByLoginUserIdInWithMemberships(accounts.stream()
-                .map(AuthStudentDirectoryClient.StudentAccount::id).toList())
-            .stream()
-            .collect(Collectors.toMap(
-                StudentProfile::getLoginUserId,
-                profile -> profile
-            ));
-        return accounts.stream()
+
+        Map<Long, StudentProfile> profilesByLogin = profilesByLoginUserId(studentAccounts);
+
+        return studentAccounts.stream()
             .filter(account -> isEligibleForClass(profilesByLogin.get(account.id()), tutorId, classId))
             .map(ClassStudentResponse.EligibleStudentResponse::from)
             .toList();
@@ -115,24 +111,19 @@ public class StudentService {
         String search
     ) {
         requireTutor(tutorId);
-        List<AuthStudentDirectoryClient.StudentAccount> accounts = studentDirectory.listStudents(bearerToken, search);
-        if (accounts.isEmpty()) {
+        List<AuthStudentDirectoryClient.StudentAccount> studentAccounts =
+            studentDirectory.listStudents(bearerToken, search);
+        if (studentAccounts.isEmpty()) {
             return List.of();
         }
-        Map<Long, StudentProfile> profilesByLogin = students
-            .findAllByLoginUserIdInWithMemberships(accounts.stream()
-                .map(AuthStudentDirectoryClient.StudentAccount::id).toList())
-            .stream()
-            .collect(Collectors.toMap(
-                StudentProfile::getLoginUserId,
-                profile -> profile
-            ));
+
+        Map<Long, StudentProfile> profilesByLogin = profilesByLoginUserId(studentAccounts);
         String normalizedSearch = search == null ? "" : search.trim().toLowerCase(Locale.ROOT);
-        return accounts.stream()
-            .filter(account -> {
-                StudentProfile profile = profilesByLogin.get(account.id());
-                return profile == null || profile.getTutorId() == null;
-            })
+
+        return studentAccounts.stream()
+            .filter(account -> isAvailableForTutor(
+                profilesByLogin.get(account.id())
+            ))
             // Keep the learning API search behaviour correct even if an older
             // auth-service instance has not yet applied its query filter.
             .filter(account -> normalizedSearch.isEmpty()
@@ -140,6 +131,24 @@ public class StudentService {
                 || account.email().toLowerCase(Locale.ROOT).contains(normalizedSearch))
             .map(StudentAccountResponse::from)
             .toList();
+    }
+
+    private Map<Long, StudentProfile> profilesByLoginUserId(
+        List<AuthStudentDirectoryClient.StudentAccount> studentAccounts
+    ) {
+        List<Long> loginUserIds = studentAccounts.stream()
+            .map(AuthStudentDirectoryClient.StudentAccount::id)
+            .toList();
+
+        return students.findAllByLoginUserIdInWithMemberships(loginUserIds).stream()
+            .collect(Collectors.toMap(
+                StudentProfile::getLoginUserId,
+                profile -> profile
+            ));
+    }
+
+    private boolean isAvailableForTutor(StudentProfile profile) {
+        return profile == null || profile.getTutorId() == null;
     }
 
     @Transactional(readOnly = true)
@@ -164,9 +173,9 @@ public class StudentService {
             throw new InvalidStudentRequestException("An existing Student login is required");
         }
         requireOwnedClass(tutorId, classId);
-        AuthStudentDirectoryClient.StudentAccount account = requireStudentAccount(
+        AuthStudentDirectoryClient.StudentAccount studentAccount = requireStudentAccount(
             request.loginUserId(), bearerToken);
-        StudentProfile profile = students.findByLoginUserId(account.id()).orElse(null);
+        StudentProfile profile = students.findByLoginUserId(studentAccount.id()).orElse(null);
         boolean claimingUnassignedProfile = profile != null && profile.getTutorId() == null;
         boolean belongsToAnotherTutor = profile != null
             && profile.getTutorId() != null
@@ -177,12 +186,12 @@ public class StudentService {
         }
         if (profile == null) {
             profile = new StudentProfile();
-            profile.setLoginUserId(account.id());
-            profile.setFullName(account.fullName());
+            profile.setLoginUserId(studentAccount.id());
+            profile.setFullName(studentAccount.fullName());
             profile.setTutorId(tutorId);
         } else {
             profile.setTutorId(tutorId);
-            profile.setFullName(account.fullName());
+            profile.setFullName(studentAccount.fullName());
         }
         if (!isEligibleForClass(profile, tutorId, classId)) {
             throw new DuplicateClassMembershipException(classId);
@@ -269,19 +278,27 @@ public class StudentService {
         if (request.loginUserId() == null) {
             throw new InvalidStudentRequestException("Select an existing Student account.");
         }
-        AuthStudentDirectoryClient.StudentAccount account = requireStudentAccount(request.loginUserId(), bearerToken);
+        AuthStudentDirectoryClient.StudentAccount studentAccount = requireStudentAccount(
+            request.loginUserId(),
+            bearerToken
+        );
         Map<Long, TutorClass> requestedClasses = resolveRequestedClasses(tutorId, request.classIds());
-        StudentProfile student = students.findByLoginUserId(account.id()).orElse(null);
+        StudentProfile student = students.findByLoginUserId(studentAccount.id()).orElse(null);
         if (student != null && student.getTutorId() != null) {
-            throw new LoginIdentityConflictException(account.id());
+            throw new LoginIdentityConflictException(studentAccount.id());
         }
         if (student == null) {
             student = new StudentProfile();
         }
         student.setTutorId(tutorId);
+        StudentRequest verifiedStudentRequest = new StudentRequest(
+            studentAccount.fullName(),
+            studentAccount.id(),
+            request.classIds()
+        );
         // Full name and login identity are always re-derived from the Student
         // account selected in auth-service, never trusted from browser input.
-        apply(student, new StudentRequest(account.fullName(), account.id(), request.classIds()), requestedClasses);
+        apply(student, verifiedStudentRequest, requestedClasses);
         try {
             StudentProfile saved = students.save(student);
             entityManager.flush();
@@ -342,20 +359,22 @@ public class StudentService {
     }
 
     private Map<Long, TutorClass> resolveRequestedClasses(long tutorId, List<Long> classIds) {
-        Set<Long> uniqueIds = new HashSet<>();
+        Set<Long> requestedClassIds = new HashSet<>();
         for (Long classId : classIds) {
-            if (!uniqueIds.add(classId)) {
+            if (!requestedClassIds.add(classId)) {
                 throw new DuplicateMembershipException(classId);
             }
         }
-        Map<Long, TutorClass> owned = ownedClassMap(tutorId);
-        for (Long classId : uniqueIds) {
-            if (!owned.containsKey(classId)) {
+
+        Map<Long, TutorClass> ownedClasses = ownedClassMap(tutorId);
+        for (Long classId : requestedClassIds) {
+            if (!ownedClasses.containsKey(classId)) {
                 throw new ClassNotFoundException(classId);
             }
         }
-        return owned.entrySet().stream()
-            .filter(entry -> uniqueIds.contains(entry.getKey()))
+
+        return ownedClasses.entrySet().stream()
+            .filter(entry -> requestedClassIds.contains(entry.getKey()))
             .sorted(Map.Entry.comparingByKey())
             .collect(Collectors.toMap(
                 Map.Entry::getKey,
@@ -369,11 +388,11 @@ public class StudentService {
         if (tutorId == null || tutorId <= 0) {
             return Map.of();
         }
-        Map<Long, TutorClass> result = new HashMap<>();
+        Map<Long, TutorClass> classesById = new HashMap<>();
         for (TutorClass tutorClass : classes.findAllByTutorIdOrderByClassNameAsc(tutorId)) {
-            result.put(tutorClass.getId(), tutorClass);
+            classesById.put(tutorClass.getId(), tutorClass);
         }
-        return result;
+        return classesById;
     }
 
     private StudentProfileResponse profileResponse(StudentProfile student, boolean includeTutorOnly) {

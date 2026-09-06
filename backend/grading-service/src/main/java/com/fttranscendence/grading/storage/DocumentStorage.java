@@ -33,8 +33,13 @@ public interface DocumentStorage {
             if (byteSize <= 0) {
                 throw new IllegalArgumentException("Byte size must be positive");
             }
-            if (checksumSha256 == null || !checksumSha256.matches("[0-9a-f]{64}")) {
-                throw new IllegalArgumentException("A lowercase SHA-256 checksum is required");
+            if (
+                checksumSha256 == null
+                    || !checksumSha256.matches("[0-9a-f]{64}")
+            ) {
+                throw new IllegalArgumentException(
+                    "A lowercase SHA-256 checksum is required"
+                );
             }
         }
     }

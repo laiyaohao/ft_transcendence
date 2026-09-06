@@ -12,15 +12,15 @@ public class OcrReviewService {
 
     private static final String AI_VISION_PROVIDER = "ai-vision";
 
-    private final OcrExtractionRepository extractions;
-    private final AiOcrService ocr;
+    private final OcrExtractionRepository extractionRepository;
+    private final AiOcrService ocrService;
 
     public OcrReviewService(
-        OcrExtractionRepository extractions,
-        AiOcrService ocr
+        OcrExtractionRepository extractionRepository,
+        AiOcrService ocrService
     ) {
-        this.extractions = extractions;
-        this.ocr = ocr;
+        this.extractionRepository = extractionRepository;
+        this.ocrService = ocrService;
     }
 
     @Transactional
@@ -29,21 +29,21 @@ public class OcrReviewService {
         Long questionId,
         byte[] bytes
     ) {
-        AiOcrService.OcrResult ocrResult = ocr.extract(
+        AiOcrService.OcrResult ocrResult = ocrService.extract(
             bytes,
             page.getMediaType()
         );
-        String extractedText = ocrResult.unreadable() ? "" : ocrResult.text();
+        String storedText = ocrResult.unreadable() ? "" : ocrResult.text();
 
         OcrExtraction extraction = new OcrExtraction(
             page,
             questionId,
-            extractedText,
+            storedText,
             ocrResult.confidence(),
             AI_VISION_PROVIDER
         );
 
-        return extractions.save(extraction);
+        return extractionRepository.save(extraction);
     }
 
     @Transactional
@@ -53,11 +53,11 @@ public class OcrReviewService {
         long extractionId,
         String text
     ) {
-        OcrExtraction extraction = extractions.findById(extractionId)
+        OcrExtraction extraction = extractionRepository.findById(extractionId)
             .orElseThrow(NotFound::new);
-        SubmissionDocument.OwnerRole parsedOwnerRole = parseOwnerRole(ownerRole);
+        SubmissionDocument.OwnerRole requestedOwnerRole = parseOwnerRole(ownerRole);
 
-        ensureOwnerMatches(extraction, ownerId, parsedOwnerRole);
+        ensureOwnerMatches(extraction, ownerId, requestedOwnerRole);
         ensureDocumentIsReadyForCorrection(extraction);
         ensureCorrectedTextIsPresent(text);
 
@@ -95,8 +95,8 @@ public class OcrReviewService {
         }
     }
 
-    private void ensureCorrectedTextIsPresent(String text) {
-        if (text == null || text.isBlank()) {
+    private void ensureCorrectedTextIsPresent(String correctedText) {
+        if (correctedText == null || correctedText.isBlank()) {
             throw new IllegalArgumentException("Corrected text is required.");
         }
     }

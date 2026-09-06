@@ -19,16 +19,16 @@ import org.springframework.transaction.annotation.Transactional;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.time.LocalDateTime;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.HashMap;
 import java.util.Set;
 
 @Service
@@ -43,60 +43,136 @@ public class WorksheetService {
     private final MarkingReviewStatusProjectionRepository reviewStates;
     private final EntityManager entityManager;
 
-    public WorksheetService(WorksheetRepository worksheets, WorksheetGenerationRequestRepository requests,
-            TutorClassRepository classes, StudentProfileRepository students, SyllabusTopicRepository topics,
-            QuestionRepository questions, MasteryApprovedResultRepository approvedResults,
-            MarkingReviewStatusProjectionRepository reviewStates, EntityManager entityManager) {
-        this.worksheets = worksheets; this.requests = requests; this.classes = classes; this.students = students;
-        this.topics = topics; this.questions = questions; this.approvedResults = approvedResults;
-        this.reviewStates = reviewStates; this.entityManager = entityManager;
+    public WorksheetService(
+            WorksheetRepository worksheets,
+            WorksheetGenerationRequestRepository requests,
+            TutorClassRepository classes,
+            StudentProfileRepository students,
+            SyllabusTopicRepository topics,
+            QuestionRepository questions,
+            MasteryApprovedResultRepository approvedResults,
+            MarkingReviewStatusProjectionRepository reviewStates,
+            EntityManager entityManager
+    ) {
+        this.worksheets = worksheets;
+        this.requests = requests;
+        this.classes = classes;
+        this.students = students;
+        this.topics = topics;
+        this.questions = questions;
+        this.approvedResults = approvedResults;
+        this.reviewStates = reviewStates;
+        this.entityManager = entityManager;
     }
 
     @Transactional
     public WorksheetRequests.GenerationRequestResponse generate(long tutorId, long classId, String idempotencyKey,
             WorksheetRequests.GenerateWorksheetRequest input) {
-        String key = requireIdempotencyKey(idempotencyKey);
-        NormalizedGeneration normalized = normalize(input);
-        String hash = requestHash(classId, normalized);
-        var existing = requests.findByTutorIdAndIdempotencyKey(tutorId, key);
-        if (existing.isPresent()) {
-            if (!existing.get().getRequestHash().equals(hash)) throw new IdempotencyConflictException();
-            return generationResponse(existing.get(), tutorId);
+        String normalizedIdempotencyKey = requireIdempotencyKey(idempotencyKey);
+        NormalizedGeneration normalizedRequest = normalize(input);
+        String requestHash = requestHash(classId, normalizedRequest);
+
+        WorksheetGenerationRequest existingRequest = requests
+            .findByTutorIdAndIdempotencyKey(tutorId, normalizedIdempotencyKey)
+            .orElse(null);
+        if (existingRequest != null) {
+            return existingGenerationResponse(existingRequest, requestHash, tutorId);
         }
+
         TutorClass tutorClass = ownedClass(tutorId, classId);
-        requireTopics(normalized.topicIds());
-        Set<Long> members = validateTargets(tutorId, classId, normalized.targetMode(), normalized.studentIds());
-        WorksheetGenerationRequest request = new WorksheetGenerationRequest(tutorId, classId, normalized.targetMode(),
-            normalized.questionCount(), normalized.questionType(), normalized.difficulty(), normalized.dueAt(), key, hash, normalized.topicIds(), members);
+        requireTopics(normalizedRequest.topicIds());
+        Set<Long> targetStudentIds = validateTargets(
+            tutorId,
+            classId,
+            normalizedRequest.targetMode(),
+            normalizedRequest.studentIds()
+        );
+        WorksheetGenerationRequest request = new WorksheetGenerationRequest(
+            tutorId,
+            classId,
+            normalizedRequest.targetMode(),
+            normalizedRequest.questionCount(),
+            normalizedRequest.questionType(),
+            normalizedRequest.difficulty(),
+            normalizedRequest.dueAt(),
+            normalizedIdempotencyKey,
+            requestHash,
+            normalizedRequest.topicIds(),
+            targetStudentIds
+        );
         try {
             requests.save(request);
             entityManager.flush(); // request id is the immutable worksheet provenance and code suffix.
         } catch (DataIntegrityViolationException exception) {
-            WorksheetGenerationRequest winner = requests.findByTutorIdAndIdempotencyKey(tutorId, key).orElseThrow(() -> exception);
-            if (!winner.getRequestHash().equals(hash)) throw new IdempotencyConflictException();
-            return generationResponse(winner, tutorId);
+            WorksheetGenerationRequest winningRequest = requests
+                .findByTutorIdAndIdempotencyKey(tutorId, normalizedIdempotencyKey)
+                .orElseThrow(() -> exception);
+            return existingGenerationResponse(winningRequest, requestHash, tutorId);
         }
+
         request.start();
-        List<Question> selected = selectBalancedQuestions(normalized.topicIds(), normalized.questionCount(), normalized.questionType(), normalized.difficulty());
-        if (selected.size() != normalized.questionCount()) {
+        List<Question> selectedQuestions = selectBalancedQuestions(
+            normalizedRequest.topicIds(),
+            normalizedRequest.questionCount(),
+            normalizedRequest.questionType(),
+            normalizedRequest.difficulty()
+        );
+        if (selectedQuestions.size() != normalizedRequest.questionCount()) {
             request.fail("INSUFFICIENT_ACTIVE_QUESTIONS", "The active question bank does not contain enough matching questions.");
             return generationResponse(request, tutorId);
         }
-        Worksheet worksheet = new Worksheet();
-        worksheet.setTutorId(tutorId);
-        worksheet.setCode("GEN-" + request.getId());
-        worksheet.setTitle(normalized.title() == null ? "Generated worksheet " + request.getId() : normalized.title());
-        worksheet.setInstructions(normalized.instructions());
-        worksheet.setSubject(tutorClass.getSubject());
-        worksheet.setWorksheetType(normalized.worksheetType());
-        worksheet.setAudienceType(normalized.targetMode() == WorksheetGenerationRequest.TargetMode.CLASS
-            ? Worksheet.AudienceType.CLASS : Worksheet.AudienceType.STUDENT);
-        worksheet.setGenerationRequest(request);
-        selected.forEach(worksheet::addQuestion);
+
+        Worksheet worksheet = createGeneratedWorksheet(
+            tutorId,
+            tutorClass,
+            request,
+            normalizedRequest,
+            selectedQuestions
+        );
         worksheets.save(worksheet);
         request.succeed();
         entityManager.flush();
         return generationResponse(request, tutorId);
+    }
+
+    private WorksheetRequests.GenerationRequestResponse existingGenerationResponse(
+            WorksheetGenerationRequest existingRequest,
+            String requestHash,
+            long tutorId
+    ) {
+        if (!existingRequest.getRequestHash().equals(requestHash)) {
+            throw new IdempotencyConflictException();
+        }
+
+        return generationResponse(existingRequest, tutorId);
+    }
+
+    private Worksheet createGeneratedWorksheet(
+            long tutorId,
+            TutorClass tutorClass,
+            WorksheetGenerationRequest request,
+            NormalizedGeneration normalizedRequest,
+            List<Question> selectedQuestions
+    ) {
+        Worksheet worksheet = new Worksheet();
+        worksheet.setTutorId(tutorId);
+        worksheet.setCode("GEN-" + request.getId());
+        worksheet.setTitle(
+            normalizedRequest.title() == null
+                ? "Generated worksheet " + request.getId()
+                : normalizedRequest.title()
+        );
+        worksheet.setInstructions(normalizedRequest.instructions());
+        worksheet.setSubject(tutorClass.getSubject());
+        worksheet.setWorksheetType(normalizedRequest.worksheetType());
+        worksheet.setAudienceType(
+            normalizedRequest.targetMode() == WorksheetGenerationRequest.TargetMode.CLASS
+                ? Worksheet.AudienceType.CLASS
+                : Worksheet.AudienceType.STUDENT
+        );
+        worksheet.setGenerationRequest(request);
+        selectedQuestions.forEach(worksheet::addQuestion);
+        return worksheet;
     }
 
     @Transactional(readOnly = true)
@@ -387,11 +463,22 @@ public class WorksheetService {
         return Set.copyOf(requested);
     }
     private List<Question> loadActiveQuestions(List<Long> requestedIds) {
-        if (new LinkedHashSet<>(requestedIds).size() != requestedIds.size()) throw new InvalidWorksheetRequestException("questionIds must be unique.");
-        List<Question> loaded = new ArrayList<>();
-        for (Long id : requestedIds) loaded.add(questions.findById(id).filter(q -> q.getArchiveState() == Question.ArchiveState.ACTIVE)
-            .orElseThrow(() -> new InvalidWorksheetRequestException("Every questionId must be active in the question bank.")));
-        return loaded;
+        boolean hasDuplicateQuestionIds = new LinkedHashSet<>(requestedIds).size()
+            != requestedIds.size();
+        if (hasDuplicateQuestionIds) {
+            throw new InvalidWorksheetRequestException("questionIds must be unique.");
+        }
+
+        List<Question> activeQuestions = new ArrayList<>();
+        for (Long questionId : requestedIds) {
+            Question activeQuestion = questions.findById(questionId)
+                .filter(question -> question.getArchiveState() == Question.ArchiveState.ACTIVE)
+                .orElseThrow(() -> new InvalidWorksheetRequestException(
+                    "Every questionId must be active in the question bank."
+                ));
+            activeQuestions.add(activeQuestion);
+        }
+        return activeQuestions;
     }
 
     /**
@@ -424,28 +511,76 @@ public class WorksheetService {
     }
     private NormalizedGeneration normalize(WorksheetRequests.GenerateWorksheetRequest input) {
         List<Long> topicIds = input.topicIds().stream().distinct().sorted().toList();
-        if (topicIds.size() != input.topicIds().size()) throw new InvalidWorksheetRequestException("topicIds must be unique.");
+        if (topicIds.size() != input.topicIds().size()) {
+            throw new InvalidWorksheetRequestException("topicIds must be unique.");
+        }
         if (input.questionCount() < topicIds.size()) {
             throw new InvalidWorksheetRequestException("questionCount must be at least the number of selected topics.");
         }
-        Set<Long> studentIds = input.studentIds() == null ? Set.of() : new LinkedHashSet<>(input.studentIds());
-        if (input.studentIds() != null && studentIds.size() != input.studentIds().size()) throw new InvalidWorksheetRequestException("studentIds must be unique.");
+        Set<Long> studentIds = input.studentIds() == null
+            ? Set.of()
+            : new LinkedHashSet<>(input.studentIds());
+        boolean hasDuplicateStudentIds = input.studentIds() != null
+            && studentIds.size() != input.studentIds().size();
+        if (hasDuplicateStudentIds) {
+            throw new InvalidWorksheetRequestException("studentIds must be unique.");
+        }
         Worksheet.WorksheetType worksheetType = input.worksheetType() == null
-            ? Worksheet.WorksheetType.STANDARD : input.worksheetType();
-        return new NormalizedGeneration(input.targetMode(), topicIds, input.questionCount(), input.questionType(), input.difficulty(), input.dueAt(),
-            blankToNull(input.title()), blankToNull(input.instructions()), studentIds, worksheetType);
+            ? Worksheet.WorksheetType.STANDARD
+            : input.worksheetType();
+        return new NormalizedGeneration(
+            input.targetMode(),
+            topicIds,
+            input.questionCount(),
+            input.questionType(),
+            input.difficulty(),
+            input.dueAt(),
+            blankToNull(input.title()),
+            blankToNull(input.instructions()),
+            studentIds,
+            worksheetType
+        );
     }
+
     private String requireIdempotencyKey(String raw) {
-        if (raw == null || raw.isBlank() || raw.trim().length() > 128) throw new InvalidWorksheetRequestException("Idempotency-Key is required and may not exceed 128 characters.");
+        if (raw == null || raw.isBlank() || raw.trim().length() > 128) {
+            throw new InvalidWorksheetRequestException(
+                "Idempotency-Key is required and may not exceed 128 characters."
+            );
+        }
         return raw.trim();
     }
-    private String requireText(String value, String field) { if (value.isBlank()) throw new InvalidWorksheetRequestException(field + " must not be blank."); return value.trim(); }
-    private String blankToNull(String value) { return value == null || value.isBlank() ? null : value.trim(); }
+
+    private String requireText(String value, String field) {
+        if (value.isBlank()) {
+            throw new InvalidWorksheetRequestException(field + " must not be blank.");
+        }
+        return value.trim();
+    }
+
+    private String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
     private String requestHash(long classId, NormalizedGeneration value) {
-        String canonical = classId + "|" + value.targetMode() + "|" + value.topicIds() + "|" + value.questionCount() + "|" + value.questionType() + "|" + value.difficulty() + "|" + value.worksheetType()
-            + "|" + value.dueAt() + "|" + value.title() + "|" + value.instructions() + "|" + value.studentIds().stream().sorted().toList();
-        try { byte[] bytes = MessageDigest.getInstance("SHA-256").digest(canonical.getBytes(StandardCharsets.UTF_8)); return java.util.HexFormat.of().formatHex(bytes); }
-        catch (NoSuchAlgorithmException exception) { throw new IllegalStateException("SHA-256 is unavailable", exception); }
+        String canonicalRequest = classId
+            + "|" + value.targetMode()
+            + "|" + value.topicIds()
+            + "|" + value.questionCount()
+            + "|" + value.questionType()
+            + "|" + value.difficulty()
+            + "|" + value.worksheetType()
+            + "|" + value.dueAt()
+            + "|" + value.title()
+            + "|" + value.instructions()
+            + "|" + value.studentIds().stream().sorted().toList();
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                .digest(canonicalRequest.getBytes(StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is unavailable", exception);
+        }
     }
     private record NormalizedGeneration(WorksheetGenerationRequest.TargetMode targetMode, List<Long> topicIds, int questionCount,
         Question.QuestionType questionType, Question.Difficulty difficulty, LocalDateTime dueAt, String title, String instructions, Set<Long> studentIds,

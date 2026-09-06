@@ -2,7 +2,9 @@
 import React from 'react';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import ViewportContext from '@/context/viewport-context';
-import SidebarContext from '../context/sidebar-context';
+import SidebarContext, {
+  type SidebarContextValue,
+} from '@/context/sidebar-context';
 
 interface SidebarProviderProps {
   children?: React.ReactNode;
@@ -10,10 +12,18 @@ interface SidebarProviderProps {
 
 const SidebarProvider = ({ children }: SidebarProviderProps) => {
   const viewportContext = React.useContext(ViewportContext);
+
   if (!viewportContext) {
     throw new Error('Viewport context was used without a provider.');
   }
-  const { theme, isOverSmViewport, isOverMdViewport, isNavigationExpanded, setIsNavigationExpanded } = viewportContext;
+
+  const {
+    theme,
+    isOverSmViewport,
+    isOverMdViewport,
+    isNavigationExpanded,
+    setIsNavigationExpanded,
+  } = viewportContext;
   const disableCollapsibleSidebar = false;
   const [expandedItemIds, setExpandedItemIds] = React.useState<string[]>([]);
   const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
@@ -28,6 +38,7 @@ const SidebarProvider = ({ children }: SidebarProviderProps) => {
     : theme.transitions.duration.leavingScreen;
   const [isFullyExpanded, setIsFullyExpanded] = React.useState(isNavigationExpanded);
   const [isFullyCollapsed, setIsFullyCollapsed] = React.useState(!isNavigationExpanded);
+
   React.useEffect(() => {
     const drawerWidthTransitionTimeout = setTimeout(
       () => setIsFullyExpanded(isNavigationExpanded),
@@ -35,7 +46,7 @@ const SidebarProvider = ({ children }: SidebarProviderProps) => {
     );
     return () => clearTimeout(drawerWidthTransitionTimeout);
   }, [drawerEnteringDuration, isNavigationExpanded]);
-  
+
   React.useEffect(() => {
     const drawerWidthTransitionTimeout = setTimeout(
       () => setIsFullyCollapsed(!isNavigationExpanded),
@@ -45,12 +56,14 @@ const SidebarProvider = ({ children }: SidebarProviderProps) => {
   }, [drawerLeavingDuration, isNavigationExpanded]);
 
   const mini = !disableCollapsibleSidebar && !isNavigationExpanded;
+
   const handleSetSidebarExpanded = React.useCallback(
     (newExpanded: boolean) => () => {
       setIsNavigationExpanded(newExpanded);
     },
     [setIsNavigationExpanded],
   );
+
   const handlePageItemClick = React.useCallback(
     (itemId: string, hasNestedNavigation: boolean) => {
       if (hasNestedNavigation && !mini) {
@@ -67,10 +80,12 @@ const SidebarProvider = ({ children }: SidebarProviderProps) => {
     },
     [mini, setIsNavigationExpanded, isOverSmViewport],
   );
+
   const hasDrawerTransitions =
     isOverSmViewport && (!disableCollapsibleSidebar || isOverMdViewport);
-  const sidebarContextValue = React.useMemo(() => {
-    return {
+
+  const sidebarContextValue = React.useMemo<SidebarContextValue>(
+    () => ({
       expandedItemIds,
       handleSetSidebarExpanded,
       handlePageItemClick,
@@ -80,23 +95,23 @@ const SidebarProvider = ({ children }: SidebarProviderProps) => {
       isFullyCollapsed,
       setIsFullyCollapsed,
       hasDrawerTransitions,
-    };
-  }, [
-    expandedItemIds,
-    handleSetSidebarExpanded,
-    handlePageItemClick,
-    mini,
-    isFullyExpanded,
-    setIsFullyExpanded,
-    isFullyCollapsed,
-    setIsFullyCollapsed,
-    hasDrawerTransitions,
-  ]);
+    }),
+    [
+      expandedItemIds,
+      handleSetSidebarExpanded,
+      handlePageItemClick,
+      mini,
+      isFullyExpanded,
+      isFullyCollapsed,
+      hasDrawerTransitions,
+    ],
+  );
+
   return (
     <SidebarContext.Provider value={sidebarContextValue}>
       {children}
     </SidebarContext.Provider>
-  )
-}
+  );
+};
 
 export default SidebarProvider;

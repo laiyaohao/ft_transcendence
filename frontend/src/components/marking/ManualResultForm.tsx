@@ -15,7 +15,11 @@ import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import Link from "next/link";
-import { createManualResults, type ManualResultBatchRequest, type MarkingReview } from "@/services/submissions";
+import {
+  createManualResults,
+  type ManualResultBatchRequest,
+  type MarkingReview,
+} from "@/services/submissions";
 import type { TutorWorksheet } from "@/services/worksheets";
 
 export type ManualResultStudent = { id: number; fullName: string };
@@ -31,6 +35,38 @@ type Props = {
 
 const blankDraft = (): DraftEntry => ({ answer: "", marks: "", feedback: "" });
 
+type ManualResultEntry = ManualResultBatchRequest["entries"][number];
+
+function buildManualResultEntries(
+  questions: TutorWorksheet["questions"],
+  drafts: Record<number, DraftEntry>,
+): ManualResultEntry[] {
+  return questions.map((question) => {
+    const draft = drafts[question.id] ?? blankDraft();
+
+    return {
+      questionBankId: question.id,
+      answer: draft.answer.trim(),
+      marks: Number(draft.marks),
+      feedback: draft.feedback.trim(),
+    };
+  });
+}
+
+function findInvalidEntry(
+  entries: ManualResultEntry[],
+  questions: TutorWorksheet["questions"],
+) {
+  return entries.find(
+    (entry, index) =>
+      !entry.answer
+      || !entry.feedback
+      || !Number.isFinite(entry.marks)
+      || entry.marks < 0
+      || entry.marks > questions[index]!.totalMarks,
+  );
+}
+
 /** Tutor-entered fallback that records one selected Student's result atomically. */
 export default function ManualResultForm({ worksheet, students, existingResults = [], submit = createManualResults, onCreated }: Props) {
   const [studentId, setStudentId] = React.useState("");
@@ -38,13 +74,23 @@ export default function ManualResultForm({ worksheet, students, existingResults 
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
   const selectedStudentId = Number(studentId);
-  const existingByQuestion = React.useMemo(() => new Map(
-    existingResults.filter((result) => result.studentId === selectedStudentId).map((result) => [result.questionBankId, result]),
-  ), [existingResults, selectedStudentId]);
-  const pendingQuestions = worksheet.questions.filter((question) => !existingByQuestion.has(question.id));
+  const existingByQuestion = React.useMemo(
+    () => new Map(
+      existingResults
+        .filter((result) => result.studentId === selectedStudentId)
+        .map((result) => [result.questionBankId, result]),
+    ),
+    [existingResults, selectedStudentId],
+  );
+  const pendingQuestions = worksheet.questions.filter(
+    (question) => !existingByQuestion.has(question.id),
+  );
 
   const setDraft = (questionId: number, patch: Partial<DraftEntry>) => {
-    setDrafts((current) => ({ ...current, [questionId]: { ...(current[questionId] ?? blankDraft()), ...patch } }));
+    setDrafts((current) => ({
+      ...current,
+      [questionId]: { ...(current[questionId] ?? blankDraft()), ...patch },
+    }));
   };
   const submitForm = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -56,12 +102,8 @@ export default function ManualResultForm({ worksheet, students, existingResults 
       setError("Every worksheet question already has an approved result. Open a result to revise it.");
       return;
     }
-    const entries = pendingQuestions.map((question) => {
-      const draft = drafts[question.id] ?? blankDraft();
-      return { questionBankId: question.id, answer: draft.answer.trim(), marks: Number(draft.marks), feedback: draft.feedback.trim() };
-    });
-    const invalid = entries.find((entry, index) => !entry.answer || !entry.feedback || !Number.isFinite(entry.marks)
-      || entry.marks < 0 || entry.marks > pendingQuestions[index]!.totalMarks);
+    const entries = buildManualResultEntries(pendingQuestions, drafts);
+    const invalid = findInvalidEntry(entries, pendingQuestions);
     if (invalid) {
       const question = pendingQuestions.find((item) => item.id === invalid.questionBankId);
       setError(`${question?.code ?? "This question"} needs an answer, tutor feedback and marks within its allocation.`);
@@ -78,13 +120,15 @@ export default function ManualResultForm({ worksheet, students, existingResults 
     }
   };
 
-  const unavailable = worksheet.status !== "APPROVED" || students.length === 0 || worksheet.questions.length === 0;
+  const isUnavailable = worksheet.status !== "APPROVED"
+    || students.length === 0
+    || worksheet.questions.length === 0;
   return (
     <Card component="section" variant="outlined" sx={{ maxWidth: 920, mx: "auto", p: { xs: 2, sm: 3 }, borderRadius: "14px", borderColor: "#EBE4D9", bgcolor: "#FFFDFA" }}>
       <Typography component="h1" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: { xs: 28, sm: 36 }, mb: 0.5 }}>Enter results manually</Typography>
       <Typography sx={{ color: "#6F675E", mb: 2 }}>{worksheet.title}</Typography>
       <Alert severity="info" sx={{ mb: 2 }}>Tutor-entered marks are approved immediately and recorded with their audit history. Each submitted question is saved as one atomic approval set; OCR pages are never created or changed here.</Alert>
-      {unavailable ? (
+      {isUnavailable ? (
         <Alert severity="warning" role="alert">{worksheet.status !== "APPROVED" ? "Approve and assign this worksheet before entering results." : "This worksheet needs at least one assigned student and question."}</Alert>
       ) : (
         <Box component="form" noValidate onSubmit={(event) => void submitForm(event)}>

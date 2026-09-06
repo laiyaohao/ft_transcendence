@@ -14,6 +14,15 @@ import java.util.Map;
 @Service
 public class AiOcrService {
 
+    private static final String JPEG_MEDIA_TYPE = "image/jpeg";
+    private static final String PNG_MEDIA_TYPE = "image/png";
+    private static final String OCR_PROMPT =
+        "You are a precise mathematical OCR engine. "
+            + "Extract all printed text and handwritten calculations exactly as written. "
+            + "Preserve all mathematical operators (+, -, *, /, =) and numbers accurately "
+            + "without skipping symbols. "
+            + "Do not include explanation, preamble, or commentary.";
+
     @Value("${ai.engine.url}")
     private String apiUrl;
 
@@ -40,85 +49,150 @@ public class AiOcrService {
     }
 
     static void validateApiKey(String candidate) {
-        String normalized = candidate == null ? "" : candidate.trim();
-        if (normalized.isBlank()
-                || normalized.toLowerCase(java.util.Locale.ROOT).contains("change-me")
-                || normalized.startsWith("REPLACE_WITH_")) {
+        String normalizedCredential = candidate == null ? "" : candidate.trim();
+        boolean isBlankCredential = normalizedCredential.isBlank();
+        boolean containsTemplateValue = normalizedCredential
+            .toLowerCase(java.util.Locale.ROOT)
+            .contains("change-me");
+        boolean usesReplacementPlaceholder = normalizedCredential
+            .startsWith("REPLACE_WITH_");
+
+        if (
+            isBlankCredential
+                || containsTemplateValue
+                || usesReplacementPlaceholder
+        ) {
             throw new IllegalArgumentException(
-                "AI_ENGINE_API_KEY must be a real provider credential, not a placeholder");
+                "AI_ENGINE_API_KEY must be a real provider credential, not a placeholder"
+            );
         }
     }
 
     public String extractTextFromImage(String base64Image) {
-        return extractBase64(base64Image, "image/jpeg").text();
+        return extractBase64(base64Image, JPEG_MEDIA_TYPE).text();
     }
 
     public OcrResult extract(byte[] bytes, String mediaType) {
         if (!isSupportedImage(mediaType)) {
             return new OcrResult("Error: OCR accepts JPEG or PNG images only.", 0, true);
         }
-        return extractBase64(java.util.Base64.getEncoder().encodeToString(bytes), mediaType);
+
+        String base64Image = java.util.Base64.getEncoder().encodeToString(bytes);
+        return extractBase64(base64Image, mediaType);
     }
 
     private OcrResult extractBase64(String base64Image, String mediaType) {
-        // Strict prompt specifically optimized for handwritten math & equations
-        String prompt = "You are a precise mathematical OCR engine. " +
-                        "Extract all printed text and handwritten calculations exactly as written. " +
-                        "Preserve all mathematical operators (+, -, *, /, =) and numbers accurately without skipping symbols. " +
-                        "Do not include explanation, preamble, or commentary.";
-
-        List<Map<String, Object>> contentArray = List.of(
-            Map.of("type", "text", "text", prompt),
-            Map.of("type", "image_url", "image_url", Map.of("url", "data:" + mediaType + ";base64," + base64Image))
+        Map<String, Object> requestPayload = buildOcrRequest(
+            base64Image,
+            mediaType
         );
-
-        Map<String, Object> userMessage = Map.of("role", "user", "content", contentArray);
-
-        Map<String, Object> requestPayload = Map.of(
-            "model", visionModel,
-            "messages", List.of(userMessage),
-            "temperature", 0.0 // Set to 0.0 for deterministic, literal transcription
-        );
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.setBearerAuth(apiKey);
+        HttpHeaders headers = createProviderHeaders();
 
         try {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> response = restTemplate.postForObject(
-                apiUrl, 
-                new HttpEntity<>(requestPayload, headers), 
+            Map<String, Object> providerResponse = restTemplate.postForObject(
+                apiUrl,
+                new HttpEntity<>(requestPayload, headers),
                 Map.class
             );
 
-            if (response != null && response.containsKey("choices")) {
-                List<Map<String, Object>> choices = (List<Map<String, Object>>) response.get("choices");
-                Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
-                String rawContent = (String) message.get("content");
+            if (providerResponse != null && providerResponse.containsKey("choices")) {
+                String rawContent = extractFirstChoiceContent(providerResponse);
+                String extractedText = cleanModelOutput(rawContent);
 
-                // Remove <think>...</think> blocks and trim surrounding whitespace
-                String text = cleanModelOutput(rawContent);
-                if (text.isBlank()) return new OcrResult("", 0, true);
-                return new OcrResult(text, confidence(text), false);
+                if (extractedText.isBlank()) {
+                    return new OcrResult("", 0, true);
+                }
+
+                return new OcrResult(
+                    extractedText,
+                    calculateConfidence(extractedText),
+                    false
+                );
             }
-        } catch (Exception e) {
-            return new OcrResult("Error: Could not extract text. " + e.getMessage(), 0, true);
+        } catch (Exception exception) {
+            return new OcrResult(
+                "Error: Could not extract text. " + exception.getMessage(),
+                0,
+                true
+            );
         }
+
         return new OcrResult("Error: Empty response from OCR engine.", 0, true);
+    }
+
+    private Map<String, Object> buildOcrRequest(
+        String base64Image,
+        String mediaType
+    ) {
+        List<Map<String, Object>> messageContent = List.of(
+            Map.of("type", "text", "text", OCR_PROMPT),
+            Map.of(
+                "type", "image_url",
+                "image_url",
+                Map.of("url", "data:" + mediaType + ";base64," + base64Image)
+            )
+        );
+        Map<String, Object> userMessage = Map.of(
+            "role",
+            "user",
+            "content",
+            messageContent
+        );
+
+        // Literal transcription must remain deterministic for tutor review.
+        return Map.of(
+            "model",
+            visionModel,
+            "messages",
+            List.of(userMessage),
+            "temperature",
+            0.0
+        );
+    }
+
+    private HttpHeaders createProviderHeaders() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setBearerAuth(apiKey);
+        return headers;
+    }
+
+    @SuppressWarnings("unchecked")
+    private String extractFirstChoiceContent(Map<String, Object> providerResponse) {
+        List<Map<String, Object>> choices = (List<Map<String, Object>>) providerResponse
+            .get("choices");
+        Map<String, Object> firstMessage = (Map<String, Object>) choices
+            .get(0)
+            .get("message");
+        return (String) firstMessage.get("content");
     }
 
     /**
      * Strips internal reasoning tags and cleans whitespace.
      */
     private String cleanModelOutput(String rawText) {
-        if (rawText == null) return "";
-        // (?s) enables dotall mode so .* matches newlines across multi-line thinking blocks
+        if (rawText == null) {
+            return "";
+        }
+
+        // Dotall lets the expression remove reasoning blocks that span lines.
         return rawText.replaceAll("(?s)<think>.*?</think>", "").trim();
     }
-    private double confidence(String text) { return text.matches(".*[A-Za-z0-9].*") ? (text.length() < 8 ? .65 : .94) : .4; }
-    private boolean isSupportedImage(String mediaType) {
-        return "image/jpeg".equals(mediaType) || "image/png".equals(mediaType);
+
+    private double calculateConfidence(String text) {
+        boolean containsRecognizedCharacters = text.matches(".*[A-Za-z0-9].*");
+        if (!containsRecognizedCharacters) {
+            return .4;
+        }
+
+        boolean isShortExtraction = text.length() < 8;
+        return isShortExtraction ? .65 : .94;
     }
-    public record OcrResult(String text, double confidence, boolean unreadable) { }
+
+    private boolean isSupportedImage(String mediaType) {
+        return JPEG_MEDIA_TYPE.equals(mediaType) || PNG_MEDIA_TYPE.equals(mediaType);
+    }
+
+    public record OcrResult(String text, double confidence, boolean unreadable) {
+    }
 }

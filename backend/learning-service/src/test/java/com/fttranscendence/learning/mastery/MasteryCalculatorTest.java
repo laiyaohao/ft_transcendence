@@ -16,4 +16,17 @@ class MasteryCalculatorTest {
         assertEquals(new BigDecimal("37.50"), calculator.calculate(new BigDecimal("75"), 1, BigDecimal.ONE, BigDecimal.ONE, 1).orElseThrow().score());
         assertThrows(IllegalArgumentException.class, () -> calculator.calculate(BigDecimal.ZERO, 0, new BigDecimal("2"), BigDecimal.ONE, 0));
     }
+
+    @Test void usesTheUnroundedAttemptPercentageForTheRunningAverage() {
+        MasteryCalculator.Result result = calculator.calculate(
+            BigDecimal.ZERO,
+            1,
+            new BigDecimal("2"),
+            new BigDecimal("3"),
+            0
+        ).orElseThrow();
+
+        assertEquals(new BigDecimal("33.33"), result.score());
+        assertEquals(new BigDecimal("66.67"), result.adjustedAttemptPercent());
+    }
 }

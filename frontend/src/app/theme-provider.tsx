@@ -7,10 +7,18 @@ import { dataDisplayCustomizations } from '../customizations/data-display';
 import { feedbackCustomizations } from '../customizations/feedback';
 import { navigationCustomizations } from '../customizations/navigation';
 import { surfacesCustomizations } from '../customizations/surfaces';
-import { colorSchemes, typography, shadows, shape } from '../theme/theme-primitives';
+import {
+  colorSchemes,
+  shape,
+  shadows,
+  typography,
+} from '../theme/theme-primitives';
 
 const theme = createTheme({
-  cssVariables: { colorSchemeSelector: 'data-mui-color-scheme', cssVarPrefix: 'lumina' },
+  cssVariables: {
+    colorSchemeSelector: 'data-mui-color-scheme',
+    cssVarPrefix: 'lumina',
+  },
   colorSchemes,
   typography,
   shadows,

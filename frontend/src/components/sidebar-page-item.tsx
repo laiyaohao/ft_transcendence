@@ -18,6 +18,10 @@ export interface SidebarPageItemProps {
   disabled?: boolean;
 }
 
+function isExternalHref(href: string): boolean {
+  return href.startsWith('http://') || href.startsWith('https://');
+}
+
 export default function SidebarPageItem({
   id,
   title,
@@ -27,7 +31,7 @@ export default function SidebarPageItem({
   selected = false,
   disabled = false,
 }: SidebarPageItemProps) {
-  const hasExternalHref = href.startsWith('http://') || href.startsWith('https://');
+  const hasExternalHref = isExternalHref(href);
 
   return (
     <ListItem disablePadding data-navigation-id={id}>
@@ -50,7 +54,11 @@ export default function SidebarPageItem({
           '&.Mui-selected .MuiListItemIcon-root': { color: '#9E3A24' },
         }}
       >
-        {icon ? <ListItemIcon sx={{ minWidth: 0, color: 'inherit' }}>{icon}</ListItemIcon> : null}
+        {icon ? (
+          <ListItemIcon sx={{ minWidth: 0, color: 'inherit' }}>
+            {icon}
+          </ListItemIcon>
+        ) : null}
         <ListItemText primary={title} sx={{ my: 0, minWidth: 0 }} />
         {action ? <Box sx={{ ml: 'auto' }}>{action}</Box> : null}
       </ListItemButton>

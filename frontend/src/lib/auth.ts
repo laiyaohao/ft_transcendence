@@ -19,7 +19,20 @@ interface TokenClaims {
   exp?: unknown;
 }
 
-const TUTOR_PATHS = ['/tutor/dashboard', '/tutor/worksheets', '/tutor/reviews', '/tutor/alerts', '/classes', '/students', '/questions', '/reports', '/upload', '/ocr', '/manual-answers', '/profile'];
+const TUTOR_PATHS = [
+  '/tutor/dashboard',
+  '/tutor/worksheets',
+  '/tutor/reviews',
+  '/tutor/alerts',
+  '/classes',
+  '/students',
+  '/questions',
+  '/reports',
+  '/upload',
+  '/ocr',
+  '/manual-answers',
+  '/profile',
+];
 const STUDENT_PATHS = [
   '/',
   '/student/dashboard',
@@ -38,9 +51,14 @@ const STUDENT_PATHS = [
 function decodePayload(token: string): TokenClaims | null {
   try {
     const parts = token.split('.');
-    if (parts.length !== 3) return null;
+    if (parts.length !== 3) {
+      return null;
+    }
+
     const normalized = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+    const payloadLength = Math.ceil(normalized.length / 4) * 4;
+    const padded = normalized.padEnd(payloadLength, '=');
+
     return JSON.parse(globalThis.atob(padded)) as TokenClaims;
   } catch {
     return null;
@@ -96,11 +114,20 @@ export function saveAuthSession(payload: AuthResponsePayload): AuthSession {
 }
 
 export function getBrowserSession(): AuthSession | null {
-  if (typeof window === 'undefined') return null;
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
   const token = window.localStorage.getItem('jwt_token');
-  if (!token) return null;
+  if (!token) {
+    return null;
+  }
+
   const session = parseAuthToken(token);
-  if (!session) clearAuthSession();
+  if (!session) {
+    clearAuthSession();
+  }
+
   return session;
 }
 

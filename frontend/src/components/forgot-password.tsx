@@ -15,6 +15,11 @@ interface ForgotPasswordProps {
 }
 
 export default function ForgotPassword({ open, handleClose }: ForgotPasswordProps) {
+  const closeAfterSubmitting = (event: React.SubmitEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    handleClose();
+  };
+
   return (
     <Dialog
       open={open}
@@ -22,10 +27,7 @@ export default function ForgotPassword({ open, handleClose }: ForgotPasswordProp
       slotProps={{
         paper: {
           component: 'form',
-          onSubmit: (event: React.SubmitEvent<HTMLFormElement>) => {
-            event.preventDefault();
-            handleClose();
-          },
+          onSubmit: closeAfterSubmitting,
           sx: { backgroundImage: 'none' },
         },
       }}

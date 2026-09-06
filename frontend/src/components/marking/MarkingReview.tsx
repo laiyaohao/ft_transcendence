@@ -29,6 +29,27 @@ type Props = {
   reset?: typeof resetMarkingReview;
 };
 
+type DiagnosticDraft = {
+  mistakeType: MistakeType;
+  description: string;
+  keywords: string;
+};
+
+function buildDiagnosticEvidence(includeDiagnostic: boolean, draft: DiagnosticDraft) {
+  if (!includeDiagnostic) {
+    return [];
+  }
+
+  return [{
+    mistakeType: draft.mistakeType,
+    description: draft.description.trim(),
+    missingKeywords: draft.keywords
+      .split(",")
+      .map((keyword) => keyword.trim())
+      .filter(Boolean),
+  }];
+}
+
 export default function MarkingReview({
   review: initialReview,
   approve = approveMarkingReview,
@@ -46,7 +67,9 @@ export default function MarkingReview({
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  const act = async (operation: () => Promise<MarkingReviewData>) => {
+  const runReviewOperation = async (
+    operation: () => Promise<MarkingReviewData>,
+  ) => {
     setBusy(true);
     setError(null);
     try {
@@ -64,7 +87,40 @@ export default function MarkingReview({
   const isManualResult = review.aiSuggestedMarks === null
     && review.aiSuggestedOutcome === null
     && review.aiSuggestedFeedback === null;
-  const diagnosticEvidence = includeDiagnostic ? [{ mistakeType, description: diagnosticDescription.trim(), missingKeywords: diagnosticKeywords.split(",").map((keyword) => keyword.trim()).filter(Boolean) }] : [];
+  const diagnosticEvidence = buildDiagnosticEvidence(includeDiagnostic, {
+    mistakeType,
+    description: diagnosticDescription,
+    keywords: diagnosticKeywords,
+  });
+
+  const approveFinalResult = () => {
+    const hasDiagnosticRationale = !includeDiagnostic || diagnosticDescription.trim();
+
+    if (validMarks && feedback.trim() && hasDiagnosticRationale) {
+      void runReviewOperation(() =>
+        approve(review.id, parsedMarks, feedback, diagnosticEvidence),
+      );
+      return;
+    }
+
+    setError(
+      `Enter marks between 0 and ${review.maxMarks.toFixed(2)}, tutor feedback, and a diagnostic rationale when one is included.`,
+    );
+  };
+
+  const flagForLater = () => {
+    if (flagReason.trim()) {
+      void runReviewOperation(() => flag(review.id, flagReason));
+      return;
+    }
+
+    setError("Enter a reason before flagging this review.");
+  };
+
+  const restoreAiSuggestion = () => {
+    setMarks(String(review.aiSuggestedMarks ?? ""));
+    setFeedback(review.aiSuggestedFeedback ?? "");
+  };
 
   return (
     <Box sx={{ maxWidth: 1120, mx: "auto", py: { xs: 2, sm: 4 }, px: { xs: 1.5, sm: 2.5 } }}>
@@ -106,11 +162,16 @@ export default function MarkingReview({
               The provider response was unavailable or incomplete; inspect the deterministic evidence before approving.
             </Typography>}
           </Card>
-          <Card component="form" noValidate variant="outlined" sx={card} onSubmit={(event) => {
-            event.preventDefault();
-            if (validMarks && feedback.trim() && (!includeDiagnostic || diagnosticDescription.trim())) void act(() => approve(review.id, parsedMarks, feedback, diagnosticEvidence));
-            else setError(`Enter marks between 0 and ${review.maxMarks.toFixed(2)}, tutor feedback, and a diagnostic rationale when one is included.`);
-          }}>
+          <Card
+            component="form"
+            noValidate
+            variant="outlined"
+            sx={card}
+            onSubmit={(event) => {
+              event.preventDefault();
+              approveFinalResult();
+            }}
+          >
             <Typography component="h2" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 23, mb: 1.5 }}>Tutor decision</Typography>
             <TextField label="Final marks" value={marks} onChange={(event) => setMarks(event.target.value)} type="number" fullWidth slotProps={{ htmlInput: { min: 0, max: review.maxMarks, step: .01 } }} helperText={`Maximum ${review.maxMarks.toFixed(2)} marks`} sx={{ mb: 1.5 }} disabled={busy} />
             <TextField label="Tutor feedback" value={feedback} onChange={(event) => setFeedback(event.target.value)} fullWidth multiline minRows={3} disabled={busy} />
@@ -133,15 +194,15 @@ export default function MarkingReview({
             </Stack>}
             <Stack direction="row" sx={{ mt: 1.5, gap: 1, flexWrap: "wrap" }}>
               <Button type="submit" disabled={busy} sx={{ bgcolor: "#9E3A24", color: "#FFFDFA", textTransform: "none", "&:hover": { bgcolor: "#7F2D1C" } }}>Approve final result</Button>
-              <Button type="button" onClick={() => { setMarks(String(review.aiSuggestedMarks ?? "")); setFeedback(review.aiSuggestedFeedback ?? ""); }} disabled={busy} sx={{ textTransform: "none", color: "#574E45" }}>Use AI suggestion</Button>
+              <Button type="button" onClick={restoreAiSuggestion} disabled={busy} sx={{ textTransform: "none", color: "#574E45" }}>Use AI suggestion</Button>
             </Stack>
           </Card>
           <Card variant="outlined" sx={card}>
             <Typography sx={label}>REVIEW CONTROLS</Typography>
             <Stack direction={{ xs: "column", sm: "row" }} sx={{ mt: 1, gap: 1 }}>
               <TextField label="Flag reason" value={flagReason} onChange={(event) => setFlagReason(event.target.value)} size="small" fullWidth disabled={busy} />
-              <Button onClick={() => flagReason.trim() ? void act(() => flag(review.id, flagReason)) : setError("Enter a reason before flagging this review.")} disabled={busy} sx={{ textTransform: "none", whiteSpace: "nowrap" }}>Flag for later</Button>
-              <Button onClick={() => void act(() => reset(review.id))} disabled={busy || review.reviewStatus === "PENDING_REVIEW"} sx={{ textTransform: "none", whiteSpace: "nowrap" }}>Reset to AI</Button>
+              <Button onClick={flagForLater} disabled={busy} sx={{ textTransform: "none", whiteSpace: "nowrap" }}>Flag for later</Button>
+              <Button onClick={() => void runReviewOperation(() => reset(review.id))} disabled={busy || review.reviewStatus === "PENDING_REVIEW"} sx={{ textTransform: "none", whiteSpace: "nowrap" }}>Reset to AI</Button>
             </Stack>
           </Card>
         </Stack>

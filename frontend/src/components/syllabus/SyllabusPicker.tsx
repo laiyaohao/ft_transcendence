@@ -11,6 +11,7 @@ import { fetchSyllabusTree, type SyllabusNode, type SyllabusTree } from "@/servi
 
 const NODE_TYPES = ["SUBJECT", "LEVEL", "THEME", "TOPIC", "SUBTOPIC"] as const;
 const labels = ["Subject", "Level", "Theme", "Topic", "Subtopic (optional)"] as const;
+const EMPTY_SELECTION = [null, null, null, null, null] as Array<number | null>;
 
 export interface SyllabusPickerProps {
   value: number | null | undefined;
@@ -41,10 +42,14 @@ function optionsAtDepth(tree: SyllabusTree, selected: Array<number | null>, dept
 }
 
 function selectionFor(tree: SyllabusTree | null, value: number | null | undefined): Array<number | null> {
-  if (!tree || !value) return [null, null, null, null, null];
+  if (!tree || !value) return [...EMPTY_SELECTION];
   const path = findPath(tree.items, value);
-  if (!path || !["TOPIC", "SUBTOPIC"].includes(path.at(-1)?.nodeType ?? "")) return [null, null, null, null, null];
+  if (!path || !isSelectableNode(path.at(-1))) return [...EMPTY_SELECTION];
   return NODE_TYPES.map((_, index) => path[index]?.id ?? null);
+}
+
+function isSelectableNode(node: SyllabusNode | null | undefined): node is SyllabusNode {
+  return node?.nodeType === "TOPIC" || node?.nodeType === "SUBTOPIC";
 }
 
 const fieldSx = {
@@ -65,7 +70,7 @@ export default function SyllabusPicker({
 }: SyllabusPickerProps) {
   const [tree, setTree] = React.useState<SyllabusTree | null>(null);
   const [loadError, setLoadError] = React.useState<string | null>(null);
-  const [selection, setSelection] = React.useState<Array<number | null>>([null, null, null, null, null]);
+  const [selection, setSelection] = React.useState<Array<number | null>>(EMPTY_SELECTION);
 
   const load = React.useCallback(async () => {
     setLoadError(null);
@@ -83,8 +88,11 @@ export default function SyllabusPicker({
     const next = selection.map((existing, index) => index < depth ? existing : null);
     next[depth] = Number.isSafeInteger(id) && id! > 0 ? id : null;
     setSelection(next);
-    const selectedNode = next[depth] === null ? null : optionsAtDepth(tree!, next, depth).find((node) => node.id === next[depth]);
-    onChange(selectedNode && (selectedNode.nodeType === "TOPIC" || selectedNode.nodeType === "SUBTOPIC") ? selectedNode.id : null);
+
+    const selectedNode = next[depth] === null
+      ? null
+      : optionsAtDepth(tree!, next, depth).find((node) => node.id === next[depth]);
+    onChange(isSelectableNode(selectedNode) ? selectedNode.id : null);
   };
 
   if (loadError) return <Box role="alert" sx={{ borderLeft: "3px solid #B4573F", borderRadius: "0 10px 10px 0", bgcolor: "#F6EFE6", p: 1.5 }}><Typography sx={{ color: "#5A544C", fontSize: 12.5, lineHeight: 1.55 }}>{loadError}</Typography><Button onClick={() => void load()} sx={{ minHeight: 34, px: 0, mt: .5, color: "#9E3A24", textTransform: "none", fontWeight: 600 }}>Retry syllabus</Button></Box>;

@@ -58,7 +58,8 @@ public class StudentDashboardService {
         }
         StudentProfile student = students.findByLoginUserId(loginUserId)
             .orElseThrow(StudentDashboardNotFoundException::new);
-        List<MasteryRecord> records = mastery.findProfileRecordsByStudentProfileIdWithTopicAndHistory(student.getId());
+        List<MasteryRecord> records = mastery
+            .findProfileRecordsByStudentProfileIdWithTopicAndHistory(student.getId());
         List<WorksheetAssignment> assignments = effectiveApprovedAssignments(student);
         LocalDateTime localNow = clock.instant().atZone(timeZone).toLocalDateTime();
 
@@ -67,23 +68,51 @@ public class StudentDashboardService {
             timeZone.getId(),
             localNow.toLocalDate(),
             metrics(records, assignments.size()),
-            assignments.stream().max(Comparator.comparing(WorksheetAssignment::getAssignedAt,
-                Comparator.nullsLast(Comparator.naturalOrder())).thenComparing(WorksheetAssignment::getId))
-                .map(this::assignment).orElse(null),
+            mostRecentAssignment(assignments),
             assignments.stream().filter(assignment -> assignment.getDueAt() != null)
                 .filter(assignment -> assignment.getDueAt().isAfter(localNow))
                 .min(Comparator.comparing(WorksheetAssignment::getDueAt).thenComparing(WorksheetAssignment::getId))
                 .map(this::assignment).orElse(null),
-            records.stream().max(Comparator.comparing(MasteryRecord::getScore)
-                .thenComparing(record -> record.getSyllabusTopic().getName())
-                .thenComparing(MasteryRecord::getId)).map(this::topic).orElse(null),
-            records.stream().filter(this::needsFocus)
-                .min(Comparator.comparing(MasteryRecord::getScore)
-                    .thenComparing(record -> record.getSyllabusTopic().getName())
-                    .thenComparing(MasteryRecord::getId)).map(this::topic).orElse(null),
+            strongestTopic(records),
+            focusTopic(records),
             approvedResults.findFirstByStudentProfileIdAndActiveTrueOrderByReviewedAtDescSourceSubmissionIdDesc(student.getId())
                 .map(this::approvedTopicResult).orElse(null)
         );
+    }
+
+    private StudentDashboardResponse.Assignment mostRecentAssignment(
+        List<WorksheetAssignment> assignments
+    ) {
+        return assignments.stream()
+            .max(Comparator.comparing(
+                WorksheetAssignment::getAssignedAt,
+                Comparator.nullsLast(Comparator.naturalOrder())
+            ).thenComparing(WorksheetAssignment::getId))
+            .map(this::assignment)
+            .orElse(null);
+    }
+
+    private StudentDashboardResponse.Topic strongestTopic(
+        List<MasteryRecord> records
+    ) {
+        return records.stream()
+            .max(topicScoreComparator())
+            .map(this::topic)
+            .orElse(null);
+    }
+
+    private StudentDashboardResponse.Topic focusTopic(List<MasteryRecord> records) {
+        return records.stream()
+            .filter(this::needsFocus)
+            .min(topicScoreComparator())
+            .map(this::topic)
+            .orElse(null);
+    }
+
+    private Comparator<MasteryRecord> topicScoreComparator() {
+        return Comparator.comparing(MasteryRecord::getScore)
+            .thenComparing(record -> record.getSyllabusTopic().getName())
+            .thenComparing(MasteryRecord::getId);
     }
 
     private List<WorksheetAssignment> effectiveApprovedAssignments(StudentProfile student) {

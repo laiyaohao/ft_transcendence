@@ -1,7 +1,7 @@
 package com.fttranscendence.grading.storage;
 
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -20,10 +20,14 @@ import java.util.UUID;
 @Component
 public class FileSystemDocumentStorage implements DocumentStorage {
 
+    private static final String PDF_MEDIA_TYPE = "application/pdf";
+    private static final String JPEG_MEDIA_TYPE = "image/jpeg";
+    private static final String PNG_MEDIA_TYPE = "image/png";
+
     private static final Map<String, String> FILE_EXTENSIONS = Map.of(
-        "application/pdf", ".pdf",
-        "image/jpeg", ".jpg",
-        "image/png", ".png"
+        PDF_MEDIA_TYPE, ".pdf",
+        JPEG_MEDIA_TYPE, ".jpg",
+        PNG_MEDIA_TYPE, ".png"
     );
 
     private final Path rootDirectory;
@@ -57,42 +61,14 @@ public class FileSystemDocumentStorage implements DocumentStorage {
     ) {
         validateOwner(ownerUserId);
         validateFilename(originalFilename);
-        if (content == null || content.length == 0) {
-            throw new IllegalArgumentException("Uploaded file must not be empty");
-        }
-        if (content.length > maxFileSizeBytes) {
-            throw new IllegalArgumentException("Uploaded file exceeds the configured size limit");
-        }
+        validateContentLength(content);
 
         String detectedMediaType = detectMediaType(content);
         validateDeclaredMediaType(declaredMediaType, detectedMediaType);
 
-        String storageKey = ownerUserId + "/" + UUID.randomUUID()
-            + FILE_EXTENSIONS.get(detectedMediaType);
+        String storageKey = createStorageKey(ownerUserId, detectedMediaType);
         Path destination = resolveOwnedPath(ownerUserId, storageKey);
-        Path temporaryFile = null;
-        try {
-            Files.createDirectories(destination.getParent());
-            temporaryFile = Files.createTempFile(destination.getParent(), ".upload-", ".tmp");
-            Files.write(
-                temporaryFile,
-                content,
-                StandardOpenOption.TRUNCATE_EXISTING,
-                StandardOpenOption.WRITE
-            );
-            moveIntoPlace(temporaryFile, destination);
-            temporaryFile = null;
-        } catch (IOException exception) {
-            throw new StorageException("Unable to store submission file", exception);
-        } finally {
-            if (temporaryFile != null) {
-                try {
-                    Files.deleteIfExists(temporaryFile);
-                } catch (IOException ignored) {
-                    // The primary storage failure remains the actionable error.
-                }
-            }
-        }
+        writeUploadedFile(destination, content);
 
         return new StoredFile(
             storageKey,
@@ -143,19 +119,75 @@ public class FileSystemDocumentStorage implements DocumentStorage {
         }
     }
 
+    private void validateContentLength(byte[] content) {
+        if (content == null || content.length == 0) {
+            throw new IllegalArgumentException("Uploaded file must not be empty");
+        }
+
+        if (content.length > maxFileSizeBytes) {
+            throw new IllegalArgumentException(
+                "Uploaded file exceeds the configured size limit"
+            );
+        }
+    }
+
+    private String createStorageKey(long ownerUserId, String mediaType) {
+        return ownerUserId
+            + "/"
+            + UUID.randomUUID()
+            + FILE_EXTENSIONS.get(mediaType);
+    }
+
+    private void writeUploadedFile(Path destination, byte[] content) {
+        Path temporaryFile = null;
+
+        try {
+            Files.createDirectories(destination.getParent());
+            temporaryFile = Files.createTempFile(
+                destination.getParent(),
+                ".upload-",
+                ".tmp"
+            );
+            Files.write(
+                temporaryFile,
+                content,
+                StandardOpenOption.TRUNCATE_EXISTING,
+                StandardOpenOption.WRITE
+            );
+            moveIntoPlace(temporaryFile, destination);
+            temporaryFile = null;
+        } catch (IOException exception) {
+            throw new StorageException("Unable to store submission file", exception);
+        } finally {
+            deleteTemporaryFile(temporaryFile);
+        }
+    }
+
+    private void deleteTemporaryFile(Path temporaryFile) {
+        if (temporaryFile == null) {
+            return;
+        }
+
+        try {
+            Files.deleteIfExists(temporaryFile);
+        } catch (IOException ignored) {
+            // The primary storage failure remains the actionable error.
+        }
+    }
+
     private String detectMediaType(byte[] content) {
         if (startsWith(content, new byte[] {'%', 'P', 'D', 'F', '-'})) {
-            return "application/pdf";
+            return PDF_MEDIA_TYPE;
         }
         if (startsWith(content, new byte[] {
             (byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A
         })) {
-            return "image/png";
+            return PNG_MEDIA_TYPE;
         }
         if (startsWith(content, new byte[] {
             (byte) 0xFF, (byte) 0xD8, (byte) 0xFF
         })) {
-            return "image/jpeg";
+            return JPEG_MEDIA_TYPE;
         }
         throw new IllegalArgumentException("Unsupported file type");
     }
@@ -164,11 +196,14 @@ public class FileSystemDocumentStorage implements DocumentStorage {
         if (declaredMediaType == null || declaredMediaType.isBlank()) {
             return;
         }
-        String normalized = declaredMediaType.trim().toLowerCase(Locale.ROOT);
-        if (normalized.equals("image/jpg")) {
-            normalized = "image/jpeg";
+        String normalizedDeclaredMediaType = declaredMediaType
+            .trim()
+            .toLowerCase(Locale.ROOT);
+        if (normalizedDeclaredMediaType.equals("image/jpg")) {
+            normalizedDeclaredMediaType = JPEG_MEDIA_TYPE;
         }
-        if (!normalized.equals(detectedMediaType)) {
+
+        if (!normalizedDeclaredMediaType.equals(detectedMediaType)) {
             throw new IllegalArgumentException("Declared media type does not match file content");
         }
     }

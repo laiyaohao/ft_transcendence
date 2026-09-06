@@ -25,7 +25,11 @@ public class RuleBasedAnswerChecker {
 
     private static final BigDecimal ZERO = BigDecimal.ZERO.setScale(2);
 
-    public RuleCheckResult check(String answer, List<String> rubricKeywords, BigDecimal maximumMarks) {
+    public RuleCheckResult check(
+        String answer,
+        List<String> rubricKeywords,
+        BigDecimal maximumMarks
+    ) {
         return check(answer, rubricKeywords, Map.of(), maximumMarks);
     }
 
@@ -35,33 +39,41 @@ public class RuleBasedAnswerChecker {
         Map<String, List<String>> approvedSynonyms,
         BigDecimal maximumMarks
     ) {
-        List<RubricTarget> targets = validateAndNormalizeRubric(rubricKeywords, approvedSynonyms);
+        List<RubricTarget> rubricTargets = validateAndNormalizeRubric(
+            rubricKeywords,
+            approvedSynonyms
+        );
         validateMaximumMarks(maximumMarks);
 
         String normalizedAnswer = normalize(answer);
-        List<String> matched = new ArrayList<>();
-        List<String> missing = new ArrayList<>();
+        List<String> matchedTargets = new ArrayList<>();
+        List<String> missingTargets = new ArrayList<>();
 
-        for (RubricTarget target : targets) {
+        for (RubricTarget target : rubricTargets) {
             if (target.matches(normalizedAnswer)) {
-                matched.add(target.displayValue());
+                matchedTargets.add(target.displayValue());
             } else {
-                missing.add(target.displayValue());
+                missingTargets.add(target.displayValue());
             }
         }
 
-        BigDecimal awarded = maximumMarks
-            .multiply(BigDecimal.valueOf(matched.size()))
-            .divide(BigDecimal.valueOf(targets.size()), 2, RoundingMode.HALF_UP)
-            .min(maximumMarks)
-            .max(BigDecimal.ZERO);
-
-        String explanation = "Matched " + matched.size() + " of " + targets.size() + " rubric targets.";
-        return new RuleCheckResult(
-            awarded,
+        BigDecimal awardedMarks = calculateProportionalScore(
             maximumMarks,
-            matched,
-            missing,
+            matchedTargets.size(),
+            rubricTargets.size()
+        );
+
+        String explanation =
+            "Matched "
+                + matchedTargets.size()
+                + " of "
+                + rubricTargets.size()
+                + " rubric targets.";
+        return new RuleCheckResult(
+            awardedMarks,
+            maximumMarks,
+            matchedTargets,
+            missingTargets,
             explanation,
             List.of()
         );
@@ -84,82 +96,201 @@ public class RuleBasedAnswerChecker {
         BigDecimal maximumMarks
     ) {
         validateMaximumMarks(maximumMarks);
-        List<WeightedMarkingComponent> validated = validateComponents(components, maximumMarks);
+        List<WeightedMarkingComponent> validatedComponents = validateComponents(
+            components,
+            maximumMarks
+        );
         String normalizedAnswer = normalize(answer);
-        BigDecimal awarded = ZERO;
-        List<RuleCheckResult.ComponentResult> results = new ArrayList<>();
-        List<String> matched = new ArrayList<>();
-        List<String> missing = new ArrayList<>();
+        BigDecimal awardedMarks = ZERO;
+        List<RuleCheckResult.ComponentResult> componentResults = new ArrayList<>();
+        List<String> matchedComponents = new ArrayList<>();
+        List<String> missingComponents = new ArrayList<>();
 
-        for (WeightedMarkingComponent component : validated) {
-            List<String> targets = component.keywords();
-            boolean componentMatched = targets.stream().anyMatch(target -> containsPhrase(normalizedAnswer, target));
+        for (WeightedMarkingComponent component : validatedComponents) {
+            List<String> componentKeywords = component.keywords();
+            boolean componentMatched = componentKeywords.stream()
+                .anyMatch(keyword -> containsPhrase(normalizedAnswer, keyword));
+
             if (componentMatched) {
-                awarded = awarded.add(component.marks());
-                matched.add(component.description());
+                awardedMarks = awardedMarks.add(component.marks());
+                matchedComponents.add(component.description());
             } else {
-                missing.add(component.description());
+                missingComponents.add(component.description());
             }
-            results.add(new RuleCheckResult.ComponentResult(
-                component.position(), component.description(), component.marks(), componentMatched,
-                componentMatched ? targets : List.of(), componentMatched ? List.of() : targets,
-                componentMatched ? "Matched an approved component keyword."
-                    : targets.isEmpty()
-                        ? "This legacy component has no approved keywords yet."
-                        : "No approved component keyword was found."
-            ));
+
+            componentResults.add(
+                createComponentResult(
+                    component,
+                    componentKeywords,
+                    componentMatched
+                )
+            );
         }
-        awarded = awarded.setScale(2, RoundingMode.HALF_UP).min(maximumMarks).max(BigDecimal.ZERO);
-        String explanation = "Matched " + matched.size() + " of " + validated.size() + " weighted marking components.";
-        return new RuleCheckResult(awarded, maximumMarks, matched, missing, explanation, results);
+
+        BigDecimal boundedAwardedMarks = awardedMarks
+            .setScale(2, RoundingMode.HALF_UP)
+            .min(maximumMarks)
+            .max(BigDecimal.ZERO);
+        String explanation =
+            "Matched "
+                + matchedComponents.size()
+                + " of "
+                + validatedComponents.size()
+                + " weighted marking components.";
+        return new RuleCheckResult(
+            boundedAwardedMarks,
+            maximumMarks,
+            matchedComponents,
+            missingComponents,
+            explanation,
+            componentResults
+        );
+    }
+
+    private BigDecimal calculateProportionalScore(
+        BigDecimal maximumMarks,
+        int matchedTargetCount,
+        int totalTargetCount
+    ) {
+        return maximumMarks
+            .multiply(BigDecimal.valueOf(matchedTargetCount))
+            .divide(BigDecimal.valueOf(totalTargetCount), 2, RoundingMode.HALF_UP)
+            .min(maximumMarks)
+            .max(BigDecimal.ZERO);
+    }
+
+    private RuleCheckResult.ComponentResult createComponentResult(
+        WeightedMarkingComponent component,
+        List<String> componentKeywords,
+        boolean componentMatched
+    ) {
+        List<String> matchedTargets = componentMatched
+            ? componentKeywords
+            : List.of();
+        List<String> missingTargets = componentMatched
+            ? List.of()
+            : componentKeywords;
+
+        return new RuleCheckResult.ComponentResult(
+            component.position(),
+            component.description(),
+            component.marks(),
+            componentMatched,
+            matchedTargets,
+            missingTargets,
+            componentFeedback(componentMatched, componentKeywords)
+        );
+    }
+
+    private String componentFeedback(
+        boolean componentMatched,
+        List<String> componentKeywords
+    ) {
+        if (componentMatched) {
+            return "Matched an approved component keyword.";
+        }
+
+        if (componentKeywords.isEmpty()) {
+            return "This legacy component has no approved keywords yet.";
+        }
+
+        return "No approved component keyword was found.";
     }
 
     private List<WeightedMarkingComponent> validateComponents(
-        List<WeightedMarkingComponent> components, BigDecimal maximumMarks
+        List<WeightedMarkingComponent> components,
+        BigDecimal maximumMarks
     ) {
         if (components == null || components.isEmpty()) {
             throw new IllegalArgumentException("At least one weighted marking component is required.");
         }
-        List<WeightedMarkingComponent> normalized = new ArrayList<>();
+        List<WeightedMarkingComponent> normalizedComponents = new ArrayList<>();
         Set<Integer> positions = new java.util.HashSet<>();
-        BigDecimal allocated = BigDecimal.ZERO;
+        BigDecimal allocatedMarks = BigDecimal.ZERO;
+
         for (WeightedMarkingComponent component : components) {
-            if (component == null || component.position() < 0 || component.description() == null
-                || component.description().isBlank() || component.marks() == null || component.marks().signum() <= 0) {
-                throw new IllegalArgumentException("Each weighted marking component needs a position, description, and positive marks.");
-            }
+            validateComponentDetails(component);
+
             if (!positions.add(component.position())) {
-                throw new IllegalArgumentException("Weighted marking component positions must be unique.");
+                throw new IllegalArgumentException(
+                    "Weighted marking component positions must be unique."
+                );
             }
             if (component.marks().scale() > 2) {
-                throw new IllegalArgumentException("Weighted marking component marks may have at most two decimal places.");
+                throw new IllegalArgumentException(
+                    "Weighted marking component marks may have at most two decimal places."
+                );
             }
-            allocated = allocated.add(component.marks());
-            List<String> keywords = normalizeComponentKeywords(component.keywords());
-            normalized.add(new WeightedMarkingComponent(component.position(), component.description().trim(), component.marks(), keywords));
+
+            allocatedMarks = allocatedMarks.add(component.marks());
+            List<String> normalizedKeywords = normalizeComponentKeywords(
+                component.keywords()
+            );
+            normalizedComponents.add(
+                new WeightedMarkingComponent(
+                    component.position(),
+                    component.description().trim(),
+                    component.marks(),
+                    normalizedKeywords
+                )
+            );
         }
-        if (allocated.compareTo(maximumMarks) > 0) {
-            throw new IllegalArgumentException("Weighted marking component marks cannot exceed the question total.");
+
+        if (allocatedMarks.compareTo(maximumMarks) > 0) {
+            throw new IllegalArgumentException(
+                "Weighted marking component marks cannot exceed the question total."
+            );
         }
-        if (allocated.compareTo(maximumMarks) != 0) {
-            throw new IllegalArgumentException("Weighted marking component marks must exactly equal the question total.");
+        if (allocatedMarks.compareTo(maximumMarks) != 0) {
+            throw new IllegalArgumentException(
+                "Weighted marking component marks must exactly equal the question total."
+            );
         }
-        return normalized.stream().sorted(java.util.Comparator.comparingInt(WeightedMarkingComponent::position)).toList();
+
+        return normalizedComponents.stream()
+            .sorted(
+                java.util.Comparator.comparingInt(
+                    WeightedMarkingComponent::position
+                )
+            )
+            .toList();
+    }
+
+    private void validateComponentDetails(WeightedMarkingComponent component) {
+        boolean hasInvalidDetails = component == null
+            || component.position() < 0
+            || component.description() == null
+            || component.description().isBlank()
+            || component.marks() == null
+            || component.marks().signum() <= 0;
+
+        if (hasInvalidDetails) {
+            throw new IllegalArgumentException(
+                "Each weighted marking component needs a position, description, and positive marks."
+            );
+        }
     }
 
     private List<String> normalizeComponentKeywords(List<String> keywords) {
-        if (keywords == null || keywords.isEmpty()) return List.of();
-        Map<String, String> unique = new LinkedHashMap<>();
+        if (keywords == null || keywords.isEmpty()) {
+            return List.of();
+        }
+
+        Map<String, String> uniqueKeywords = new LinkedHashMap<>();
         for (String keyword : keywords) {
-            String normalized = normalize(keyword);
-            if (normalized.isEmpty()) {
+            String normalizedKeyword = normalize(keyword);
+            if (normalizedKeyword.isEmpty()) {
                 throw new IllegalArgumentException("Component keywords must not be blank.");
             }
-            if (unique.putIfAbsent(normalized, keyword.trim()) != null) {
+            if (
+                uniqueKeywords.putIfAbsent(normalizedKeyword, keyword.trim())
+                    != null
+            ) {
                 throw new IllegalArgumentException("Component keywords must be unique.");
             }
         }
-        return List.copyOf(unique.keySet());
+
+        return List.copyOf(uniqueKeywords.keySet());
     }
 
     private List<RubricTarget> validateAndNormalizeRubric(
@@ -173,21 +304,26 @@ public class RuleBasedAnswerChecker {
             throw new IllegalArgumentException("Approved synonyms must not be null.");
         }
 
-        Map<String, String> canonicalTargets = new LinkedHashMap<>();
+        Map<String, String> canonicalTargetsByNormalizedValue = new LinkedHashMap<>();
         for (String keyword : rubricKeywords) {
-            String normalized = normalize(keyword);
-            if (normalized.isEmpty()) {
+            String normalizedKeyword = normalize(keyword);
+            if (normalizedKeyword.isEmpty()) {
                 throw new IllegalArgumentException("Rubric keywords must not be blank.");
             }
-            if (canonicalTargets.putIfAbsent(normalized, keyword.trim()) != null) {
+            if (
+                canonicalTargetsByNormalizedValue.putIfAbsent(
+                    normalizedKeyword,
+                    keyword.trim()
+                ) != null
+            ) {
                 throw new IllegalArgumentException("Rubric keywords must be unique.");
             }
         }
 
         Map<String, List<String>> normalizedSynonyms = new LinkedHashMap<>();
         for (Map.Entry<String, List<String>> entry : approvedSynonyms.entrySet()) {
-            String canonical = normalize(entry.getKey());
-            if (!canonicalTargets.containsKey(canonical)) {
+            String normalizedCanonicalTarget = normalize(entry.getKey());
+            if (!canonicalTargetsByNormalizedValue.containsKey(normalizedCanonicalTarget)) {
                 throw new IllegalArgumentException("Synonyms must belong to a rubric keyword.");
             }
             if (entry.getValue() == null) {
@@ -196,18 +332,18 @@ public class RuleBasedAnswerChecker {
 
             List<String> aliases = new ArrayList<>();
             for (String synonym : entry.getValue()) {
-                String normalized = normalize(synonym);
-                if (normalized.isEmpty()) {
+                String normalizedSynonym = normalize(synonym);
+                if (normalizedSynonym.isEmpty()) {
                     throw new IllegalArgumentException("Synonyms must not be blank.");
                 }
-                if (!aliases.contains(normalized)) {
-                    aliases.add(normalized);
+                if (!aliases.contains(normalizedSynonym)) {
+                    aliases.add(normalizedSynonym);
                 }
             }
-            normalizedSynonyms.put(canonical, aliases);
+            normalizedSynonyms.put(normalizedCanonicalTarget, aliases);
         }
 
-        return canonicalTargets.entrySet().stream()
+        return canonicalTargetsByNormalizedValue.entrySet().stream()
             .map(entry -> new RubricTarget(
                 entry.getValue(),
                 entry.getKey(),
@@ -235,10 +371,17 @@ public class RuleBasedAnswerChecker {
             .replaceAll("\\s+", " ");
     }
 
-    private record RubricTarget(String displayValue, String canonicalValue, List<String> synonyms) {
+    private record RubricTarget(
+        String displayValue,
+        String canonicalValue,
+        List<String> synonyms
+    ) {
         private boolean matches(String normalizedAnswer) {
             return containsPhrase(normalizedAnswer, canonicalValue)
-                || synonyms.stream().anyMatch(synonym -> containsPhrase(normalizedAnswer, synonym));
+                || synonyms.stream()
+                    .anyMatch(
+                        synonym -> containsPhrase(normalizedAnswer, synonym)
+                    );
         }
 
         private static boolean containsPhrase(String normalizedAnswer, String phrase) {
@@ -247,12 +390,18 @@ public class RuleBasedAnswerChecker {
     }
 
     private static boolean containsPhrase(String normalizedAnswer, String phrase) {
-        return !normalizedAnswer.isEmpty() && !phrase.isEmpty()
+        return !normalizedAnswer.isEmpty()
+            && !phrase.isEmpty()
             && (" " + normalizedAnswer + " ").contains(" " + phrase + " ");
     }
 
     /** A server-supplied mark allocation, never trusted from a browser request. */
-    public record WeightedMarkingComponent(int position, String description, BigDecimal marks, List<String> keywords) {
+    public record WeightedMarkingComponent(
+        int position,
+        String description,
+        BigDecimal marks,
+        List<String> keywords
+    ) {
         /** Legacy components must not infer targets from their descriptions. */
         public WeightedMarkingComponent(int position, String description, BigDecimal marks) {
             this(position, description, marks, List.of());

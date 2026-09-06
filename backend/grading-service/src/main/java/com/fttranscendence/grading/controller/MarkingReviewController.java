@@ -5,6 +5,7 @@ import com.fttranscendence.grading.service.MarkingReviewService;
 import com.fttranscendence.grading.security.AuthenticatedUser;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -14,7 +15,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.http.converter.HttpMessageNotReadableException;
 
 import java.util.Map;
 
@@ -33,7 +33,9 @@ public class MarkingReviewController {
         @RequestHeader("Authorization") String bearer,
         @RequestBody MarkingReviewService.CreateRequest request
     ) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(reviews.createAdvisoryReview(user, bearer, request));
+        MarkingReviewService.MarkingReview review =
+            reviews.createAdvisoryReview(user, bearer, request);
+        return created(review);
     }
 
     @PostMapping("/tutor/reviews/manual")
@@ -42,7 +44,9 @@ public class MarkingReviewController {
         @RequestHeader("Authorization") String bearer,
         @RequestBody MarkingReviewService.ManualResultRequest request
     ) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(reviews.createManualResult(user, bearer, request));
+        MarkingReviewService.MarkingReview review =
+            reviews.createManualResult(user, bearer, request);
+        return created(review);
     }
 
     @PostMapping("/tutor/reviews/manual/batch")
@@ -51,7 +55,8 @@ public class MarkingReviewController {
         @RequestHeader("Authorization") String bearer,
         @RequestBody MarkingReviewService.ManualResultBatchRequest request
     ) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(reviews.createManualResults(user, bearer, request));
+        var reviewsForWorksheet = reviews.createManualResults(user, bearer, request);
+        return created(reviewsForWorksheet);
     }
 
     @GetMapping("/tutor/reviews/manual/worksheets/{worksheetId}")
@@ -127,22 +132,38 @@ public class MarkingReviewController {
 
     @ExceptionHandler(LearningAuthorizationClient.QuestionUnavailable.class)
     ResponseEntity<Map<String, String>> unavailableQuestion() {
-        return error(HttpStatus.SERVICE_UNAVAILABLE, "QUESTION_CONTEXT_UNAVAILABLE", "Question context is temporarily unavailable.");
+        return error(
+            HttpStatus.SERVICE_UNAVAILABLE,
+            "QUESTION_CONTEXT_UNAVAILABLE",
+            "Question context is temporarily unavailable."
+        );
     }
 
     @ExceptionHandler(LearningAuthorizationClient.ManualResultContextNotFound.class)
     ResponseEntity<Map<String, String>> manualContextNotFound() {
-        return error(HttpStatus.NOT_FOUND, "MANUAL_RESULT_CONTEXT_NOT_FOUND", "Worksheet result context was not found.");
+        return error(
+            HttpStatus.NOT_FOUND,
+            "MANUAL_RESULT_CONTEXT_NOT_FOUND",
+            "Worksheet result context was not found."
+        );
     }
 
     @ExceptionHandler(LearningAuthorizationClient.StudentWorksheetNotFound.class)
     ResponseEntity<Map<String, String>> studentWorksheetNotFound() {
-        return error(HttpStatus.NOT_FOUND, "STUDENT_WORKSHEET_NOT_FOUND", "Worksheet results were not found.");
+        return error(
+            HttpStatus.NOT_FOUND,
+            "STUDENT_WORKSHEET_NOT_FOUND",
+            "Worksheet results were not found."
+        );
     }
 
     @ExceptionHandler(MarkingReviewService.ManualResultAlreadyExists.class)
     ResponseEntity<Map<String, String>> duplicateManualResult() {
-        return error(HttpStatus.CONFLICT, "MANUAL_RESULT_EXISTS", "A manual result already exists for this student and question.");
+        return error(
+            HttpStatus.CONFLICT,
+            "MANUAL_RESULT_EXISTS",
+            "A manual result already exists for this student and question."
+        );
     }
 
     @ExceptionHandler(MarkingReviewService.InvalidManualResultRequest.class)
@@ -152,7 +173,11 @@ public class MarkingReviewController {
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     ResponseEntity<Map<String, String>> malformedRequest() {
-        return error(HttpStatus.BAD_REQUEST, "INVALID_REVIEW_REQUEST", "Review request contains invalid JSON or values.");
+        return error(
+            HttpStatus.BAD_REQUEST,
+            "INVALID_REVIEW_REQUEST",
+            "Review request contains invalid JSON or values."
+        );
     }
 
     @ExceptionHandler({MarkingReviewService.InvalidReviewRequest.class, IllegalArgumentException.class})
@@ -167,5 +192,9 @@ public class MarkingReviewController {
 
     private ResponseEntity<Map<String, String>> error(HttpStatus status, String code, String message) {
         return ResponseEntity.status(status).body(Map.of("code", code, "error", message));
+    }
+
+    private static <T> ResponseEntity<T> created(T responseBody) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(responseBody);
     }
 }

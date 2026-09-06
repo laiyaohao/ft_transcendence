@@ -28,8 +28,13 @@ export class SubmissionApiError extends Error {
   }
 }
 
-const fileKey = (file: File) => `${file.name}:${file.size}:${file.lastModified}`;
-const id = (file: File, index: number) => `${fileKey(file)}:${index}`;
+function getFileFingerprint(file: File): string {
+  return `${file.name}:${file.size}:${file.lastModified}`;
+}
+
+function createUploadPageId(file: File, index: number): string {
+  return `${getFileFingerprint(file)}:${index}`;
+}
 
 export function isAcceptedUpload(file: File) {
   return ACCEPTED_TYPES.has(file.type);
@@ -39,7 +44,7 @@ export function validateUploadFiles(
   files: File[],
   existing: UploadPage[] = [],
 ): { pages: UploadPage[]; errors: string[] } {
-  const seen = new Set(existing.map((page) => fileKey(page.file)));
+  const seen = new Set(existing.map((page) => getFileFingerprint(page.file)));
   const pages: UploadPage[] = [];
   const errors: string[] = [];
 
@@ -50,14 +55,14 @@ export function validateUploadFiles(
       errors.push(`${file.name}: this file is empty.`);
     } else if (file.size > MAX_UPLOAD_BYTES) {
       errors.push(`${file.name}: files must be 20 MB or smaller.`);
-    } else if (seen.has(fileKey(file))) {
+    } else if (seen.has(getFileFingerprint(file))) {
       errors.push(`${file.name}: this page was already added.`);
     } else {
-      seen.add(fileKey(file));
+      seen.add(getFileFingerprint(file));
       const isImage = file.type.startsWith("image/");
 
       pages.push({
-        id: id(file, index),
+        id: createUploadPageId(file, index),
         file,
         previewUrl: isImage ? URL.createObjectURL(file) : null,
         rotation: 0,
@@ -78,7 +83,7 @@ export function releasePagePreview(page: UploadPage) {
   }
 }
 
-function headers(): HeadersInit {
+function getAuthorizationHeaders(): HeadersInit {
   const token =
     typeof window === "undefined" ? null : localStorage.getItem("jwt_token");
 
@@ -208,7 +213,7 @@ export async function createOcrDocument(input: {
     `${gradingUrl}/api/grading/submission-documents`,
     {
       method: "POST",
-      headers: headers(),
+      headers: getAuthorizationHeaders(),
       body: form,
     },
   );
@@ -234,7 +239,7 @@ export async function fetchSubmissionDocument(documentId: number): Promise<Submi
 
   const response = await fetch(
     `${gradingUrl}/api/grading/submission-documents/${documentId}`,
-    { headers: headers() },
+    { headers: getAuthorizationHeaders() },
   );
 
   if (!response.ok) {
@@ -260,7 +265,7 @@ export async function correctOcrExtraction(
     {
       method: "PATCH",
       headers: {
-        ...headers(),
+        ...getAuthorizationHeaders(),
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ correctedText }),
@@ -323,7 +328,7 @@ export async function submitOcrForTutorReview(documentId: number, answers: OcrAn
     {
       method: "POST",
       headers: {
-        ...headers(),
+        ...getAuthorizationHeaders(),
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ answers }),
@@ -458,7 +463,7 @@ export async function fetchManualAnswerDraft(
 
   const response = await fetch(
     `${gradingUrl}/api/grading/submission-documents/manual-answers?${query.toString()}`,
-    { headers: headers() },
+    { headers: getAuthorizationHeaders() },
   );
 
   if (!response.ok) {
@@ -504,7 +509,7 @@ export async function saveManualAnswers(
     {
       method: "POST",
       headers: {
-        ...headers(),
+        ...getAuthorizationHeaders(),
         "Content-Type": "application/json",
       },
       body: JSON.stringify(input),
@@ -683,230 +688,741 @@ export type StudentMistakeFilters = {
   to?: string;
 };
 
-const reviewStatuses = new Set<MarkingReviewStatus>(["PENDING_REVIEW", "FLAGGED", "APPROVED"]);
-const studentResultOutcomes = new Set<StudentWorksheetResultOutcome>(["CORRECT", "PARTIAL", "INCORRECT", "REVIEW_NEEDED"]);
-const diagnosticCategories = new Set<DiagnosticCategory>(["CONCEPT", "KEYWORD", "EXPRESSION", "APPLICATION"]);
-const mistakeTypes = new Set<MistakeType>(["CONCEPT_MISUNDERSTANDING", "CALCULATION_ERROR", "MISREAD_QUESTION", "INCOMPLETE_WORKING", "INCORRECT_FORMULA", "CARELESS_MISTAKE", "WEAK_EXPLANATION", "MISSING_KEY_POINT", "WRONG_UNITS", "ANSWER_FORMAT_ISSUE"]);
-const numberValue = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? value : null;
-const stringValue = (value: unknown) => typeof value === "string" ? value : null;
-const nonNegativeNumber = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0;
-export function parseMarkingReview(value: unknown): MarkingReview {
-  if (!value || typeof value !== "object") throw new SubmissionApiError("The marking review response is invalid.");
-  const raw = value as Record<string, unknown>;
-  const ids = [raw.id, raw.studentId, raw.worksheetId, raw.worksheetQuestionId, raw.questionBankId].map(numberValue);
-  if (ids.some((id) => id === null || id <= 0) || !reviewStatuses.has(raw.reviewStatus as MarkingReviewStatus)
-    || typeof raw.extractedAnswer !== "string" || typeof raw.modelAnswer !== "string" || numberValue(raw.maxMarks) === null
-    || !Array.isArray(raw.missingKeywords) || !Array.isArray(raw.diagnosticEvidence) || !Array.isArray(raw.history)) throw new SubmissionApiError("The marking review response is invalid.");
-  const diagnosticEvidence = raw.diagnosticEvidence.map((entry): DiagnosticEvidence => {
-    if (!entry || typeof entry !== "object") throw new SubmissionApiError("The marking diagnostic evidence is invalid.");
-    const item = entry as Record<string, unknown>;
-    if (!mistakeTypes.has(item.mistakeType as MistakeType) || !diagnosticCategories.has(item.category as DiagnosticCategory) || typeof item.description !== "string" || !item.description.trim() || !Array.isArray(item.missingKeywords) || item.missingKeywords.some((keyword) => typeof keyword !== "string" || !keyword.trim())) throw new SubmissionApiError("The marking diagnostic evidence is invalid.");
-    return { mistakeType: item.mistakeType as MistakeType, category: item.category as DiagnosticCategory, description: item.description, missingKeywords: item.missingKeywords as string[] };
-  });
+const reviewStatuses = new Set<MarkingReviewStatus>([
+  "PENDING_REVIEW",
+  "FLAGGED",
+  "APPROVED",
+]);
+const studentResultOutcomes = new Set<StudentWorksheetResultOutcome>([
+  "CORRECT",
+  "PARTIAL",
+  "INCORRECT",
+  "REVIEW_NEEDED",
+]);
+const diagnosticCategories = new Set<DiagnosticCategory>([
+  "CONCEPT",
+  "KEYWORD",
+  "EXPRESSION",
+  "APPLICATION",
+]);
+const mistakeTypes = new Set<MistakeType>([
+  "CONCEPT_MISUNDERSTANDING",
+  "CALCULATION_ERROR",
+  "MISREAD_QUESTION",
+  "INCOMPLETE_WORKING",
+  "INCORRECT_FORMULA",
+  "CARELESS_MISTAKE",
+  "WEAK_EXPLANATION",
+  "MISSING_KEY_POINT",
+  "WRONG_UNITS",
+  "ANSWER_FORMAT_ISSUE",
+]);
+
+type ErrorResponse = { error?: string } | null;
+
+function getFiniteNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function getString(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+function isNonNegativeNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function isPositiveSafeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+}
+
+function getRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function getInvalidMarkingReviewError(): SubmissionApiError {
+  return new SubmissionApiError("The marking review response is invalid.");
+}
+
+function parseDiagnosticEvidence(value: unknown): DiagnosticEvidence {
+  const evidence = getRecord(value);
+
+  const hasInvalidEvidence =
+    !evidence ||
+    !mistakeTypes.has(evidence.mistakeType as MistakeType) ||
+    !diagnosticCategories.has(evidence.category as DiagnosticCategory) ||
+    typeof evidence.description !== "string" ||
+    !evidence.description.trim() ||
+    !Array.isArray(evidence.missingKeywords) ||
+    evidence.missingKeywords.some(
+      (keyword) => typeof keyword !== "string" || !keyword.trim(),
+    );
+
+  if (hasInvalidEvidence) {
+    throw new SubmissionApiError("The marking diagnostic evidence is invalid.");
+  }
+
   return {
-    id: ids[0]!, studentId: ids[1]!, worksheetId: ids[2]!, worksheetQuestionId: ids[3]!, questionBankId: ids[4]!, extractedAnswer: raw.extractedAnswer,
-    modelAnswer: raw.modelAnswer, maxMarks: numberValue(raw.maxMarks)!, aiSuggestedMarks: numberValue(raw.aiSuggestedMarks), aiSuggestedOutcome: stringValue(raw.aiSuggestedOutcome), aiErrorCategory: stringValue(raw.aiErrorCategory),
-    missingKeywords: raw.missingKeywords.filter((keyword): keyword is string => typeof keyword === "string"), aiSuggestedFeedback: stringValue(raw.aiSuggestedFeedback), reviewStatus: raw.reviewStatus as MarkingReviewStatus,
-    approvedMarks: numberValue(raw.approvedMarks), approvedFeedback: stringValue(raw.approvedFeedback), reviewedByUserId: numberValue(raw.reviewedByUserId), reviewedAt: stringValue(raw.reviewedAt), providerResponseValid: typeof raw.providerResponseValid === "boolean" ? raw.providerResponseValid : null, diagnosticEvidence,
-    history: raw.history.map((entry) => {
-      if (!entry || typeof entry !== "object") throw new SubmissionApiError("The marking review history is invalid.");
-      const item = entry as Record<string, unknown>; const id = numberValue(item.id); const reviewer = numberValue(item.reviewerUserId);
-      if (id === null || reviewer === null || !reviewStatuses.has(item.previousStatus as MarkingReviewStatus) || !reviewStatuses.has(item.newStatus as MarkingReviewStatus) || typeof item.action !== "string" || typeof item.createdAt !== "string") throw new SubmissionApiError("The marking review history is invalid.");
-      return { id, action: item.action as MarkingReview["history"][number]["action"], reviewerUserId: reviewer, previousStatus: item.previousStatus as MarkingReviewStatus, newStatus: item.newStatus as MarkingReviewStatus, previousMarks: numberValue(item.previousMarks), newMarks: numberValue(item.newMarks), previousFeedback: stringValue(item.previousFeedback), newFeedback: stringValue(item.newFeedback), createdAt: item.createdAt };
-    }),
+    mistakeType: evidence.mistakeType as MistakeType,
+    category: evidence.category as DiagnosticCategory,
+    description: evidence.description as string,
+    missingKeywords: evidence.missingKeywords as string[],
   };
 }
-export function parseManualResultsResponse(value: unknown): ManualResultsResponse {
-  if (!value || typeof value !== "object") throw new SubmissionApiError("The manual result response is invalid.");
-  const raw = value as Record<string, unknown>;
-  if (!Number.isSafeInteger(raw.worksheetId) || (raw.worksheetId as number) <= 0 || !Array.isArray(raw.students)) {
+
+function parseMarkingReviewHistoryEntry(
+  value: unknown,
+): MarkingReview["history"][number] {
+  const historyEntry = getRecord(value);
+
+  if (!historyEntry) {
+    throw new SubmissionApiError("The marking review history is invalid.");
+  }
+
+  const id = getFiniteNumber(historyEntry.id);
+  const reviewerUserId = getFiniteNumber(historyEntry.reviewerUserId);
+  const hasInvalidHistoryEntry =
+    id === null ||
+    reviewerUserId === null ||
+    !reviewStatuses.has(historyEntry.previousStatus as MarkingReviewStatus) ||
+    !reviewStatuses.has(historyEntry.newStatus as MarkingReviewStatus) ||
+    typeof historyEntry.action !== "string" ||
+    typeof historyEntry.createdAt !== "string";
+
+  if (hasInvalidHistoryEntry) {
+    throw new SubmissionApiError("The marking review history is invalid.");
+  }
+
+  return {
+    id,
+    action: historyEntry.action as MarkingReview["history"][number]["action"],
+    reviewerUserId,
+    previousStatus: historyEntry.previousStatus as MarkingReviewStatus,
+    newStatus: historyEntry.newStatus as MarkingReviewStatus,
+    previousMarks: getFiniteNumber(historyEntry.previousMarks),
+    newMarks: getFiniteNumber(historyEntry.newMarks),
+    previousFeedback: getString(historyEntry.previousFeedback),
+    newFeedback: getString(historyEntry.newFeedback),
+    createdAt: historyEntry.createdAt as string,
+  };
+}
+
+export function parseMarkingReview(value: unknown): MarkingReview {
+  const review = getRecord(value);
+
+  if (!review) {
+    throw getInvalidMarkingReviewError();
+  }
+
+  const reviewIds = [
+    review.id,
+    review.studentId,
+    review.worksheetId,
+    review.worksheetQuestionId,
+    review.questionBankId,
+  ].map(getFiniteNumber);
+
+  const hasInvalidReview =
+    reviewIds.some((id) => id === null || id <= 0) ||
+    !reviewStatuses.has(review.reviewStatus as MarkingReviewStatus) ||
+    typeof review.extractedAnswer !== "string" ||
+    typeof review.modelAnswer !== "string" ||
+    getFiniteNumber(review.maxMarks) === null ||
+    !Array.isArray(review.missingKeywords) ||
+    !Array.isArray(review.diagnosticEvidence) ||
+    !Array.isArray(review.history);
+
+  if (hasInvalidReview) {
+    throw getInvalidMarkingReviewError();
+  }
+
+  return {
+    id: reviewIds[0]!,
+    studentId: reviewIds[1]!,
+    worksheetId: reviewIds[2]!,
+    worksheetQuestionId: reviewIds[3]!,
+    questionBankId: reviewIds[4]!,
+    extractedAnswer: review.extractedAnswer as string,
+    modelAnswer: review.modelAnswer as string,
+    maxMarks: getFiniteNumber(review.maxMarks)!,
+    aiSuggestedMarks: getFiniteNumber(review.aiSuggestedMarks),
+    aiSuggestedOutcome: getString(review.aiSuggestedOutcome),
+    aiErrorCategory: getString(review.aiErrorCategory),
+    missingKeywords: (review.missingKeywords as unknown[]).filter(
+      (keyword): keyword is string => typeof keyword === "string",
+    ),
+    aiSuggestedFeedback: getString(review.aiSuggestedFeedback),
+    reviewStatus: review.reviewStatus as MarkingReviewStatus,
+    approvedMarks: getFiniteNumber(review.approvedMarks),
+    approvedFeedback: getString(review.approvedFeedback),
+    reviewedByUserId: getFiniteNumber(review.reviewedByUserId),
+    reviewedAt: getString(review.reviewedAt),
+    providerResponseValid:
+      typeof review.providerResponseValid === "boolean"
+        ? review.providerResponseValid
+        : null,
+    diagnosticEvidence: (review.diagnosticEvidence as unknown[]).map(
+      parseDiagnosticEvidence,
+    ),
+    history: (review.history as unknown[]).map(parseMarkingReviewHistoryEntry),
+  };
+}
+
+export function parseManualResultsResponse(
+  value: unknown,
+): ManualResultsResponse {
+  const response = getRecord(value);
+
+  if (
+    !response ||
+    !isPositiveSafeInteger(response.worksheetId) ||
+    !Array.isArray(response.students)
+  ) {
     throw new SubmissionApiError("The manual result response is invalid.");
   }
-  const ids = new Set<number>();
-  const students = raw.students.map((entry): ManualResultStudentProgress => {
-    if (!entry || typeof entry !== "object") throw new SubmissionApiError("The manual result response is invalid.");
-    const progress = entry as Record<string, unknown>;
-    if (!Number.isSafeInteger(progress.studentId) || (progress.studentId as number) <= 0 || !Number.isSafeInteger(progress.completedQuestions)
-      || (progress.completedQuestions as number) < 0 || !Array.isArray(progress.results) || ids.has(progress.studentId as number)) {
+
+  const seenStudentIds = new Set<number>();
+  const students = response.students.map((value): ManualResultStudentProgress => {
+    const progress = getRecord(value);
+    const hasInvalidProgress =
+      !progress ||
+      !isPositiveSafeInteger(progress.studentId) ||
+      !Number.isSafeInteger(progress.completedQuestions) ||
+      (progress.completedQuestions as number) < 0 ||
+      !Array.isArray(progress.results) ||
+      seenStudentIds.has(progress.studentId as number);
+
+    if (hasInvalidProgress) {
       throw new SubmissionApiError("The manual result response is invalid.");
     }
-    ids.add(progress.studentId as number);
-    const results = progress.results.map(parseMarkingReview);
-    if (results.length !== progress.completedQuestions || results.some((result) => result.studentId !== progress.studentId || result.worksheetId !== raw.worksheetId)) {
+
+    const studentId = progress.studentId as number;
+    const completedQuestions = progress.completedQuestions as number;
+    seenStudentIds.add(studentId);
+
+    const results = (progress.results as unknown[]).map(parseMarkingReview);
+    const hasInvalidResults =
+      results.length !== completedQuestions ||
+      results.some(
+        (result) =>
+          result.studentId !== studentId ||
+          result.worksheetId !== response.worksheetId,
+      );
+
+    if (hasInvalidResults) {
       throw new SubmissionApiError("The manual result response is invalid.");
     }
-    return { studentId: progress.studentId as number, completedQuestions: progress.completedQuestions as number, results };
+
+    return { studentId, completedQuestions, results };
   });
-  return { worksheetId: raw.worksheetId as number, students };
+
+  return { worksheetId: response.worksheetId, students };
 }
-export function parseStudentWorksheetResultsResponse(value: unknown): StudentWorksheetResultsResponse {
-  if (!value || typeof value !== "object") throw new SubmissionApiError("The student worksheet results response is invalid.");
-  const raw = value as Record<string, unknown>;
-  if (!Number.isSafeInteger(raw.worksheetId) || (raw.worksheetId as number) <= 0 || !Array.isArray(raw.results)) {
+
+function parseStudentWorksheetResult(
+  value: unknown,
+  seenSubmissionIds: Set<number>,
+): StudentWorksheetResult {
+  const result = getRecord(value);
+
+  if (!result) {
     throw new SubmissionApiError("The student worksheet results response is invalid.");
   }
+
+  const resultIds = [
+    result.submissionId,
+    result.worksheetQuestionId,
+    result.questionBankId,
+  ];
+  const hasInvalidResult =
+    !resultIds.every(isPositiveSafeInteger) ||
+    seenSubmissionIds.has(result.submissionId as number) ||
+    typeof result.answer !== "string" ||
+    (result.modelAnswer !== null && typeof result.modelAnswer !== "string") ||
+    !isNonNegativeNumber(result.maximumMarks) ||
+    !reviewStatuses.has(result.reviewStatus as MarkingReviewStatus) ||
+    !studentResultOutcomes.has(
+      result.outcome as StudentWorksheetResultOutcome,
+    ) ||
+    (result.awardedMarks !== null &&
+      (!isNonNegativeNumber(result.awardedMarks) ||
+        (result.awardedMarks as number) > (result.maximumMarks as number))) ||
+    (result.explanation !== null && typeof result.explanation !== "string") ||
+    (result.reviewedAt !== null && typeof result.reviewedAt !== "string");
+
+  if (hasInvalidResult) {
+    throw new SubmissionApiError("The student worksheet results response is invalid.");
+  }
+
+  const isApproved = result.reviewStatus === "APPROVED";
+  const hasLeakedOrMissingApprovalData =
+    (isApproved &&
+      (result.awardedMarks === null || result.explanation === null)) ||
+    (!isApproved &&
+      (result.awardedMarks !== null ||
+        result.explanation !== null ||
+        result.modelAnswer !== null));
+
+  if (hasLeakedOrMissingApprovalData) {
+    throw new SubmissionApiError("The student worksheet results response is invalid.");
+  }
+
+  const submissionId = result.submissionId as number;
+  seenSubmissionIds.add(submissionId);
+
+  return {
+    submissionId,
+    worksheetQuestionId: result.worksheetQuestionId as number,
+    questionBankId: result.questionBankId as number,
+    answer: result.answer as string,
+    modelAnswer: result.modelAnswer as string | null,
+    maximumMarks: result.maximumMarks as number,
+    reviewStatus: result.reviewStatus as MarkingReviewStatus,
+    outcome: result.outcome as StudentWorksheetResultOutcome,
+    awardedMarks: result.awardedMarks as number | null,
+    explanation: result.explanation as string | null,
+    reviewedAt: result.reviewedAt as string | null,
+  };
+}
+
+export function parseStudentWorksheetResultsResponse(
+  value: unknown,
+): StudentWorksheetResultsResponse {
+  const response = getRecord(value);
+
+  if (
+    !response ||
+    !isPositiveSafeInteger(response.worksheetId) ||
+    !Array.isArray(response.results)
+  ) {
+    throw new SubmissionApiError(
+      "The student worksheet results response is invalid.",
+    );
+  }
+
   const seenSubmissionIds = new Set<number>();
-  const results = raw.results.map((entry): StudentWorksheetResult => {
-    if (!entry || typeof entry !== "object") throw new SubmissionApiError("The student worksheet results response is invalid.");
-    const result = entry as Record<string, unknown>;
-    const ids = [result.submissionId, result.worksheetQuestionId, result.questionBankId];
-    if (!ids.every((id) => Number.isSafeInteger(id) && (id as number) > 0)
-      || seenSubmissionIds.has(result.submissionId as number)
-      || typeof result.answer !== "string"
-      || (result.modelAnswer !== null && typeof result.modelAnswer !== "string")
-      || !nonNegativeNumber(result.maximumMarks)
-      || !reviewStatuses.has(result.reviewStatus as MarkingReviewStatus)
-      || !studentResultOutcomes.has(result.outcome as StudentWorksheetResultOutcome)
-      || (result.awardedMarks !== null && (!nonNegativeNumber(result.awardedMarks) || (result.awardedMarks as number) > (result.maximumMarks as number)))
-      || (result.explanation !== null && typeof result.explanation !== "string")
-      || (result.reviewedAt !== null && typeof result.reviewedAt !== "string")) {
-      throw new SubmissionApiError("The student worksheet results response is invalid.");
-    }
-    const approved = result.reviewStatus === "APPROVED";
-    if ((approved && (result.awardedMarks === null || result.explanation === null))
-      || (!approved && (result.awardedMarks !== null || result.explanation !== null || result.modelAnswer !== null))) {
-      throw new SubmissionApiError("The student worksheet results response is invalid.");
-    }
-    seenSubmissionIds.add(result.submissionId as number);
-    return {
-      submissionId: result.submissionId as number,
-      worksheetQuestionId: result.worksheetQuestionId as number,
-      questionBankId: result.questionBankId as number,
-      answer: result.answer,
-      modelAnswer: result.modelAnswer as string | null,
-      maximumMarks: result.maximumMarks as number,
-      reviewStatus: result.reviewStatus as MarkingReviewStatus,
-      outcome: result.outcome as StudentWorksheetResultOutcome,
-      awardedMarks: result.awardedMarks as number | null,
-      explanation: result.explanation as string | null,
-      reviewedAt: result.reviewedAt as string | null,
-    };
-  });
-  return { worksheetId: raw.worksheetId as number, results };
+  const results = response.results.map((result) =>
+    parseStudentWorksheetResult(result, seenSubmissionIds),
+  );
+
+  return { worksheetId: response.worksheetId, results };
 }
-function nullablePositiveInteger(value: unknown): number | null {
-  return value === null ? null : (Number.isSafeInteger(value) && (value as number) > 0 ? value as number : null);
+
+function getNullablePositiveInteger(value: unknown): number | null {
+  if (value === null) {
+    return null;
+  }
+
+  return isPositiveSafeInteger(value) ? value : null;
 }
-function nullableNonBlankText(value: unknown): string | null {
-  return value === null ? null : (typeof value === "string" && value.trim() ? value : null);
+
+function getNullableNonBlankText(value: unknown): string | null {
+  if (value === null) {
+    return null;
+  }
+
+  return typeof value === "string" && value.trim() ? value : null;
 }
+
 /** Strictly validates the Student mistake-history contract before it reaches the UI. */
-export function parseStudentMistakeReviews(value: unknown): StudentMistakeReview[] {
-  if (!Array.isArray(value)) throw new SubmissionApiError("The mistake review response is invalid.");
-  return value.map((entry) => {
-    if (!entry || typeof entry !== "object") throw new SubmissionApiError("The mistake review response is invalid.");
-    const record = entry as Record<string, unknown>;
-    const id = nullablePositiveInteger(record.id);
-    const worksheetId = nullablePositiveInteger(record.worksheetId);
-    const worksheetQuestionId = nullablePositiveInteger(record.worksheetQuestionId);
-    const questionBankId = nullablePositiveInteger(record.questionBankId);
-    const syllabusTopicId = nullablePositiveInteger(record.syllabusTopicId);
-    const subjectId = nullablePositiveInteger(record.subjectId);
-    const occurrenceCount = record.occurrenceCount;
-    const status = record.status;
-    if (id === null || worksheetId === null || worksheetQuestionId === null || questionBankId === null
-      || !mistakeTypes.has(record.mistakeType as MistakeType)
-      || typeof record.mistakeLabel !== "string" || !record.mistakeLabel.trim()
-      || typeof record.description !== "string" || !record.description.trim()
-      || typeof record.recordedAt !== "string" || !record.recordedAt.trim()
-      || !Number.isSafeInteger(occurrenceCount) || (occurrenceCount as number) < 1
-      || status !== "CONFIRMED"
-      || (record.syllabusTopicId !== null && syllabusTopicId === null)
-      || (record.subjectId !== null && subjectId === null)
-      || (record.syllabusTopicCode !== null && nullableNonBlankText(record.syllabusTopicCode) === null)
-      || (record.subjectName !== null && nullableNonBlankText(record.subjectName) === null)
-      || (record.topicName !== null && nullableNonBlankText(record.topicName) === null)) {
+export function parseStudentMistakeReviews(
+  value: unknown,
+): StudentMistakeReview[] {
+  if (!Array.isArray(value)) {
+    throw new SubmissionApiError("The mistake review response is invalid.");
+  }
+
+  return value.map((value) => {
+    const record = getRecord(value);
+
+    if (!record) {
       throw new SubmissionApiError("The mistake review response is invalid.");
     }
+
+    const id = getNullablePositiveInteger(record.id);
+    const worksheetId = getNullablePositiveInteger(record.worksheetId);
+    const worksheetQuestionId = getNullablePositiveInteger(
+      record.worksheetQuestionId,
+    );
+    const questionBankId = getNullablePositiveInteger(record.questionBankId);
+    const syllabusTopicId = getNullablePositiveInteger(record.syllabusTopicId);
+    const subjectId = getNullablePositiveInteger(record.subjectId);
+    const occurrenceCount = record.occurrenceCount;
+    const hasInvalidRecord =
+      id === null ||
+      worksheetId === null ||
+      worksheetQuestionId === null ||
+      questionBankId === null ||
+      !mistakeTypes.has(record.mistakeType as MistakeType) ||
+      typeof record.mistakeLabel !== "string" ||
+      !record.mistakeLabel.trim() ||
+      typeof record.description !== "string" ||
+      !record.description.trim() ||
+      typeof record.recordedAt !== "string" ||
+      !record.recordedAt.trim() ||
+      !Number.isSafeInteger(occurrenceCount) ||
+      (occurrenceCount as number) < 1 ||
+      record.status !== "CONFIRMED" ||
+      (record.syllabusTopicId !== null && syllabusTopicId === null) ||
+      (record.subjectId !== null && subjectId === null) ||
+      (record.syllabusTopicCode !== null &&
+        getNullableNonBlankText(record.syllabusTopicCode) === null) ||
+      (record.subjectName !== null &&
+        getNullableNonBlankText(record.subjectName) === null) ||
+      (record.topicName !== null &&
+        getNullableNonBlankText(record.topicName) === null);
+
+    if (hasInvalidRecord) {
+      throw new SubmissionApiError("The mistake review response is invalid.");
+    }
+
     return {
-      id, worksheetId, worksheetQuestionId, questionBankId, syllabusTopicId,
-      syllabusTopicCode: nullableNonBlankText(record.syllabusTopicCode),
-      mistakeType: record.mistakeType as MistakeType, mistakeLabel: record.mistakeLabel,
-      description: record.description, recordedAt: record.recordedAt, subjectId,
-      subjectName: nullableNonBlankText(record.subjectName), topicName: nullableNonBlankText(record.topicName),
-      occurrenceCount: occurrenceCount as number, status,
+      id,
+      worksheetId,
+      worksheetQuestionId,
+      questionBankId,
+      syllabusTopicId,
+      syllabusTopicCode: getNullableNonBlankText(record.syllabusTopicCode),
+      mistakeType: record.mistakeType as MistakeType,
+      mistakeLabel: record.mistakeLabel as string,
+      description: record.description as string,
+      recordedAt: record.recordedAt as string,
+      subjectId,
+      subjectName: getNullableNonBlankText(record.subjectName),
+      topicName: getNullableNonBlankText(record.topicName),
+      occurrenceCount: occurrenceCount as number,
+      status: "CONFIRMED",
     };
   });
 }
-async function reviewRequest(path: string, init?: RequestInit): Promise<MarkingReview> { const response = await fetch(`${gradingUrl}/api/grading/tutor/reviews${path}`, { ...init, headers: { ...headers(), "Content-Type": "application/json", ...(init?.headers || {}) } }); if (!response.ok) { const body = await response.json().catch(() => null) as { error?: string } | null; throw new SubmissionApiError(body?.error || "The marking review could not be updated.", response.status); } return parseMarkingReview(await response.json()); }
-export function createMarkingReview(input: { submissionDocumentId: number; worksheetQuestionId: number; questionBankId: number }): Promise<MarkingReview> { if (![input.submissionDocumentId, input.worksheetQuestionId, input.questionBankId].every((id) => Number.isSafeInteger(id) && id > 0)) return Promise.reject(new SubmissionApiError("The submission review context is invalid.", 400)); return reviewRequest("", { method: "POST", body: JSON.stringify(input) }); }
-/** Creates a Tutor-approved fallback result without pretending that OCR source pages exist. */
-export function createManualResult(input: ManualResultRequest): Promise<MarkingReview> {
-  if (![input.worksheetId, input.studentId, input.questionBankId].every((id) => Number.isSafeInteger(id) && id > 0)
-    || !Number.isFinite(input.marks) || input.marks < 0 || !input.answer.trim() || !input.feedback.trim()) {
-    return Promise.reject(new SubmissionApiError("Student, question, answer, marks and tutor feedback are required.", 400));
-  }
-  return reviewRequest("/manual", { method: "POST", body: JSON.stringify(input) });
+
+async function getErrorResponse(response: Response): Promise<ErrorResponse> {
+  return response.json().catch(() => null) as Promise<ErrorResponse>;
 }
-/** Saves all entered question marks for one assigned Student atomically. */
-export async function createManualResults(input: ManualResultBatchRequest): Promise<MarkingReview[]> {
-  const validEntry = (entry: ManualResultEntry) => Number.isSafeInteger(entry.questionBankId) && entry.questionBankId > 0
-    && Number.isFinite(entry.marks) && entry.marks >= 0 && Boolean(entry.answer.trim()) && Boolean(entry.feedback.trim());
-  if (!Number.isSafeInteger(input.worksheetId) || input.worksheetId <= 0 || !Number.isSafeInteger(input.studentId) || input.studentId <= 0
-    || !Array.isArray(input.entries) || input.entries.length === 0 || !input.entries.every(validEntry)
-    || new Set(input.entries.map((entry) => entry.questionBankId)).size !== input.entries.length) {
-    return Promise.reject(new SubmissionApiError("Every entered question needs an answer, valid marks and tutor feedback.", 400));
-  }
-  const response = await fetch(`${gradingUrl}/api/grading/tutor/reviews/manual/batch`, {
-    method: "POST", headers: { ...headers(), "Content-Type": "application/json" }, body: JSON.stringify(input),
+
+function getJsonRequestHeaders(init?: RequestInit): HeadersInit {
+  return {
+    ...getAuthorizationHeaders(),
+    "Content-Type": "application/json",
+    ...(init?.headers || {}),
+  };
+}
+
+async function requestMarkingReview(
+  path: string,
+  init?: RequestInit,
+): Promise<MarkingReview> {
+  const response = await fetch(`${gradingUrl}/api/grading/tutor/reviews${path}`, {
+    ...init,
+    headers: getJsonRequestHeaders(init),
   });
+
   if (!response.ok) {
-    const body = await response.json().catch(() => null) as { error?: string } | null;
-    throw new SubmissionApiError(body?.error || "The manual results could not be saved.", response.status);
+    const body = await getErrorResponse(response);
+    throw new SubmissionApiError(
+      body?.error || "The marking review could not be updated.",
+      response.status,
+    );
   }
+
+  return parseMarkingReview(await response.json());
+}
+
+function hasValidSubmissionReviewContext(input: {
+  submissionDocumentId: number;
+  worksheetQuestionId: number;
+  questionBankId: number;
+}): boolean {
+  return [
+    input.submissionDocumentId,
+    input.worksheetQuestionId,
+    input.questionBankId,
+  ].every(isPositiveSafeInteger);
+}
+
+export function createMarkingReview(input: {
+  submissionDocumentId: number;
+  worksheetQuestionId: number;
+  questionBankId: number;
+}): Promise<MarkingReview> {
+  if (!hasValidSubmissionReviewContext(input)) {
+    return Promise.reject(
+      new SubmissionApiError("The submission review context is invalid.", 400),
+    );
+  }
+
+  return requestMarkingReview("", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Creates a Tutor-approved fallback result without pretending that OCR source pages exist. */
+export function createManualResult(
+  input: ManualResultRequest,
+): Promise<MarkingReview> {
+  const hasInvalidResult =
+    ![input.worksheetId, input.studentId, input.questionBankId].every(
+      isPositiveSafeInteger,
+    ) ||
+    !Number.isFinite(input.marks) ||
+    input.marks < 0 ||
+    !input.answer.trim() ||
+    !input.feedback.trim();
+
+  if (hasInvalidResult) {
+    return Promise.reject(
+      new SubmissionApiError(
+        "Student, question, answer, marks and tutor feedback are required.",
+        400,
+      ),
+    );
+  }
+
+  return requestMarkingReview("/manual", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+function isValidManualResultEntry(entry: ManualResultEntry): boolean {
+  return (
+    isPositiveSafeInteger(entry.questionBankId) &&
+    Number.isFinite(entry.marks) &&
+    entry.marks >= 0 &&
+    Boolean(entry.answer.trim()) &&
+    Boolean(entry.feedback.trim())
+  );
+}
+
+function hasValidManualResultBatch(input: ManualResultBatchRequest): boolean {
+  if (!Array.isArray(input.entries)) {
+    return false;
+  }
+
+  const hasDuplicateQuestionBankIds =
+    new Set(input.entries.map((entry) => entry.questionBankId)).size !==
+    input.entries.length;
+
+  return (
+    isPositiveSafeInteger(input.worksheetId) &&
+    isPositiveSafeInteger(input.studentId) &&
+    input.entries.length > 0 &&
+    input.entries.every(isValidManualResultEntry) &&
+    !hasDuplicateQuestionBankIds
+  );
+}
+
+/** Saves all entered question marks for one assigned Student atomically. */
+export async function createManualResults(
+  input: ManualResultBatchRequest,
+): Promise<MarkingReview[]> {
+  if (!hasValidManualResultBatch(input)) {
+    return Promise.reject(
+      new SubmissionApiError(
+        "Every entered question needs an answer, valid marks and tutor feedback.",
+        400,
+      ),
+    );
+  }
+
+  const response = await fetch(
+    `${gradingUrl}/api/grading/tutor/reviews/manual/batch`,
+    {
+      method: "POST",
+      headers: getJsonRequestHeaders(),
+      body: JSON.stringify(input),
+    },
+  );
+
+  if (!response.ok) {
+    const body = await getErrorResponse(response);
+    throw new SubmissionApiError(
+      body?.error || "The manual results could not be saved.",
+      response.status,
+    );
+  }
+
   const payload = await response.json();
-  if (!Array.isArray(payload)) throw new SubmissionApiError("The manual result response is invalid.");
+
+  if (!Array.isArray(payload)) {
+    throw new SubmissionApiError("The manual result response is invalid.");
+  }
+
   return payload.map(parseMarkingReview);
 }
+
 /** Returns only the current Tutor's manual results, after Learning has owner-scoped the worksheet. */
-export async function fetchManualResults(worksheetId: number): Promise<ManualResultsResponse> {
-  if (!Number.isSafeInteger(worksheetId) || worksheetId <= 0) {
+export async function fetchManualResults(
+  worksheetId: number,
+): Promise<ManualResultsResponse> {
+  if (!isPositiveSafeInteger(worksheetId)) {
     throw new SubmissionApiError("The worksheet id is invalid.", 400);
   }
-  const response = await fetch(`${gradingUrl}/api/grading/tutor/reviews/manual/worksheets/${worksheetId}`, { headers: headers() });
+
+  const response = await fetch(
+    `${gradingUrl}/api/grading/tutor/reviews/manual/worksheets/${worksheetId}`,
+    { headers: getAuthorizationHeaders() },
+  );
+
   if (!response.ok) {
-    const body = await response.json().catch(() => null) as { error?: string } | null;
-    throw new SubmissionApiError(body?.error || "The manual results could not be loaded.", response.status);
+    const body = await getErrorResponse(response);
+    throw new SubmissionApiError(
+      body?.error || "The manual results could not be loaded.",
+      response.status,
+    );
   }
+
   return parseManualResultsResponse(await response.json());
 }
+
 /** Loads the authenticated Student's worksheet results; no student id is ever accepted from the browser. */
-export async function fetchStudentWorksheetResults(worksheetId: number): Promise<StudentWorksheetResultsResponse> {
-  if (!Number.isSafeInteger(worksheetId) || worksheetId <= 0) {
+export async function fetchStudentWorksheetResults(
+  worksheetId: number,
+): Promise<StudentWorksheetResultsResponse> {
+  if (!isPositiveSafeInteger(worksheetId)) {
     throw new SubmissionApiError("The worksheet id is invalid.", 400);
   }
-  const response = await fetch(`${gradingUrl}/api/grading/student/worksheets/${worksheetId}/results`, { headers: headers() });
+
+  const response = await fetch(
+    `${gradingUrl}/api/grading/student/worksheets/${worksheetId}/results`,
+    { headers: getAuthorizationHeaders() },
+  );
+
   if (!response.ok) {
-    const body = await response.json().catch(() => null) as { error?: string } | null;
-    throw new SubmissionApiError(body?.error || "The worksheet results could not be loaded.", response.status);
+    const body = await getErrorResponse(response);
+    throw new SubmissionApiError(
+      body?.error || "The worksheet results could not be loaded.",
+      response.status,
+    );
   }
+
   return parseStudentWorksheetResultsResponse(await response.json());
 }
-/** Loads the signed-in Student's persisted, Tutor-confirmed mistake history with server-side filters. */
-export async function fetchStudentMistakes(filters: StudentMistakeFilters = {}): Promise<StudentMistakeReview[]> {
+
+function createStudentMistakeQuery(filters: StudentMistakeFilters): URLSearchParams {
   const query = new URLSearchParams();
+
   for (const [name, value] of Object.entries(filters)) {
-    if (value === undefined || value === "") continue;
-    if ((name === "subjectId" || name === "topicId" || name === "worksheetId")
-      && (!Number.isSafeInteger(value) || (value as number) <= 0)) {
+    if (value === undefined || value === "") {
+      continue;
+    }
+
+    const isIdentifierFilter =
+      name === "subjectId" || name === "topicId" || name === "worksheetId";
+
+    if (isIdentifierFilter && !isPositiveSafeInteger(value)) {
       throw new SubmissionApiError(`The ${name} filter is invalid.`, 400);
     }
+
     if (name === "mistakeType" && !mistakeTypes.has(value as MistakeType)) {
       throw new SubmissionApiError("The mistake type filter is invalid.", 400);
     }
+
     query.set(name, String(value));
   }
-  const response = await fetch(`${gradingUrl}/api/grading/student/mistakes${query.size ? `?${query}` : ""}`, { headers: headers() });
+
+  return query;
+}
+
+/** Loads the signed-in Student's persisted, Tutor-confirmed mistake history with server-side filters. */
+export async function fetchStudentMistakes(
+  filters: StudentMistakeFilters = {},
+): Promise<StudentMistakeReview[]> {
+  const query = createStudentMistakeQuery(filters);
+  const querySuffix = query.size ? `?${query}` : "";
+  const response = await fetch(
+    `${gradingUrl}/api/grading/student/mistakes${querySuffix}`,
+    { headers: getAuthorizationHeaders() },
+  );
+
   if (!response.ok) {
-    const body = await response.json().catch(() => null) as { error?: string } | null;
-    throw new SubmissionApiError(body?.error || "Mistake history could not be loaded.", response.status);
+    const body = await getErrorResponse(response);
+    throw new SubmissionApiError(
+      body?.error || "Mistake history could not be loaded.",
+      response.status,
+    );
   }
+
   return parseStudentMistakeReviews(await response.json());
 }
-export function fetchMarkingReview(submissionId: number): Promise<MarkingReview> { if (!Number.isSafeInteger(submissionId) || submissionId <= 0) return Promise.reject(new SubmissionApiError("The submission id is invalid.", 400)); return reviewRequest(`/${submissionId}`); }
-export function approveMarkingReview(submissionId: number, marks: number, feedback: string, diagnosticEvidence: DiagnosticEvidenceInput[] = []): Promise<MarkingReview> {
-  if (!Number.isFinite(marks) || marks < 0 || !feedback.trim() || !Array.isArray(diagnosticEvidence) || diagnosticEvidence.some((item) => !mistakeTypes.has(item.mistakeType) || !item.description.trim() || item.missingKeywords.some((keyword) => !keyword.trim()))) return Promise.reject(new SubmissionApiError("Marks, tutor feedback and diagnostic evidence are invalid.", 400));
-  return reviewRequest(`/${submissionId}/approve`, { method: "POST", body: JSON.stringify({ marks, feedback, diagnosticEvidence }) });
+
+export function fetchMarkingReview(
+  submissionId: number,
+): Promise<MarkingReview> {
+  if (!isPositiveSafeInteger(submissionId)) {
+    return Promise.reject(
+      new SubmissionApiError("The submission id is invalid.", 400),
+    );
+  }
+
+  return requestMarkingReview(`/${submissionId}`);
 }
-export function flagMarkingReview(submissionId: number, reason: string): Promise<MarkingReview> { if (!reason.trim()) return Promise.reject(new SubmissionApiError("A flag reason is required.", 400)); return reviewRequest(`/${submissionId}/flag`, { method: "POST", body: JSON.stringify({ reason }) }); }
-export function resetMarkingReview(submissionId: number): Promise<MarkingReview> { return reviewRequest(`/${submissionId}/reset`, { method: "POST", body: "{}" }); }
+
+function hasValidDiagnosticEvidence(
+  diagnosticEvidence: DiagnosticEvidenceInput[],
+): boolean {
+  return (
+    Array.isArray(diagnosticEvidence) &&
+    !diagnosticEvidence.some(
+      (item) =>
+        !mistakeTypes.has(item.mistakeType) ||
+        !item.description.trim() ||
+        item.missingKeywords.some((keyword) => !keyword.trim()),
+    )
+  );
+}
+
+export function approveMarkingReview(
+  submissionId: number,
+  marks: number,
+  feedback: string,
+  diagnosticEvidence: DiagnosticEvidenceInput[] = [],
+): Promise<MarkingReview> {
+  const hasInvalidApproval =
+    !Number.isFinite(marks) ||
+    marks < 0 ||
+    !feedback.trim() ||
+    !hasValidDiagnosticEvidence(diagnosticEvidence);
+
+  if (hasInvalidApproval) {
+    return Promise.reject(
+      new SubmissionApiError(
+        "Marks, tutor feedback and diagnostic evidence are invalid.",
+        400,
+      ),
+    );
+  }
+
+  return requestMarkingReview(`/${submissionId}/approve`, {
+    method: "POST",
+    body: JSON.stringify({ marks, feedback, diagnosticEvidence }),
+  });
+}
+
+export function flagMarkingReview(
+  submissionId: number,
+  reason: string,
+): Promise<MarkingReview> {
+  if (!reason.trim()) {
+    return Promise.reject(
+      new SubmissionApiError("A flag reason is required.", 400),
+    );
+  }
+
+  return requestMarkingReview(`/${submissionId}/flag`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export function resetMarkingReview(
+  submissionId: number,
+): Promise<MarkingReview> {
+  return requestMarkingReview(`/${submissionId}/reset`, {
+    method: "POST",
+    body: "{}",
+  });
+}

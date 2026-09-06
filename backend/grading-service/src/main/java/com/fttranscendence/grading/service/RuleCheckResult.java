@@ -21,8 +21,12 @@ public record RuleCheckResult(
         if (awardedMarks == null || maximumMarks == null) {
             throw new IllegalArgumentException("Awarded and maximum marks are required.");
         }
-        if (awardedMarks.signum() < 0 || awardedMarks.compareTo(maximumMarks) > 0) {
-            throw new IllegalArgumentException("Awarded marks must be between zero and the maximum.");
+        boolean isBelowZero = awardedMarks.signum() < 0;
+        boolean exceedsMaximum = awardedMarks.compareTo(maximumMarks) > 0;
+        if (isBelowZero || exceedsMaximum) {
+            throw new IllegalArgumentException(
+                "Awarded marks must be between zero and the maximum."
+            );
         }
         matchedKeywords = List.copyOf(matchedKeywords);
         missingKeywords = List.copyOf(missingKeywords);

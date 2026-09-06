@@ -82,6 +82,16 @@ function activityPresentation(activity: TutorDashboardActivity) {
   }
 }
 
+function dashboardMetrics(dashboard: TutorDashboardData) {
+  return [
+    { label: "Active classes", value: dashboard.metrics.activeClassCount, context: "Classes teaching this term", href: "/classes", tone: "#2A2622" },
+    { label: "Students", value: dashboard.metrics.studentCount, context: "Students in your roster", href: "/students", tone: "#2A2622" },
+    { label: "Pending review", value: dashboard.metrics.pendingReviewCount, context: "Marking decisions awaiting you", href: "/tutor/reviews", tone: "#B4573F" },
+    { label: "Needs attention", value: dashboard.metrics.needsAttentionStudentCount, context: "Students with an active alert", href: "/tutor/alerts", tone: "#B4573F" },
+    { label: "Reports ready", value: dashboard.metrics.reportsReadyCount, context: "Finalised progress reports", href: "/students", tone: "#2A2622" },
+  ];
+}
+
 function DashboardSkeleton() {
   return <Box data-testid="tutor-dashboard-skeleton" aria-label="Loading dashboard" sx={{ display: "grid", gap: 2.5 }}>
     <Skeleton variant="text" width="40%" height={54} sx={{ bgcolor: "#F0EAE0" }} />
@@ -140,13 +150,7 @@ export default function TutorDashboard({
   if (error) return <ErrorState message={error} retry={retry} />;
   if (!dashboard) return <DashboardSkeleton />;
 
-  const metrics = [
-    { label: "Active classes", value: dashboard.metrics.activeClassCount, context: "Classes teaching this term", href: "/classes", tone: "#2A2622" },
-    { label: "Students", value: dashboard.metrics.studentCount, context: "Students in your roster", href: "/students", tone: "#2A2622" },
-    { label: "Pending review", value: dashboard.metrics.pendingReviewCount, context: "Marking decisions awaiting you", href: "/tutor/reviews", tone: "#B4573F" },
-    { label: "Needs attention", value: dashboard.metrics.needsAttentionStudentCount, context: "Students with an active alert", href: "/tutor/alerts", tone: "#B4573F" },
-    { label: "Reports ready", value: dashboard.metrics.reportsReadyCount, context: "Finalised progress reports", href: "/students", tone: "#2A2622" },
-  ];
+  const metrics = dashboardMetrics(dashboard);
   const emptyTutor = metrics.every((metric) => metric.value === 0) && dashboard.todaySchedule.length === 0 && dashboard.recentActivity.length === 0;
 
   return <Box sx={{ minHeight: "100vh", bgcolor: "#F7F4EF", px: { xs: 2.5, sm: 3.75 }, py: 3.75, color: "#2A2622" }}>

@@ -1,5 +1,7 @@
 package com.fttranscendence.learning.classroom;
 
+import com.fttranscendence.learning.insight.ClassInsightResponse;
+import com.fttranscendence.learning.insight.ClassInsightService;
 import com.fttranscendence.learning.mastery.MasteryRecord;
 import com.fttranscendence.learning.mastery.MasteryRecordRepository;
 import com.fttranscendence.learning.student.StudentProfile;
@@ -7,29 +9,29 @@ import com.fttranscendence.learning.student.StudentProfileRepository;
 import com.fttranscendence.learning.worksheet.Worksheet;
 import com.fttranscendence.learning.worksheet.WorksheetAssignment;
 import com.fttranscendence.learning.worksheet.WorksheetRepository;
-import com.fttranscendence.learning.insight.ClassInsightResponse;
-import com.fttranscendence.learning.insight.ClassInsightService;
 import jakarta.persistence.EntityManager;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalTime;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.Map;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 @Service
 public class ClassService {
+
+    private static final BigDecimal WEAK_AREA_SCORE_THRESHOLD = new BigDecimal("70.00");
 
     private final TutorClassRepository repository;
     private final EntityManager entityManager;
@@ -57,6 +59,7 @@ public class ClassService {
     @Transactional(readOnly = true)
     public List<ClassRequest.ClassResponse> listOwnedClasses(long tutorId) {
         requireTutor(tutorId);
+
         return ownedClasses(tutorId).stream()
             .map(ClassRequest.ClassResponse::from)
             .toList();
@@ -83,56 +86,106 @@ public class ClassService {
             ? List.of()
             : masteryRepository.findAllByStudentProfileIdInWithTopic(studentIds);
 
-        Map<Long, List<MasteryRecord>> recordsByStudent = new HashMap<>();
-        Map<Long, TopicAggregate> topics = new LinkedHashMap<>();
-        BigDecimal totalScore = BigDecimal.ZERO;
-        for (MasteryRecord mastery : masteryRecords) {
-            Long studentId = mastery.getStudentProfile().getId();
-            recordsByStudent.computeIfAbsent(studentId, ignored -> new ArrayList<>()).add(mastery);
-            totalScore = totalScore.add(mastery.getScore());
-            topics.computeIfAbsent(mastery.getSyllabusTopic().getId(), ignored -> new TopicAggregate(
-                mastery.getSyllabusTopic().getId(), mastery.getSyllabusTopic().getName()
-            )).add(mastery.getScore());
-        }
+        MasterySummaryData masterySummary = summarizeMasteryRecords(masteryRecords);
 
         List<ClassDetailResponse.StudentResponse> studentResponses = students.stream()
-            .map(student -> studentResponse(student, recordsByStudent.getOrDefault(student.getId(), List.of())))
+            .map(student -> studentResponse(
+                student,
+                masterySummary.recordsByStudent().getOrDefault(student.getId(), List.of())
+            ))
             .toList();
         int recordsWithData = masteryRecords.size();
         int studentsWithMastery = (int) studentResponses.stream()
             .filter(student -> student.masteryRecordCount() > 0)
             .count();
-        BigDecimal average = recordsWithData == 0 ? null : average(totalScore, recordsWithData);
-        List<ClassDetailResponse.WeakAreaResponse> weakAreas = topics.values().stream()
-            .map(TopicAggregate::response)
-            .filter(area -> area.averageScore().compareTo(new BigDecimal("70.00")) < 0)
-            .sorted(Comparator.comparing(ClassDetailResponse.WeakAreaResponse::affectedStudentCount).reversed()
-                .thenComparing(ClassDetailResponse.WeakAreaResponse::averageScore)
-                .thenComparing(ClassDetailResponse.WeakAreaResponse::topicName)
-                .thenComparing(ClassDetailResponse.WeakAreaResponse::topicId))
-            .toList();
+        BigDecimal averageMasteryScore = recordsWithData == 0
+            ? null
+            : average(masterySummary.totalScore(), recordsWithData);
+        List<ClassDetailResponse.WeakAreaResponse> weakAreas = weakAreas(
+            masterySummary.topics()
+        );
 
         List<ClassDetailResponse.WorksheetResponse> worksheets = worksheetRepository
             .findClassAssignedWorksheetsByTutorId(tutorId, classId).stream()
             .map(worksheet -> worksheetResponse(worksheet, classId))
             .toList();
 
-        List<ClassDetailResponse.ScheduleResponse> schedules = tutorClass.getSchedules().stream()
-            .map(schedule -> new ClassDetailResponse.ScheduleResponse(
-                schedule.getDayOfWeek(), schedule.getStartTime(), schedule.getEndTime()))
-            .sorted(Comparator.comparing(ClassDetailResponse.ScheduleResponse::dayOfWeek)
-                .thenComparing(ClassDetailResponse.ScheduleResponse::startTime)
-                .thenComparing(ClassDetailResponse.ScheduleResponse::endTime))
-            .toList();
+        List<ClassDetailResponse.ScheduleResponse> schedules = schedulesFor(tutorClass);
+
         return new ClassDetailResponse(
-            tutorClass.getId(), tutorClass.getTutorId(), tutorClass.getClassName(),
-            tutorClass.getSubject(), tutorClass.getLevel(), tutorClass.getStatus(), schedules,
+            tutorClass.getId(),
+            tutorClass.getTutorId(),
+            tutorClass.getClassName(),
+            tutorClass.getSubject(),
+            tutorClass.getLevel(),
+            tutorClass.getStatus(),
+            schedules,
             studentResponses,
-            new ClassDetailResponse.MasterySummary(average, recordsWithData, studentsWithMastery),
+            new ClassDetailResponse.MasterySummary(
+                averageMasteryScore,
+                recordsWithData,
+                studentsWithMastery
+            ),
             weakAreas,
             insightResponse(tutorId, classId),
             worksheets
         );
+    }
+
+    private MasterySummaryData summarizeMasteryRecords(List<MasteryRecord> masteryRecords) {
+        Map<Long, List<MasteryRecord>> recordsByStudent = new HashMap<>();
+        Map<Long, TopicAggregate> topics = new LinkedHashMap<>();
+        BigDecimal totalScore = BigDecimal.ZERO;
+
+        for (MasteryRecord masteryRecord : masteryRecords) {
+            Long studentId = masteryRecord.getStudentProfile().getId();
+            recordsByStudent
+                .computeIfAbsent(studentId, ignored -> new ArrayList<>())
+                .add(masteryRecord);
+
+            Long topicId = masteryRecord.getSyllabusTopic().getId();
+            String topicName = masteryRecord.getSyllabusTopic().getName();
+            topics.computeIfAbsent(
+                topicId,
+                ignored -> new TopicAggregate(topicId, topicName)
+            ).add(masteryRecord.getScore());
+            totalScore = totalScore.add(masteryRecord.getScore());
+        }
+
+        return new MasterySummaryData(recordsByStudent, topics, totalScore);
+    }
+
+    private List<ClassDetailResponse.WeakAreaResponse> weakAreas(
+        Map<Long, TopicAggregate> topicAggregates
+    ) {
+        return topicAggregates.values().stream()
+            .map(TopicAggregate::response)
+            .filter(area -> area.averageScore().compareTo(WEAK_AREA_SCORE_THRESHOLD) < 0)
+            .sorted(
+                Comparator.comparing(
+                        ClassDetailResponse.WeakAreaResponse::affectedStudentCount
+                    )
+                    .reversed()
+                    .thenComparing(ClassDetailResponse.WeakAreaResponse::averageScore)
+                    .thenComparing(ClassDetailResponse.WeakAreaResponse::topicName)
+                    .thenComparing(ClassDetailResponse.WeakAreaResponse::topicId)
+            )
+            .toList();
+    }
+
+    private List<ClassDetailResponse.ScheduleResponse> schedulesFor(TutorClass tutorClass) {
+        return tutorClass.getSchedules().stream()
+            .map(schedule -> new ClassDetailResponse.ScheduleResponse(
+                schedule.getDayOfWeek(),
+                schedule.getStartTime(),
+                schedule.getEndTime()
+            ))
+            .sorted(
+                Comparator.comparing(ClassDetailResponse.ScheduleResponse::dayOfWeek)
+                    .thenComparing(ClassDetailResponse.ScheduleResponse::startTime)
+                    .thenComparing(ClassDetailResponse.ScheduleResponse::endTime)
+            )
+            .toList();
     }
 
     private ClassDetailResponse.InsightResponse insightResponse(long tutorId, long classId) {
@@ -172,6 +225,13 @@ public class ClassService {
         return total.divide(BigDecimal.valueOf(count), 2, RoundingMode.HALF_UP);
     }
 
+    private record MasterySummaryData(
+        Map<Long, List<MasteryRecord>> recordsByStudent,
+        Map<Long, TopicAggregate> topics,
+        BigDecimal totalScore
+    ) {
+    }
+
     private static final class TopicAggregate {
         private final Long topicId;
         private final String topicName;
@@ -187,7 +247,7 @@ public class ClassService {
         void add(BigDecimal score) {
             total = total.add(score);
             count++;
-            if (score.compareTo(new BigDecimal("70.00")) < 0) {
+            if (score.compareTo(WEAK_AREA_SCORE_THRESHOLD) < 0) {
                 affected++;
             }
         }

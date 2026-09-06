@@ -19,7 +19,7 @@ const statusLabel: Record<MasteryStatus, string> = {
   NEEDS_REVISION: "Needs revision",
 };
 
-function masteryColour(score: number) {
+function masteryColour(score: number): string {
   return score < 55 ? "#B4573F" : score < 72 ? "#D8B384" : "#93A896";
 }
 
@@ -48,6 +48,10 @@ function masteryForest(nodes: MasteryNode[]): MasteryBranch[] {
 
 function isLearningNode(node: MasteryNode): boolean {
   return node.nodeType === "TOPIC" || node.nodeType === "SUBTOPIC";
+}
+
+function topicDetailHref(topicId: number, studentId?: number): string {
+  return studentId ? `/topics/${topicId}?studentId=${studentId}` : `/topics/${topicId}`;
 }
 
 export interface MasteryMapFilters {
@@ -97,7 +101,12 @@ export interface MasteryMapProps {
   showFilters?: boolean;
 }
 
-export default function MasteryMap({ data, studentId, heading = "Topic mastery", showFilters = false }: MasteryMapProps) {
+export default function MasteryMap({
+  data,
+  studentId,
+  heading = "Topic mastery",
+  showFilters = false,
+}: MasteryMapProps) {
   const [status, setStatus] = React.useState<MasteryStatus | undefined>();
   const [subjectId, setSubjectId] = React.useState<number | undefined>();
   const [query, setQuery] = React.useState("");
@@ -154,7 +163,7 @@ function MasteryBranchView({ branch, studentId }: { branch: MasteryBranch; stude
     </Box>;
   }
   const focus = node.score < 55 && node.status !== "NOT_STARTED";
-  const href = studentId ? `/topics/${node.topicId}?studentId=${studentId}` : `/topics/${node.topicId}`;
+  const href = topicDetailHref(node.topicId, studentId);
   const attempts = node.attemptCount === 1 ? "1 approved attempt" : `${node.attemptCount} approved attempts`;
   return <Box sx={{ display: "grid", gap: 1, pl: Math.max(0, node.depth - 2) * 1.25 }}>
     <Card component={Link} href={href} variant="outlined" aria-label={`${node.topicName}: ${statusLabel[node.status]}, ${Math.round(node.score)}% mastery. Open topic details.`} sx={{ display: "flex", alignItems: "center", gap: { xs: 1.25, sm: 2 }, p: { xs: 1.35, sm: "13px 16px" }, textDecoration: "none", color: "inherit", borderColor: focus ? "#F0DCD4" : "#EFE8DE", bgcolor: focus ? "#FDF6F3" : "#FFFDFA", borderRadius: "10px", "&:focus-visible": { outline: "3px solid #9E3A24", outlineOffset: 2 }, "&:hover": { bgcolor: focus ? "#FBEDE8" : "#FBF7F1" } }}>

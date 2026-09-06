@@ -1,8 +1,9 @@
-'use client'
+'use client';
+
 import * as React from 'react';
 import Divider from '@mui/material/Divider';
 import type {} from '@mui/material/themeCssVarsAugmentation';
-import SidebarContext from '../context/sidebar-context';
+import SidebarContext from '@/context/sidebar-context';
 import getDrawerSxTransitionMixin from '@/utils/mixins';
 
 export default function SidebarDividerItem() {

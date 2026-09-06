@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 /** Student-owned, persisted mistake review with curriculum-aware filtering. */
 @RestController
@@ -30,7 +31,10 @@ public class MistakeController {
     private final MistakeHistoryService history;
     private final LearningAuthorizationClient authorization;
 
-    public MistakeController(MistakeHistoryService history, LearningAuthorizationClient authorization) {
+    public MistakeController(
+        MistakeHistoryService history,
+        LearningAuthorizationClient authorization
+    ) {
         this.history = history;
         this.authorization = authorization;
     }
@@ -46,18 +50,53 @@ public class MistakeController {
         @RequestParam(required = false) String from,
         @RequestParam(required = false) String to
     ) {
-        MistakeFilter filter = MistakeFilter.parse(subjectId, topicId, mistakeType, worksheetId, from, to);
+        MistakeFilter filter = MistakeFilter.parse(
+            subjectId,
+            topicId,
+            mistakeType,
+            worksheetId,
+            from,
+            to
+        );
         long studentId = authorization.resolveMistakeHistoryStudent(user, bearer, null);
-        LearningAuthorizationClient.SyllabusTaxonomy taxonomy = authorization.loadSyllabusTaxonomy(bearer);
+        LearningAuthorizationClient.SyllabusTaxonomy taxonomy =
+            authorization.loadSyllabusTaxonomy(bearer);
         filter.validateTaxonomy(taxonomy);
 
-        List<MistakeRecord> all = history.recordsFor(studentId);
-        Map<OccurrenceKey, Long> occurrences = all.stream().collect(java.util.stream.Collectors.groupingBy(
-            record -> OccurrenceKey.of(record, taxonomy), java.util.stream.Collectors.counting()));
-        Predicate<MistakeRecord> matches = filter.matches(taxonomy);
-        return all.stream().filter(matches)
-            .map(record -> StudentMistakeItem.from(record, taxonomy, occurrences.get(OccurrenceKey.of(record, taxonomy))))
+        List<MistakeRecord> studentMistakes = history.recordsFor(studentId);
+        Map<OccurrenceKey, Long> occurrencesByTypeAndTopic =
+            countOccurrences(studentMistakes, taxonomy);
+        Predicate<MistakeRecord> matchesRequestedFilters = filter.matches(taxonomy);
+
+        return studentMistakes.stream()
+            .filter(matchesRequestedFilters)
+            .map(record -> toStudentMistakeItem(
+                record,
+                taxonomy,
+                occurrencesByTypeAndTopic
+            ))
             .toList();
+    }
+
+    private static Map<OccurrenceKey, Long> countOccurrences(
+        List<MistakeRecord> studentMistakes,
+        LearningAuthorizationClient.SyllabusTaxonomy taxonomy
+    ) {
+        return studentMistakes.stream().collect(Collectors.groupingBy(
+            record -> OccurrenceKey.of(record, taxonomy),
+            Collectors.counting()
+        ));
+    }
+
+    private static StudentMistakeItem toStudentMistakeItem(
+        MistakeRecord record,
+        LearningAuthorizationClient.SyllabusTaxonomy taxonomy,
+        Map<OccurrenceKey, Long> occurrencesByTypeAndTopic
+    ) {
+        long occurrenceCount = occurrencesByTypeAndTopic.get(
+            OccurrenceKey.of(record, taxonomy)
+        );
+        return StudentMistakeItem.from(record, taxonomy, occurrenceCount);
     }
 
     @ExceptionHandler(LearningAuthorizationClient.MistakeHistoryNotFound.class)
@@ -67,12 +106,20 @@ public class MistakeController {
 
     @ExceptionHandler(LearningAuthorizationClient.Forbidden.class)
     ResponseEntity<Map<String, String>> forbidden() {
-        return error(HttpStatus.FORBIDDEN, "STUDENT_MISTAKES_FORBIDDEN", "You are not allowed to view this mistake history.");
+        return error(
+            HttpStatus.FORBIDDEN,
+            "STUDENT_MISTAKES_FORBIDDEN",
+            "You are not allowed to view this mistake history."
+        );
     }
 
     @ExceptionHandler(LearningAuthorizationClient.SyllabusUnavailable.class)
     ResponseEntity<Map<String, String>> syllabusUnavailable() {
-        return error(HttpStatus.SERVICE_UNAVAILABLE, "SYLLABUS_UNAVAILABLE", "Curriculum metadata is temporarily unavailable.");
+        return error(
+            HttpStatus.SERVICE_UNAVAILABLE,
+            "SYLLABUS_UNAVAILABLE",
+            "Curriculum metadata is temporarily unavailable."
+        );
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
@@ -106,41 +153,88 @@ public class MistakeController {
             LearningAuthorizationClient.SyllabusTaxonomy taxonomy,
             long occurrenceCount
         ) {
-            LearningAuthorizationClient.SyllabusTopic topic = record.getSyllabusTopicId() == null
-                ? null : taxonomy.topics().get(record.getSyllabusTopicId());
-            LearningAuthorizationClient.SyllabusSubject subject = topic == null ? null : topic.subject();
+            LearningAuthorizationClient.SyllabusTopic topic = findTopic(record, taxonomy);
+            LearningAuthorizationClient.SyllabusSubject subject =
+                topic == null ? null : topic.subject();
+
             return new StudentMistakeItem(
-                record.getId(), record.getWorksheetId(), record.getWorksheetQuestionId(), record.getQuestionBankId(),
-                record.getSyllabusTopicId(), record.getSyllabusTopicCode(), subject == null ? null : subject.id(),
-                subject == null ? null : subject.name(), topic == null ? null : topic.name(),
-                record.getMistakeType().name(), record.getMistakeType().getLabel(), record.getDescription(),
-                record.getCreatedAt(), occurrenceCount, "CONFIRMED"
+                record.getId(),
+                record.getWorksheetId(),
+                record.getWorksheetQuestionId(),
+                record.getQuestionBankId(),
+                record.getSyllabusTopicId(),
+                record.getSyllabusTopicCode(),
+                subject == null ? null : subject.id(),
+                subject == null ? null : subject.name(),
+                topic == null ? null : topic.name(),
+                record.getMistakeType().name(),
+                record.getMistakeType().getLabel(),
+                record.getDescription(),
+                record.getCreatedAt(),
+                occurrenceCount,
+                "CONFIRMED"
             );
+        }
+
+        private static LearningAuthorizationClient.SyllabusTopic findTopic(
+            MistakeRecord record,
+            LearningAuthorizationClient.SyllabusTaxonomy taxonomy
+        ) {
+            Long syllabusTopicId = record.getSyllabusTopicId();
+            return syllabusTopicId == null ? null : taxonomy.topics().get(syllabusTopicId);
         }
     }
 
     private record OccurrenceKey(Long subjectId, Long topicId, MistakeType type) {
-        static OccurrenceKey of(MistakeRecord record, LearningAuthorizationClient.SyllabusTaxonomy taxonomy) {
-            LearningAuthorizationClient.SyllabusTopic topic = record.getSyllabusTopicId() == null
-                ? null : taxonomy.topics().get(record.getSyllabusTopicId());
-            return new OccurrenceKey(topic == null || topic.subject() == null ? null : topic.subject().id(),
-                record.getSyllabusTopicId(), record.getMistakeType());
+        static OccurrenceKey of(
+            MistakeRecord record,
+            LearningAuthorizationClient.SyllabusTaxonomy taxonomy
+        ) {
+            LearningAuthorizationClient.SyllabusTopic topic =
+                StudentMistakeItem.findTopic(record, taxonomy);
+            Long subjectId = topic == null || topic.subject() == null
+                ? null
+                : topic.subject().id();
+
+            return new OccurrenceKey(
+                subjectId,
+                record.getSyllabusTopicId(),
+                record.getMistakeType()
+            );
         }
     }
 
     private record MistakeFilter(
-        Long subjectId, Long topicId, MistakeType type, Long worksheetId, LocalDate from, LocalDate to
+        Long subjectId,
+        Long topicId,
+        MistakeType type,
+        Long worksheetId,
+        LocalDate from,
+        LocalDate to
     ) {
-        static MistakeFilter parse(String subjectId, String topicId, String mistakeType, String worksheetId,
-                                   String from, String to) {
+        static MistakeFilter parse(
+            String subjectId,
+            String topicId,
+            String mistakeType,
+            String worksheetId,
+            String from,
+            String to
+        ) {
             LocalDate start = date(from, "from");
             LocalDate end = date(to, "to");
+
             if (start != null && end != null && start.isAfter(end)) {
                 throw new IllegalArgumentException("from must be on or before to.");
             }
-            return new MistakeFilter(positive(subjectId, "subjectId"), positive(topicId, "topicId"),
-                blank(mistakeType) ? null : MistakeType.fromLabel(mistakeType), positive(worksheetId, "worksheetId"),
-                start, end);
+
+            return new MistakeFilter(
+                positive(subjectId, "subjectId"),
+                positive(topicId, "topicId"),
+                blank(mistakeType) ? null : MistakeType.fromLabel(mistakeType),
+                positive(worksheetId, "worksheetId"),
+                start,
+                end
+            );
         }
 
         void validateTaxonomy(LearningAuthorizationClient.SyllabusTaxonomy taxonomy) {
@@ -154,24 +248,32 @@ public class MistakeController {
 
         Predicate<MistakeRecord> matches(LearningAuthorizationClient.SyllabusTaxonomy taxonomy) {
             return record -> {
-                LearningAuthorizationClient.SyllabusTopic topic = record.getSyllabusTopicId() == null
-                    ? null : taxonomy.topics().get(record.getSyllabusTopicId());
-                Long recordSubjectId = topic == null || topic.subject() == null ? null : topic.subject().id();
-                LocalDate recorded = record.getCreatedAt().toLocalDate();
+                LearningAuthorizationClient.SyllabusTopic topic =
+                    StudentMistakeItem.findTopic(record, taxonomy);
+                Long recordSubjectId = topic == null || topic.subject() == null
+                    ? null
+                    : topic.subject().id();
+                LocalDate recordedOn = record.getCreatedAt().toLocalDate();
+
                 return (subjectId == null || Objects.equals(subjectId, recordSubjectId))
                     && (topicId == null || Objects.equals(topicId, record.getSyllabusTopicId()))
                     && (type == null || type == record.getMistakeType())
                     && (worksheetId == null || Objects.equals(worksheetId, record.getWorksheetId()))
-                    && (from == null || !recorded.isBefore(from))
-                    && (to == null || !recorded.isAfter(to));
+                    && (from == null || !recordedOn.isBefore(from))
+                    && (to == null || !recordedOn.isAfter(to));
             };
         }
 
         private static Long positive(String value, String name) {
-            if (blank(value)) return null;
+            if (blank(value)) {
+                return null;
+            }
+
             try {
                 long parsed = Long.parseLong(value.trim());
-                if (parsed <= 0) throw new IllegalArgumentException(name + " must be positive.");
+                if (parsed <= 0) {
+                    throw new IllegalArgumentException(name + " must be positive.");
+                }
                 return parsed;
             } catch (NumberFormatException exception) {
                 throw new IllegalArgumentException(name + " must be a positive integer.");
@@ -179,7 +281,10 @@ public class MistakeController {
         }
 
         private static LocalDate date(String value, String name) {
-            if (blank(value)) return null;
+            if (blank(value)) {
+                return null;
+            }
+
             try {
                 return LocalDate.parse(value.trim());
             } catch (DateTimeParseException exception) {

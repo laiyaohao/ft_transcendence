@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.transaction.annotation.Transactional;
@@ -72,25 +73,16 @@ public class SubmissionDocumentController {
         // Students must resolve to themselves; Tutors must resolve to a student
         // in their own learning-service scope.  The grading service never trusts
         // a client-supplied studentId without this check.
-        if ("TUTOR".equals(user.role()) && (classId == null || classId <= 0)) {
-            throw new IllegalArgumentException("Tutors must select the student's class.");
-        }
+        validateTutorClassSelection(user, classId);
         authorization.assertCanSubmit(user, studentId, worksheetId, worksheetQuestionId, classId);
-        if (files.isEmpty()) {
-            throw new IllegalArgumentException("At least one page is required.");
-        }
-        boolean pdf = files.stream().anyMatch(file -> "application/pdf".equals(file.getContentType()));
-        if (pdf && files.size() != 1) {
-            throw new IllegalArgumentException("A PDF submission must be uploaded alone.");
-        }
-
-        SubmissionDocument document = new SubmissionDocument(
+        SubmissionDocument.SourceType sourceType = validateAndGetSourceType(files);
+        SubmissionDocument document = createDocument(
             user.userId(),
-            SubmissionDocument.OwnerRole.valueOf(user.role()),
+            user.role(),
             worksheetId,
             studentId,
             classId,
-            pdf ? SubmissionDocument.SourceType.PDF : SubmissionDocument.SourceType.IMAGES
+            sourceType
         );
         // Repository.save may merge and return a different managed aggregate.
         // Keep that instance so subsequent OCR extractions always reference
@@ -98,26 +90,14 @@ public class SubmissionDocumentController {
         document = documents.saveAndFlush(document);
         List<String> storedKeys = new ArrayList<>();
         try {
-            for (MultipartFile file : files) {
-                DocumentStorage.StoredFile stored = storage.store(
-                    user.userId(),
-                    Objects.requireNonNullElse(file.getOriginalFilename(), "page"),
-                    file.getContentType(),
-                    file.getBytes()
-                );
-                storedKeys.add(stored.storageKey());
-                document.addPage(stored);
-            }
+            storeUploadedPages(document, user.userId(), files, storedKeys);
             document = documents.saveAndFlush(document);
 
-            List<OcrExtraction> documentExtractions = new ArrayList<>();
-            for (SubmissionPage page : document.getPages()) {
-                documentExtractions.add(review.extract(
-                    page,
-                    worksheetQuestionId,
-                    storage.read(user.userId(), page.getStorageKey())
-                ));
-            }
+            List<OcrExtraction> documentExtractions = extractDocumentText(
+                document,
+                user.userId(),
+                worksheetQuestionId
+            );
             document.markReady();
             documents.saveAndFlush(document);
             return ResponseEntity.status(HttpStatus.CREATED)
@@ -137,6 +117,91 @@ public class SubmissionDocumentController {
         }
     }
 
+    private static void validateTutorClassSelection(
+        AuthenticatedUser user,
+        Long classId
+    ) {
+        boolean isTutor = "TUTOR".equals(user.role());
+        boolean hasSelectedClass = classId != null && classId > 0;
+
+        if (isTutor && !hasSelectedClass) {
+            throw new IllegalArgumentException("Tutors must select the student's class.");
+        }
+    }
+
+    private static SubmissionDocument.SourceType validateAndGetSourceType(
+        List<MultipartFile> files
+    ) {
+        if (files.isEmpty()) {
+            throw new IllegalArgumentException("At least one page is required.");
+        }
+
+        boolean containsPdf = files.stream()
+            .anyMatch(file -> "application/pdf".equals(file.getContentType()));
+        if (containsPdf && files.size() != 1) {
+            throw new IllegalArgumentException("A PDF submission must be uploaded alone.");
+        }
+
+        return containsPdf
+            ? SubmissionDocument.SourceType.PDF
+            : SubmissionDocument.SourceType.IMAGES;
+    }
+
+    private static SubmissionDocument createDocument(
+        long ownerUserId,
+        String ownerRole,
+        long worksheetId,
+        long studentId,
+        Long classId,
+        SubmissionDocument.SourceType sourceType
+    ) {
+        return new SubmissionDocument(
+            ownerUserId,
+            SubmissionDocument.OwnerRole.valueOf(ownerRole),
+            worksheetId,
+            studentId,
+            classId,
+            sourceType
+        );
+    }
+
+    private void storeUploadedPages(
+        SubmissionDocument document,
+        long ownerUserId,
+        List<MultipartFile> files,
+        List<String> storedKeys
+    ) throws Exception {
+        for (MultipartFile file : files) {
+            DocumentStorage.StoredFile storedFile = storage.store(
+                ownerUserId,
+                Objects.requireNonNullElse(file.getOriginalFilename(), "page"),
+                file.getContentType(),
+                file.getBytes()
+            );
+            storedKeys.add(storedFile.storageKey());
+            document.addPage(storedFile);
+        }
+    }
+
+    private List<OcrExtraction> extractDocumentText(
+        SubmissionDocument document,
+        long ownerUserId,
+        Long worksheetQuestionId
+    ) {
+        List<OcrExtraction> documentExtractions = new ArrayList<>();
+        for (SubmissionPage page : document.getPages()) {
+            byte[] pageContents = storage.read(ownerUserId, page.getStorageKey());
+            OcrExtraction extraction = review.extract(
+                page,
+                worksheetQuestionId,
+                pageContents
+            );
+            documentExtractions.add(extraction);
+        }
+
+        return documentExtractions;
+    }
+
     /**
      * OCR review is resumed from durable server-side document/page state, not
      * from browser memory or a client-supplied worksheet context.
@@ -147,10 +212,12 @@ public class SubmissionDocumentController {
         @AuthenticationPrincipal AuthenticatedUser user,
         @PathVariable long documentId
     ) {
+        SubmissionDocument.OwnerRole ownerRole =
+            SubmissionDocument.OwnerRole.valueOf(user.role());
         SubmissionDocument document = documents.findByIdAndOwnerUserIdAndOwnerRole(
                 documentId,
                 user.userId(),
-                SubmissionDocument.OwnerRole.valueOf(user.role())
+                ownerRole
             )
             .orElseThrow(DocumentNotFound::new);
         return DocumentResponse.of(
@@ -164,9 +231,14 @@ public class SubmissionDocumentController {
     public ResponseEntity<MarkingReviewService.SubmissionForTutorReviewResponse> submitForReview(
         @AuthenticationPrincipal AuthenticatedUser user,
         @PathVariable long documentId,
-        @org.springframework.web.bind.annotation.RequestBody MarkingReviewService.OcrSubmissionRequest request
+        @RequestBody MarkingReviewService.OcrSubmissionRequest request
     ) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(markingReviews.submitOcrForTutorReview(user, documentId, request));
+        var reviewResponse = markingReviews.submitOcrForTutorReview(
+            user,
+            documentId,
+            request
+        );
+        return ResponseEntity.status(HttpStatus.CREATED).body(reviewResponse);
     }
 
     /**
@@ -177,17 +249,18 @@ public class SubmissionDocumentController {
     @PostMapping(value = "/manual-answers", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<MarkingReviewService.ManualAnswerResponse> saveManualAnswers(
         @AuthenticationPrincipal AuthenticatedUser user,
-        @org.springframework.web.bind.annotation.RequestBody MarkingReviewService.ManualAnswerRequest request
+        @RequestBody MarkingReviewService.ManualAnswerRequest request
     ) {
-        return ResponseEntity.status(HttpStatus.OK).body(markingReviews.saveManualAnswers(user, request));
+        var answerResponse = markingReviews.saveManualAnswers(user, request);
+        return ResponseEntity.ok(answerResponse);
     }
 
     @GetMapping("/manual-answers")
     public MarkingReviewService.ManualAnswerResponse loadManualAnswers(
         @AuthenticationPrincipal AuthenticatedUser user,
-        @org.springframework.web.bind.annotation.RequestParam long studentId,
-        @org.springframework.web.bind.annotation.RequestParam long worksheetId,
-        @org.springframework.web.bind.annotation.RequestParam(required = false) Long classId
+        @RequestParam long studentId,
+        @RequestParam long worksheetId,
+        @RequestParam(required = false) Long classId
     ) {
         return markingReviews.loadManualAnswers(user, studentId, worksheetId, classId);
     }
@@ -232,25 +305,34 @@ public class SubmissionDocumentController {
                 document.getPages().stream()
                     .map(page -> {
                         OcrExtraction extraction = extractionsByPageId.get(page.getId());
-                        if (extraction == null) {
-                            throw new IllegalStateException("Submission page is missing its OCR extraction");
-                        }
-                        return new PageResponse(
-                            page.getId(),
-                            page.getPageNumber(),
-                            page.getOriginalFilename(),
-                            page.getMediaType(),
-                            extraction.getId(),
-                            extraction.getCorrectedText() == null
-                                ? extraction.getExtractedText()
-                                : extraction.getCorrectedText(),
-                            extraction.getConfidence(),
-                            extraction.getStatus().name()
-                        );
+                        return pageResponse(page, extraction);
                     })
                     .toList()
             );
         }
+    }
+
+    private static PageResponse pageResponse(
+        SubmissionPage page,
+        OcrExtraction extraction
+    ) {
+        if (extraction == null) {
+            throw new IllegalStateException("Submission page is missing its OCR extraction");
+        }
+
+        String displayedText = extraction.getCorrectedText() == null
+            ? extraction.getExtractedText()
+            : extraction.getCorrectedText();
+        return new PageResponse(
+            page.getId(),
+            page.getPageNumber(),
+            page.getOriginalFilename(),
+            page.getMediaType(),
+            extraction.getId(),
+            displayedText,
+            extraction.getConfidence(),
+            extraction.getStatus().name()
+        );
     }
 
     private static final class DocumentNotFound extends RuntimeException { }

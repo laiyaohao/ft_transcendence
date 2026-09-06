@@ -9,22 +9,43 @@ import Typography from "@mui/material/Typography";
 
 import { fetchLearningProfile, type LearningProfile } from "@/services/insights";
 
+function loadErrorMessage(reason: unknown) {
+  return reason instanceof Error ? reason.message : "Learning insights could not be loaded.";
+}
+
 export default function LearningInsightsPanel({ studentId, loadProfile = fetchLearningProfile }: { studentId?: number; loadProfile?: (studentId?: number) => Promise<LearningProfile> }) {
   const [profile, setProfile] = React.useState<LearningProfile | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const load = React.useCallback(async () => {
     setError(null);
-    try { setProfile(await loadProfile(studentId)); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : "Learning insights could not be loaded."); }
+    try {
+      setProfile(await loadProfile(studentId));
+    } catch (reason) {
+      setError(loadErrorMessage(reason));
+    }
   }, [loadProfile, studentId]);
+
   React.useEffect(() => {
-    let current = true;
-    const request = async () => {
-      try { const loaded = await loadProfile(studentId); if (current) setProfile(loaded); }
-      catch (reason) { if (current) setError(reason instanceof Error ? reason.message : "Learning insights could not be loaded."); }
+    let isCurrentRequest = true;
+
+    const loadInitialProfile = async () => {
+      try {
+        const loadedProfile = await loadProfile(studentId);
+        if (isCurrentRequest) {
+          setProfile(loadedProfile);
+        }
+      } catch (reason) {
+        if (isCurrentRequest) {
+          setError(loadErrorMessage(reason));
+        }
+      }
     };
-    void request();
-    return () => { current = false; };
+
+    void loadInitialProfile();
+
+    return () => {
+      isCurrentRequest = false;
+    };
   }, [loadProfile, studentId]);
 
   if (!profile && !error) return <Card aria-label="Loading learning insights" variant="outlined" sx={{ borderColor: "#EBE4D9", bgcolor: "#FFFDFA", borderRadius: "14px", p: 2.5 }}><Skeleton height={28} width="42%" /><Skeleton height={78} sx={{ mt: 1 }} /></Card>;

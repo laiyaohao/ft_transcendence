@@ -6,7 +6,12 @@ export const MAX_EMAIL_LENGTH = 254;
 export const MAX_PASSWORD_LENGTH = 128;
 export const MAX_FULL_NAME_LENGTH = 100;
 
-const hasUnsafeCharacters = (value: string) => /[\u0000-\u001F\u007F<>]/.test(value);
+const CONTROL_CHARACTER_PATTERN = /[\u0000-\u001F\u007F]/;
+const UNSAFE_TEXT_CHARACTER_PATTERN = /[\u0000-\u001F\u007F<>]/;
+
+function hasUnsafeCharacters(value: string): boolean {
+  return UNSAFE_TEXT_CHARACTER_PATTERN.test(value);
+}
 
 export function isValidEmail(value: string): boolean {
   return value.length > 0
@@ -18,7 +23,9 @@ export function isValidEmail(value: string): boolean {
 
 /** Login accepts any server-supported password, subject only to safe transport limits. */
 export function isValidLoginPassword(value: string): boolean {
-  return value.length > 0 && value.length <= MAX_PASSWORD_LENGTH && !/[\u0000-\u001F\u007F]/.test(value);
+  return value.length > 0
+    && value.length <= MAX_PASSWORD_LENGTH
+    && !CONTROL_CHARACTER_PATTERN.test(value);
 }
 
 export function isValidRegistrationPassword(value: string): boolean {

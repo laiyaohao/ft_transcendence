@@ -20,23 +20,159 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/learning/internal/marking-review-state")
 public class MarkingReviewStatusSyncController {
-    private final MarkingReviewStatusProjectionRepository reviews; private final StudentProfileRepository students; private final byte[] key;
-    public MarkingReviewStatusSyncController(MarkingReviewStatusProjectionRepository reviews, StudentProfileRepository students, @Value("${learning.marking-sync-key}") String key) { this.reviews = reviews; this.students = students; if (key == null || key.isBlank()) throw new IllegalArgumentException("LEARNING_MARKING_SYNC_KEY is required"); this.key = key.getBytes(StandardCharsets.UTF_8); }
-    @PostMapping @Transactional public ResponseEntity<Void> sync(@RequestHeader(value = "X-Learning-Integration-Key", required = false) String candidate, @RequestBody ReviewState request) {
-        if (!matches(candidate)) throw new Forbidden();
-        if (request == null || request.submissionId() <= 0 || request.studentId() <= 0 || request.tutorUserId() <= 0 || request.worksheetId() <= 0 || request.revision() <= 0 || request.reviewState() == null || request.occurredAt() == null) throw new IllegalArgumentException("Review state payload is invalid.");
-        StudentProfile student = students.findByIdAndTutorId(request.studentId(), request.tutorUserId()).orElseThrow(ReviewContextNotFound::new);
-        MarkingReviewStatusProjection.State state;
-        try { state = MarkingReviewStatusProjection.State.valueOf(request.reviewState()); } catch (RuntimeException exception) { throw new IllegalArgumentException("Review state payload is invalid."); }
-        int revision = Math.toIntExact(request.revision());
-        MarkingReviewStatusProjection projection = reviews.findById(request.submissionId()).orElseGet(() -> new MarkingReviewStatusProjection(request.submissionId(), request.tutorUserId(), request.worksheetId(), student, revision, state, request.occurredAt()));
-        projection.setWorksheetId(request.worksheetId()); projection.set(revision, state, request.occurredAt()); reviews.save(projection); return ResponseEntity.noContent().build();
+    private static final String INTEGRATION_KEY_HEADER = "X-Learning-Integration-Key";
+
+    private final MarkingReviewStatusProjectionRepository reviews;
+    private final StudentProfileRepository students;
+    private final byte[] integrationKey;
+
+    public MarkingReviewStatusSyncController(
+        MarkingReviewStatusProjectionRepository reviews,
+        StudentProfileRepository students,
+        @Value("${learning.marking-sync-key}") String integrationKey
+    ) {
+        if (integrationKey == null || integrationKey.isBlank()) {
+            throw new IllegalArgumentException("LEARNING_MARKING_SYNC_KEY is required");
+        }
+
+        this.reviews = reviews;
+        this.students = students;
+        this.integrationKey = integrationKey.getBytes(StandardCharsets.UTF_8);
     }
-    private boolean matches(String candidate) { return candidate != null && MessageDigest.isEqual(key, candidate.getBytes(StandardCharsets.UTF_8)); }
-    @ExceptionHandler(Forbidden.class) ResponseEntity<ApiError> forbidden() { return error(HttpStatus.FORBIDDEN, "MARKING_SYNC_FORBIDDEN", "Marking sync is not permitted."); }
-    @ExceptionHandler(ReviewContextNotFound.class) ResponseEntity<ApiError> missing() { return error(HttpStatus.NOT_FOUND, "MARKING_SYNC_CONTEXT_NOT_FOUND", "Marking sync context was not found."); }
-    @ExceptionHandler(IllegalArgumentException.class) ResponseEntity<ApiError> invalid(IllegalArgumentException e) { return error(HttpStatus.BAD_REQUEST, "INVALID_MARKING_SYNC", e.getMessage()); }
-    private ResponseEntity<ApiError> error(HttpStatus status, String code, String message) { return ResponseEntity.status(status).body(new ApiError(code, message, Map.of())); }
-    record ReviewState(String eventKey, long revision, long submissionId, long tutorUserId, long studentId, long worksheetId, String reviewState, LocalDateTime occurredAt) { }
-    record ApiError(String code, String message, Map<String, String> fields) { } static class Forbidden extends RuntimeException { } static class ReviewContextNotFound extends RuntimeException { }
+
+    @PostMapping
+    @Transactional
+    public ResponseEntity<Void> sync(
+        @RequestHeader(value = INTEGRATION_KEY_HEADER, required = false)
+        String integrationKeyHeader,
+        @RequestBody ReviewState request
+    ) {
+        verifyIntegrationKey(integrationKeyHeader);
+        validateRequest(request);
+
+        StudentProfile student = findStudent(request);
+        MarkingReviewStatusProjection.State state = parseReviewState(request.reviewState());
+        int revision = Math.toIntExact(request.revision());
+        MarkingReviewStatusProjection projection = findOrCreateProjection(
+            request,
+            student,
+            revision,
+            state
+        );
+
+        projection.setWorksheetId(request.worksheetId());
+        projection.set(revision, state, request.occurredAt());
+        reviews.save(projection);
+
+        return ResponseEntity.noContent().build();
+    }
+
+    private void verifyIntegrationKey(String integrationKeyHeader) {
+        if (!matches(integrationKeyHeader)) {
+            throw new Forbidden();
+        }
+    }
+
+    private void validateRequest(ReviewState request) {
+        boolean isInvalidRequest = request == null
+            || request.submissionId() <= 0
+            || request.studentId() <= 0
+            || request.tutorUserId() <= 0
+            || request.worksheetId() <= 0
+            || request.revision() <= 0
+            || request.reviewState() == null
+            || request.occurredAt() == null;
+
+        if (isInvalidRequest) {
+            throw new IllegalArgumentException("Review state payload is invalid.");
+        }
+    }
+
+    private StudentProfile findStudent(ReviewState request) {
+        return students.findByIdAndTutorId(request.studentId(), request.tutorUserId())
+            .orElseThrow(ReviewContextNotFound::new);
+    }
+
+    private MarkingReviewStatusProjection.State parseReviewState(String reviewState) {
+        try {
+            return MarkingReviewStatusProjection.State.valueOf(reviewState);
+        } catch (RuntimeException exception) {
+            throw new IllegalArgumentException("Review state payload is invalid.");
+        }
+    }
+
+    private MarkingReviewStatusProjection findOrCreateProjection(
+        ReviewState request,
+        StudentProfile student,
+        int revision,
+        MarkingReviewStatusProjection.State state
+    ) {
+        return reviews.findById(request.submissionId()).orElseGet(
+            () -> new MarkingReviewStatusProjection(
+                request.submissionId(),
+                request.tutorUserId(),
+                request.worksheetId(),
+                student,
+                revision,
+                state,
+                request.occurredAt()
+            )
+        );
+    }
+
+    private boolean matches(String candidate) {
+        return candidate != null
+            && MessageDigest.isEqual(
+                integrationKey,
+                candidate.getBytes(StandardCharsets.UTF_8)
+            );
+    }
+
+    @ExceptionHandler(Forbidden.class)
+    ResponseEntity<ApiError> forbidden() {
+        return error(
+            HttpStatus.FORBIDDEN,
+            "MARKING_SYNC_FORBIDDEN",
+            "Marking sync is not permitted."
+        );
+    }
+
+    @ExceptionHandler(ReviewContextNotFound.class)
+    ResponseEntity<ApiError> missing() {
+        return error(
+            HttpStatus.NOT_FOUND,
+            "MARKING_SYNC_CONTEXT_NOT_FOUND",
+            "Marking sync context was not found."
+        );
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    ResponseEntity<ApiError> invalid(IllegalArgumentException exception) {
+        return error(HttpStatus.BAD_REQUEST, "INVALID_MARKING_SYNC", exception.getMessage());
+    }
+
+    private ResponseEntity<ApiError> error(HttpStatus status, String code, String message) {
+        return ResponseEntity.status(status).body(new ApiError(code, message, Map.of()));
+    }
+
+    record ReviewState(
+        String eventKey,
+        long revision,
+        long submissionId,
+        long tutorUserId,
+        long studentId,
+        long worksheetId,
+        String reviewState,
+        LocalDateTime occurredAt
+    ) {
+    }
+
+    record ApiError(String code, String message, Map<String, String> fields) {
+    }
+
+    static class Forbidden extends RuntimeException {
+    }
+
+    static class ReviewContextNotFound extends RuntimeException {
+    }
 }

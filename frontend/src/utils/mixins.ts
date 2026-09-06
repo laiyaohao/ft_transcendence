@@ -12,7 +12,10 @@ function getReducedMotionStyles(theme: Theme, transition: string) {
   };
 }
 
-export default function mixins(isExpanded: boolean, property: string) {
+export default function getDrawerSxTransitionMixin(
+  isExpanded: boolean,
+  property: string,
+) {
   return (theme: Theme) =>
     getReducedMotionStyles(
       theme,

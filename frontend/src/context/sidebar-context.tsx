@@ -1,8 +1,8 @@
 import * as React from 'react';
 
-const SidebarContext = React.createContext<{
+export interface SidebarContextValue {
   expandedItemIds: string[];
-  handleSetSidebarExpanded: (newExpanded: boolean) => () => void
+  handleSetSidebarExpanded: (newExpanded: boolean) => () => void;
   handlePageItemClick: (id: string, hasNestedNavigation: boolean) => void;
   mini: boolean;
   isFullyExpanded: boolean;
@@ -10,6 +10,8 @@ const SidebarContext = React.createContext<{
   isFullyCollapsed: boolean;
   setIsFullyCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
   hasDrawerTransitions: boolean;
-} | null>(null);
+}
+
+const SidebarContext = React.createContext<SidebarContextValue | null>(null);
 
 export default SidebarContext;

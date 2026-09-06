@@ -14,7 +14,7 @@ import StyledCard from "./styled-card";
 import { GoogleIcon, FacebookIcon } from '../utils/icons';
 import strings from "../locales/en.json"
 
-interface AuthCardInt {
+interface AuthCardProps {
   handleSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
   nameRef?: React.RefObject<HTMLInputElement | null>;
   nameError?: boolean | undefined;
@@ -32,7 +32,7 @@ interface AuthCardInt {
   isSubmitting?: boolean;
 }
 
-const AuthCard = ({
+export default function AuthCard({
   handleSubmit,
   nameRef,
   nameError,
@@ -48,7 +48,11 @@ const AuthCard = ({
   fromSignup,
   submitErrorMessage,
   isSubmitting = false,
-} : AuthCardInt) => {
+}: AuthCardProps) {
+  const isSignup = fromSignup;
+  const submitLabel = isSignup ? strings.auth.signup : strings.auth.login;
+  const pendingSubmitLabel = isSignup ? 'Creating account…' : 'Signing in…';
+
   return (
     <StyledCard variant="outlined" data-testid="auth-card">
       <Typography
@@ -56,7 +60,7 @@ const AuthCard = ({
         variant="h4"
         sx={{ width: '100%', fontSize: 'clamp(2rem, 10vw, 2.15rem)' }}
       >
-        {fromSignup ? strings.auth.signup : strings.auth.login}
+        {submitLabel}
       </Typography>
       <Box
         component="form"
@@ -69,7 +73,7 @@ const AuthCard = ({
           gap: 2,
         }}
       >
-        {fromSignup && <FormControl>
+        {isSignup && <FormControl>
           <FormLabel htmlFor="fullName">{strings.auth.namePrompt}</FormLabel>
           <TextField
             inputRef={nameRef}
@@ -115,7 +119,7 @@ const AuthCard = ({
             placeholder="••••••"
             type="password"
             id="password"
-            autoComplete={fromSignup ? 'new-password' : 'current-password'}
+            autoComplete={isSignup ? 'new-password' : 'current-password'}
             autoFocus
             required
             fullWidth
@@ -140,9 +144,7 @@ const AuthCard = ({
           disabled={isSubmitting}
           aria-busy={isSubmitting}
         >
-          {isSubmitting
-            ? (fromSignup ? 'Creating account…' : 'Signing in…')
-            : (fromSignup ? strings.auth.signup : strings.auth.login)}
+          {isSubmitting ? pendingSubmitLabel : submitLabel}
         </Button>
         {!fromSignup && <Link
           component="button"
@@ -162,7 +164,7 @@ const AuthCard = ({
           onClick={() => alert('Sign in with Google')}
           startIcon={<GoogleIcon />}
         >
-          {fromSignup ? strings.auth.continueWithGoogle : strings.auth.signInWithGoogle}
+          {isSignup ? strings.auth.continueWithGoogle : strings.auth.signInWithGoogle}
         </Button>
         <Button
           fullWidth
@@ -170,9 +172,9 @@ const AuthCard = ({
           onClick={() => alert('Sign in with Facebook')}
           startIcon={<FacebookIcon />}
         >
-          {fromSignup ? strings.auth.continueWithFacebook : strings.auth.signInWithFacebook}
+          {isSignup ? strings.auth.continueWithFacebook : strings.auth.signInWithFacebook}
         </Button>
-        {!fromSignup ? <Typography sx={{ textAlign: 'center' }}>
+        {!isSignup ? <Typography sx={{ textAlign: 'center' }}>
           {strings.auth.noAccount}
           <Link
             href="/signup"
@@ -193,7 +195,5 @@ const AuthCard = ({
         </Typography>}
       </Box>
     </StyledCard>
-  )
+  );
 }
-
-export default AuthCard;

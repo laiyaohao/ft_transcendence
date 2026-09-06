@@ -1,12 +1,12 @@
 package com.fttranscendence.grading.config;
 
 import com.fttranscendence.grading.security.JwtAuthenticationFilter;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -29,6 +29,21 @@ public class SecurityConfig {
       "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'";
   private static final String PERMISSIONS_POLICY =
       "accelerometer=(), camera=(), geolocation=(), microphone=(), payment=(), usb=()";
+  private static final List<String> ALLOWED_METHODS = List.of(
+      "GET",
+      "POST",
+      "PUT",
+      "PATCH",
+      "DELETE",
+      "OPTIONS"
+  );
+  private static final List<String> ALLOWED_HEADERS = List.of(
+      HttpHeaders.AUTHORIZATION,
+      HttpHeaders.CONTENT_TYPE,
+      HttpHeaders.ACCEPT,
+      "X-Requested-With",
+      "Idempotency-Key"
+  );
 
   @Bean
   SecurityFilterChain securityFilterChain(
@@ -73,7 +88,10 @@ public class SecurityConfig {
                     .hasAnyRole("TUTOR", "STUDENT")
                 .requestMatchers(HttpMethod.GET, "/api/grading/submission-documents/*")
                     .hasAnyRole("TUTOR", "STUDENT")
-                .requestMatchers(HttpMethod.POST, "/api/grading/submission-documents/*/submit-for-review")
+                .requestMatchers(
+                    HttpMethod.POST,
+                    "/api/grading/submission-documents/*/submit-for-review"
+                )
                     .hasAnyRole("TUTOR", "STUDENT")
                 .requestMatchers(HttpMethod.GET, "/api/grading/submission-documents/manual-answers")
                     .hasAnyRole("TUTOR", "STUDENT")
@@ -94,20 +112,25 @@ public class SecurityConfig {
 
   @Bean
   CorsConfigurationSource corsConfigurationSource(
-      @Value("${security.cors.allowed-origins:http://localhost:3000}") String configuredOrigins) {
+      @Value("${security.cors.allowed-origins:http://localhost:3000}")
+      String configuredOrigins
+  ) {
     CorsConfiguration configuration = new CorsConfiguration();
     List<String> allowedOrigins = Arrays.stream(configuredOrigins.split(","))
         .map(String::trim)
         .filter(origin -> !origin.isEmpty())
         .distinct()
         .toList();
+
     if (allowedOrigins.isEmpty()) {
-      throw new IllegalStateException("security.cors.allowed-origins must contain at least one origin");
+      throw new IllegalStateException(
+          "security.cors.allowed-origins must contain at least one origin"
+      );
     }
+
     configuration.setAllowedOrigins(allowedOrigins);
-    configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-    configuration.setAllowedHeaders(List.of(
-        HttpHeaders.AUTHORIZATION, HttpHeaders.CONTENT_TYPE, HttpHeaders.ACCEPT, "X-Requested-With", "Idempotency-Key"));
+    configuration.setAllowedMethods(ALLOWED_METHODS);
+    configuration.setAllowedHeaders(ALLOWED_HEADERS);
     configuration.setAllowCredentials(false);
     configuration.setMaxAge(3600L);
 

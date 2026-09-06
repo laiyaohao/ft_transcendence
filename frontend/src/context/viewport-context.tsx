@@ -1,14 +1,15 @@
 import * as React from 'react';
-import { type Theme } from '@mui/material/styles';
+import type { Theme } from '@mui/material/styles';
 
-
-const ViewportContext = React.createContext<{
+export interface ViewportContextValue {
   theme: Theme;
   isOverSmViewport: boolean;
   isOverMdViewport: boolean;
   isNavigationExpanded: boolean;
   setIsNavigationExpanded: (newExpanded: boolean) => void;
   handleToggleHeaderMenu: (isExpanded: boolean) => void;
-} | null>(null);
+}
+
+const ViewportContext = React.createContext<ViewportContextValue | null>(null);
 
 export default ViewportContext;

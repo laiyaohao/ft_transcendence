@@ -20,7 +20,10 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
 
     /** Newest submission per worksheet question is the learner's current result. */
     @EntityGraph(attributePaths = {"missingKeywords", "reviews"})
-    List<Submission> findByStudentIdAndWorksheetIdOrderByCreatedAtDescIdDesc(Long studentId, Long worksheetId);
+    List<Submission> findByStudentIdAndWorksheetIdOrderByCreatedAtDescIdDesc(
+        Long studentId,
+        Long worksheetId
+    );
 
     @EntityGraph(attributePaths = {"missingKeywords", "reviews"})
     List<Submission> findBySubmissionDocumentOwnerUserIdOrderByCreatedAtDesc(
@@ -37,7 +40,10 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
         Long submissionDocumentId,
         Long worksheetQuestionId
     );
-    List<Submission> findBySubmissionDocumentIdOrderByWorksheetQuestionIdAsc(Long submissionDocumentId);
+
+    List<Submission> findBySubmissionDocumentIdOrderByWorksheetQuestionIdAsc(
+        Long submissionDocumentId
+    );
 
     /**
      * Manual marks are deliberately scoped through their Tutor-owned document.
@@ -45,7 +51,8 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
      * result history.
      */
     @EntityGraph(attributePaths = {"missingKeywords", "reviews", "submissionDocument"})
-    List<Submission> findByWorksheetIdAndSubmissionDocumentOwnerUserIdAndSubmissionDocumentOwnerRoleAndSubmissionDocumentSourceTypeOrderByCreatedAtAsc(
+    List<Submission>
+        findByWorksheetIdAndSubmissionDocumentOwnerUserIdAndSubmissionDocumentOwnerRoleAndSubmissionDocumentSourceTypeOrderByCreatedAtAsc(
         Long worksheetId,
         Long ownerUserId,
         SubmissionDocument.OwnerRole ownerRole,

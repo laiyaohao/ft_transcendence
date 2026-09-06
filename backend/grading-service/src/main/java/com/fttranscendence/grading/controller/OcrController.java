@@ -3,10 +3,16 @@ package com.fttranscendence.grading.controller;
 import com.fttranscendence.grading.ocr.OcrExtraction;
 import com.fttranscendence.grading.ocr.OcrReviewService;
 import com.fttranscendence.grading.security.AuthenticatedUser;
-import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
 import java.util.Map;
 
 @RestController
@@ -30,13 +36,21 @@ public class OcrController {
         @PathVariable long extractionId,
         @RequestBody Map<String, String> request
     ) {
-        OcrExtraction extraction = reviews.correct(user.userId(), user.role(), extractionId, request.get("correctedText"));
-        return ResponseEntity.ok(Map.of(
+        String correctedText = request.get("correctedText");
+        OcrExtraction extraction = reviews.correct(
+            user.userId(),
+            user.role(),
+            extractionId,
+            correctedText
+        );
+
+        Map<String, Object> response = Map.of(
             "id", extraction.getId(),
             "text", extraction.getCorrectedText(),
             "confidence", extraction.getConfidence(),
             "status", extraction.getStatus().name()
-        ));
+        );
+        return ResponseEntity.ok(response);
     }
 
     /**
@@ -46,18 +60,27 @@ public class OcrController {
     @ExceptionHandler(OcrReviewService.NotFound.class)
     ResponseEntity<Map<String, String>> extractionNotFound() {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
-            .body(Map.of("code", "OCR_EXTRACTION_NOT_FOUND", "error", "OCR extraction was not found."));
+            .body(Map.of(
+                "code", "OCR_EXTRACTION_NOT_FOUND",
+                "error", "OCR extraction was not found."
+            ));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
     ResponseEntity<Map<String, String>> invalidCorrection(IllegalArgumentException exception) {
         return ResponseEntity.badRequest()
-            .body(Map.of("code", "INVALID_OCR_CORRECTION", "error", exception.getMessage()));
+            .body(Map.of(
+                "code", "INVALID_OCR_CORRECTION",
+                "error", exception.getMessage()
+            ));
     }
 
     @ExceptionHandler(IllegalStateException.class)
     ResponseEntity<Map<String, String>> invalidState(IllegalStateException exception) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
-            .body(Map.of("code", "OCR_EXTRACTION_STATE_CONFLICT", "error", exception.getMessage()));
+            .body(Map.of(
+                "code", "OCR_EXTRACTION_STATE_CONFLICT",
+                "error", exception.getMessage()
+            ));
     }
 }

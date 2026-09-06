@@ -25,17 +25,90 @@ public final class MasteryCalculator {
         BigDecimal availableMarks,
         int repeatedMistakeCount
     ) {
-        if (previousScore == null || awardedMarks == null || availableMarks == null) return Optional.empty();
-        if (priorApprovedAttempts < 0 || repeatedMistakeCount < 0 || availableMarks.signum() <= 0
-            || awardedMarks.signum() < 0 || awardedMarks.compareTo(availableMarks) > 0
-            || previousScore.signum() < 0 || previousScore.compareTo(HUNDRED) > 0) {
+        if (hasMissingScoreData(previousScore, awardedMarks, availableMarks)) {
+            return Optional.empty();
+        }
+
+        if (hasInvalidCalculationInputs(
+            previousScore,
+            priorApprovedAttempts,
+            awardedMarks,
+            availableMarks,
+            repeatedMistakeCount
+        )) {
             throw new IllegalArgumentException("Mastery calculation inputs are invalid");
         }
-        BigDecimal resultPercent = repeatedMistakeCount > 0 ? BigDecimal.ZERO
-            : awardedMarks.multiply(HUNDRED).divide(availableMarks, 6, RoundingMode.HALF_UP);
-        BigDecimal total = previousScore.multiply(BigDecimal.valueOf(priorApprovedAttempts)).add(resultPercent);
-        BigDecimal score = total.divide(BigDecimal.valueOf(priorApprovedAttempts + 1), 2, RoundingMode.HALF_UP);
-        return Optional.of(new Result(score, resultPercent.setScale(2, RoundingMode.HALF_UP)));
+
+        BigDecimal unroundedAttemptPercent = calculateAdjustedAttemptPercent(
+            awardedMarks,
+            availableMarks,
+            repeatedMistakeCount
+        );
+        BigDecimal score = calculateAverageScore(
+            previousScore,
+            priorApprovedAttempts,
+            unroundedAttemptPercent
+        );
+        BigDecimal adjustedAttemptPercent = unroundedAttemptPercent.setScale(
+            2,
+            RoundingMode.HALF_UP
+        );
+
+        return Optional.of(new Result(score, adjustedAttemptPercent));
+    }
+
+    private boolean hasMissingScoreData(
+        BigDecimal previousScore,
+        BigDecimal awardedMarks,
+        BigDecimal availableMarks
+    ) {
+        return previousScore == null
+            || awardedMarks == null
+            || availableMarks == null;
+    }
+
+    private boolean hasInvalidCalculationInputs(
+        BigDecimal previousScore,
+        int priorApprovedAttempts,
+        BigDecimal awardedMarks,
+        BigDecimal availableMarks,
+        int repeatedMistakeCount
+    ) {
+        return priorApprovedAttempts < 0
+            || repeatedMistakeCount < 0
+            || availableMarks.signum() <= 0
+            || awardedMarks.signum() < 0
+            || awardedMarks.compareTo(availableMarks) > 0
+            || previousScore.signum() < 0
+            || previousScore.compareTo(HUNDRED) > 0;
+    }
+
+    private BigDecimal calculateAdjustedAttemptPercent(
+        BigDecimal awardedMarks,
+        BigDecimal availableMarks,
+        int repeatedMistakeCount
+    ) {
+        if (repeatedMistakeCount > 0) {
+            return BigDecimal.ZERO;
+        }
+
+        return awardedMarks
+            .multiply(HUNDRED)
+            .divide(availableMarks, 6, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal calculateAverageScore(
+        BigDecimal previousScore,
+        int priorApprovedAttempts,
+        BigDecimal adjustedAttemptPercent
+    ) {
+        BigDecimal previousTotal = previousScore.multiply(
+            BigDecimal.valueOf(priorApprovedAttempts)
+        );
+        BigDecimal totalScore = previousTotal.add(adjustedAttemptPercent);
+        BigDecimal attemptCount = BigDecimal.valueOf(priorApprovedAttempts + 1L);
+
+        return totalScore.divide(attemptCount, 2, RoundingMode.HALF_UP);
     }
 
     public record Result(BigDecimal score, BigDecimal adjustedAttemptPercent) { }

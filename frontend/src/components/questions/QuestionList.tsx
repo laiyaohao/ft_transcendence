@@ -30,12 +30,18 @@ export interface QuestionListProps {
 
 const serif = "'Playfair Display', Georgia, serif";
 const questionTypes: readonly { value: QuestionType; label: string }[] = [
-  { value: "MULTIPLE_CHOICE", label: "MCQ" }, { value: "TRUE_FALSE", label: "True / false" },
-  { value: "FILL_IN_THE_BLANK", label: "Fill in the blank" }, { value: "SHORT_ANSWER", label: "Short answer" },
-  { value: "OPEN_ENDED", label: "Open ended" }, { value: "CALCULATION", label: "Calculation" }, { value: "DIAGRAM", label: "Diagram" },
+  { value: "MULTIPLE_CHOICE", label: "MCQ" },
+  { value: "TRUE_FALSE", label: "True / false" },
+  { value: "FILL_IN_THE_BLANK", label: "Fill in the blank" },
+  { value: "SHORT_ANSWER", label: "Short answer" },
+  { value: "OPEN_ENDED", label: "Open ended" },
+  { value: "CALCULATION", label: "Calculation" },
+  { value: "DIAGRAM", label: "Diagram" },
 ];
 const difficulties: readonly { value: QuestionDifficulty; label: string }[] = [
-  { value: "FOUNDATION", label: "Foundation" }, { value: "APPLICATION", label: "Application" }, { value: "CHALLENGE", label: "Challenge" },
+  { value: "FOUNDATION", label: "Foundation" },
+  { value: "APPLICATION", label: "Application" },
+  { value: "CHALLENGE", label: "Challenge" },
 ];
 
 function typeLabel(type: QuestionType) {
@@ -77,7 +83,18 @@ export default function QuestionList({ loadQuestions = fetchTutorQuestions, load
   const latestRequest = React.useRef(0);
   const initialSearchEffect = React.useRef(true);
 
-  const filters = React.useMemo<QuestionBankFilters>(() => ({ topicId, questionType, difficulty, archiveState, search: search || undefined, page, size: 12 }), [archiveState, difficulty, page, questionType, search, topicId]);
+  const filters = React.useMemo<QuestionBankFilters>(
+    () => ({
+      topicId,
+      questionType,
+      difficulty,
+      archiveState,
+      search: search || undefined,
+      page,
+      size: 12,
+    }),
+    [archiveState, difficulty, page, questionType, search, topicId],
+  );
   const load = React.useCallback(async () => {
     const request = ++latestRequest.current;
     setError(null); setIsLoading(true);
@@ -105,12 +122,35 @@ export default function QuestionList({ loadQuestions = fetchTutorQuestions, load
     return () => window.clearTimeout(debounce);
   }, [searchInput]);
 
-  const toggleSelection = (id: number) => setSelectedIds((current) => {
-    const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next;
-  });
+  const toggleSelection = (id: number) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+
+      return next;
+    });
+  };
   const clearFilters = () => {
-    const alreadyDefault = topicId === undefined && questionType === undefined && difficulty === undefined && archiveState === "ACTIVE" && !searchInput && !search && page === 0;
-    setTopicId(undefined); setQuestionType(undefined); setDifficulty(undefined); setArchiveState("ACTIVE"); setSearchInput(""); setSearch(""); setPage(0);
+    const alreadyDefault = topicId === undefined
+      && questionType === undefined
+      && difficulty === undefined
+      && archiveState === "ACTIVE"
+      && !searchInput
+      && !search
+      && page === 0;
+
+    setTopicId(undefined);
+    setQuestionType(undefined);
+    setDifficulty(undefined);
+    setArchiveState("ACTIVE");
+    setSearchInput("");
+    setSearch("");
+    setPage(0);
     if (alreadyDefault) void load();
   };
   const changeArchive = (value: QuestionArchiveState) => { setArchiveState(value); setPage(0); };

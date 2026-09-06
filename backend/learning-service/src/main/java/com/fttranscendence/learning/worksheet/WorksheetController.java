@@ -5,15 +5,16 @@ import com.fttranscendence.learning.pdf.PdfDocumentService;
 import com.fttranscendence.learning.security.AuthenticatedUser;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.dao.DataAccessException;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -22,15 +23,16 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
-import org.springframework.format.annotation.DateTimeFormat;
-import org.springframework.dao.DataAccessException;
 
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.nio.charset.StandardCharsets;
 
 @RestController
 @RequestMapping(value = "/api/learning", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -39,8 +41,14 @@ public class WorksheetController {
     private final DiagnosticWorksheetService diagnostics;
     private final WorksheetPdfService worksheetPdfs;
 
-    public WorksheetController(WorksheetService worksheets, DiagnosticWorksheetService diagnostics, WorksheetPdfService worksheetPdfs) {
-        this.worksheets = worksheets; this.diagnostics = diagnostics; this.worksheetPdfs = worksheetPdfs;
+    public WorksheetController(
+            WorksheetService worksheets,
+            DiagnosticWorksheetService diagnostics,
+            WorksheetPdfService worksheetPdfs
+    ) {
+        this.worksheets = worksheets;
+        this.diagnostics = diagnostics;
+        this.worksheetPdfs = worksheetPdfs;
     }
 
     @PostMapping(value = "/tutor/classes/{classId}/worksheet-generation-requests", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -48,8 +56,10 @@ public class WorksheetController {
             @AuthenticationPrincipal AuthenticatedUser user, @PathVariable @Positive long classId,
             @RequestHeader("Idempotency-Key") String idempotencyKey,
             @Valid @RequestBody WorksheetRequests.GenerateWorksheetRequest request) {
-        WorksheetRequests.GenerationRequestResponse response = worksheets.generate(user.userId(), classId, idempotencyKey, request);
-        return ResponseEntity.status(response.status() == WorksheetGenerationRequest.Status.SUCCEEDED ? HttpStatus.CREATED : HttpStatus.ACCEPTED).body(response);
+        WorksheetRequests.GenerationRequestResponse response = worksheets.generate(
+            user.userId(), classId, idempotencyKey, request
+        );
+        return generationResponse(response);
     }
 
     /** Evidence-backed generation still yields a draft; only the standard approve endpoint may assign it. */
@@ -58,8 +68,10 @@ public class WorksheetController {
             @AuthenticationPrincipal AuthenticatedUser user, @PathVariable @Positive long classId,
             @RequestHeader("Idempotency-Key") String idempotencyKey,
             @Valid @RequestBody WorksheetRequests.GenerateDiagnosticWorksheetRequest request) {
-        WorksheetRequests.GenerationRequestResponse response = diagnostics.generate(user.userId(), classId, idempotencyKey, request);
-        return ResponseEntity.status(response.status() == WorksheetGenerationRequest.Status.SUCCEEDED ? HttpStatus.CREATED : HttpStatus.ACCEPTED).body(response);
+        WorksheetRequests.GenerationRequestResponse response = diagnostics.generate(
+            user.userId(), classId, idempotencyKey, request
+        );
+        return generationResponse(response);
     }
 
     @GetMapping("/tutor/classes/{classId}/worksheet-generation-requests/{requestId}")
@@ -73,13 +85,13 @@ public class WorksheetController {
             @PathVariable @Positive long worksheetId) { return worksheets.getWorksheet(user.userId(), worksheetId); }
 
     @GetMapping("/tutor/worksheets")
-    public java.util.List<WorksheetRequests.WorksheetResponse> worksheets(@AuthenticationPrincipal AuthenticatedUser user,
+    public List<WorksheetRequests.WorksheetResponse> worksheets(@AuthenticationPrincipal AuthenticatedUser user,
             @RequestParam(required = false) @Positive Long classId) {
         return worksheets.listWorksheets(user.userId(), classId);
     }
 
     @GetMapping("/tutor/classes/{classId}/students/{studentId}/submission-worksheets")
-    public java.util.List<WorksheetRequests.WorksheetResponse> submissionWorksheets(
+    public List<WorksheetRequests.WorksheetResponse> submissionWorksheets(
             @AuthenticationPrincipal AuthenticatedUser user, @PathVariable @Positive long classId,
             @PathVariable @Positive long studentId) {
         return worksheets.listSubmissionWorksheets(user.userId(), classId, studentId);
@@ -89,11 +101,7 @@ public class WorksheetController {
     public ResponseEntity<byte[]> worksheetPdf(@AuthenticationPrincipal AuthenticatedUser user,
             @PathVariable @Positive long worksheetId) {
         WorksheetPdfService.PdfExport export = worksheetPdfs.export(user.userId(), worksheetId);
-        return ResponseEntity.ok()
-            .contentType(MediaType.APPLICATION_PDF)
-            .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
-                .filename(export.filename(), StandardCharsets.UTF_8).build().toString())
-            .body(export.bytes());
+        return pdfResponse(export);
     }
 
     @PatchMapping(value = "/tutor/worksheets/{worksheetId}", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -114,19 +122,18 @@ public class WorksheetController {
 
     /** No student selector: the server derives the linked learner from the authenticated JWT. */
     @GetMapping("/student/worksheets")
-    public java.util.List<WorksheetRequests.StudentWorksheetLibraryItem> studentWorksheets(
+    public List<WorksheetRequests.StudentWorksheetLibraryItem> studentWorksheets(
             @AuthenticationPrincipal AuthenticatedUser user,
             @RequestParam(required = false) Long subjectId,
             @RequestParam(required = false) Long topicId,
             @RequestParam(required = false) String status,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) java.time.LocalDate assignedFrom,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) java.time.LocalDate assignedTo) {
-        WorksheetRequests.StudentWorksheetStatus normalizedStatus = null;
-        if (status != null && !status.isBlank()) {
-            try { normalizedStatus = WorksheetRequests.StudentWorksheetStatus.valueOf(status.trim().toUpperCase(java.util.Locale.ROOT)); }
-            catch (IllegalArgumentException exception) { throw new WorksheetService.InvalidStudentWorksheetFilterException("status must be ASSIGNED, SUBMITTED or MARKED."); }
-        }
-        return worksheets.listStudentWorksheets(user.userId(), new WorksheetService.StudentWorksheetFilter(subjectId, topicId, normalizedStatus, assignedFrom, assignedTo));
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate assignedFrom,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate assignedTo) {
+        WorksheetRequests.StudentWorksheetStatus normalizedStatus = normalizeStudentWorksheetStatus(status);
+        WorksheetService.StudentWorksheetFilter filter = new WorksheetService.StudentWorksheetFilter(
+            subjectId, topicId, normalizedStatus, assignedFrom, assignedTo
+        );
+        return worksheets.listStudentWorksheets(user.userId(), filter);
     }
 
     @GetMapping("/student/worksheets/{worksheetId}")
@@ -139,11 +146,45 @@ public class WorksheetController {
     public ResponseEntity<byte[]> studentWorksheetPdf(@AuthenticationPrincipal AuthenticatedUser user,
             @PathVariable @Positive long worksheetId) {
         WorksheetPdfService.PdfExport export = worksheetPdfs.exportStudent(user.userId(), worksheetId);
+        return pdfResponse(export);
+    }
+
+    private ResponseEntity<WorksheetRequests.GenerationRequestResponse> generationResponse(
+            WorksheetRequests.GenerationRequestResponse response
+    ) {
+        HttpStatus status = response.status() == WorksheetGenerationRequest.Status.SUCCEEDED
+            ? HttpStatus.CREATED
+            : HttpStatus.ACCEPTED;
+        return ResponseEntity.status(status).body(response);
+    }
+
+    private ResponseEntity<byte[]> pdfResponse(WorksheetPdfService.PdfExport export) {
+        String contentDisposition = ContentDisposition.attachment()
+            .filename(export.filename(), StandardCharsets.UTF_8)
+            .build()
+            .toString();
         return ResponseEntity.ok()
             .contentType(MediaType.APPLICATION_PDF)
-            .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
-                .filename(export.filename(), StandardCharsets.UTF_8).build().toString())
+            .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition)
             .body(export.bytes());
+    }
+
+    private WorksheetRequests.StudentWorksheetStatus normalizeStudentWorksheetStatus(
+            String status
+    ) {
+        if (status == null || status.isBlank()) {
+            return null;
+        }
+
+        try {
+            return WorksheetRequests.StudentWorksheetStatus.valueOf(
+                status.trim().toUpperCase(java.util.Locale.ROOT)
+            );
+        } catch (IllegalArgumentException exception) {
+            throw new WorksheetService.InvalidStudentWorksheetFilterException(
+                "status must be ASSIGNED, SUBMITTED or MARKED."
+            );
+        }
     }
 
     @ExceptionHandler({WorksheetService.ClassNotFoundException.class, WorksheetService.WorksheetNotFoundException.class,

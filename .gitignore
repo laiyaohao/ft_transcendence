@@ -19,3 +19,9 @@ node_modules/
 **/.agents/
 AGENTS.md
 **/AGENTS.md
+agents.md
+**/agents.md
+SKILL.md
+**/SKILL.md
+skills.md
+**/skills.md

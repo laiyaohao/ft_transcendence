@@ -22,23 +22,83 @@ export interface NavigationItem {
 }
 
 const TUTOR_NAVIGATION: readonly NavigationItem[] = [
-  { id: 'dashboard', title: 'Dashboard', href: '/tutor/dashboard', icon: DashboardOutlinedIcon },
+  {
+    id: 'dashboard',
+    title: 'Dashboard',
+    href: '/tutor/dashboard',
+    icon: DashboardOutlinedIcon,
+  },
   { id: 'classes', title: 'Classes', href: '/classes', icon: SchoolOutlinedIcon },
-  { id: 'students', title: 'Students', href: '/students', icon: GroupsOutlinedIcon },
-  { id: 'worksheets', title: 'Worksheets', href: '/tutor/worksheets', icon: DescriptionOutlinedIcon },
-  { id: 'questions', title: 'Question Bank', href: '/questions', icon: QuizOutlinedIcon },
-  { id: 'alerts', title: 'Alerts', href: '/tutor/alerts', icon: WarningAmberOutlinedIcon },
-  { id: 'upload', title: 'Upload', href: '/upload', icon: FileUploadOutlinedIcon },
+  {
+    id: 'students',
+    title: 'Students',
+    href: '/students',
+    icon: GroupsOutlinedIcon,
+  },
+  {
+    id: 'worksheets',
+    title: 'Worksheets',
+    href: '/tutor/worksheets',
+    icon: DescriptionOutlinedIcon,
+  },
+  {
+    id: 'questions',
+    title: 'Question Bank',
+    href: '/questions',
+    icon: QuizOutlinedIcon,
+  },
+  {
+    id: 'alerts',
+    title: 'Alerts',
+    href: '/tutor/alerts',
+    icon: WarningAmberOutlinedIcon,
+  },
+  {
+    id: 'upload',
+    title: 'Upload',
+    href: '/upload',
+    icon: FileUploadOutlinedIcon,
+  },
 ];
 
 const STUDENT_NAVIGATION: readonly NavigationItem[] = [
-  { id: 'home', title: 'Home', href: '/student/dashboard', icon: HomeOutlinedIcon },
-  { id: 'worksheets', title: 'Worksheets', href: '/worksheets', icon: DescriptionOutlinedIcon },
-  { id: 'upload', title: 'Upload', href: '/upload', icon: FileUploadOutlinedIcon },
-  { id: 'mistakes', title: 'Mistakes', href: '/mistakes', icon: WarningAmberOutlinedIcon },
-  { id: 'progress', title: 'Progress', href: '/progress', icon: TrendingUpOutlinedIcon },
+  {
+    id: 'home',
+    title: 'Home',
+    href: '/student/dashboard',
+    icon: HomeOutlinedIcon,
+  },
+  {
+    id: 'worksheets',
+    title: 'Worksheets',
+    href: '/worksheets',
+    icon: DescriptionOutlinedIcon,
+  },
+  {
+    id: 'upload',
+    title: 'Upload',
+    href: '/upload',
+    icon: FileUploadOutlinedIcon,
+  },
+  {
+    id: 'mistakes',
+    title: 'Mistakes',
+    href: '/mistakes',
+    icon: WarningAmberOutlinedIcon,
+  },
+  {
+    id: 'progress',
+    title: 'Progress',
+    href: '/progress',
+    icon: TrendingUpOutlinedIcon,
+  },
   { id: 'topics', title: 'Topics', href: '/topics', icon: TopicOutlinedIcon },
-  { id: 'subject-profile', title: 'Subject Profile', href: '/subject-profile', icon: SubjectOutlinedIcon },
+  {
+    id: 'subject-profile',
+    title: 'Subject Profile',
+    href: '/subject-profile',
+    icon: SubjectOutlinedIcon,
+  },
   { id: 'profile', title: 'Profile', href: '/profile', icon: PersonIcon },
 ];
 
@@ -46,7 +106,10 @@ export function getNavigationItems(role: AuthRole): readonly NavigationItem[] {
   return role === 'TUTOR' ? TUTOR_NAVIGATION : STUDENT_NAVIGATION;
 }
 
-export function isNavigationItemSelected(item: NavigationItem, pathname: string): boolean {
+export function isNavigationItemSelected(
+  item: NavigationItem,
+  pathname: string,
+): boolean {
   return item.href === '/'
     ? pathname === '/'
     : pathname === item.href || pathname.startsWith(`${item.href}/`);

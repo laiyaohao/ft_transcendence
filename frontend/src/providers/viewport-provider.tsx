@@ -2,7 +2,9 @@
 import React from 'react';
 import { useTheme } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
-import ViewportContext from '../context/viewport-context';
+import ViewportContext, {
+  type ViewportContextValue,
+} from '@/context/viewport-context';
 
 interface ViewportProviderProps {
   children?: React.ReactNode;
@@ -44,28 +46,31 @@ const ViewportProvider = ({ children }: ViewportProviderProps) => {
     },
     [setIsNavigationExpanded],
   );
-  const viewportContextValue = React.useMemo(() => {
-    return {
+
+  const viewportContextValue = React.useMemo<ViewportContextValue>(
+    () => ({
       theme,
       isOverSmViewport,
       isOverMdViewport,
       isNavigationExpanded,
       setIsNavigationExpanded,
-      handleToggleHeaderMenu
-    };
-  }, [
-    theme,
-    isOverSmViewport,
-    isOverMdViewport,
-    isNavigationExpanded,
-    setIsNavigationExpanded,
-    handleToggleHeaderMenu
-  ]);
+      handleToggleHeaderMenu,
+    }),
+    [
+      theme,
+      isOverSmViewport,
+      isOverMdViewport,
+      isNavigationExpanded,
+      setIsNavigationExpanded,
+      handleToggleHeaderMenu,
+    ],
+  );
+
   return (
     <ViewportContext.Provider value={viewportContextValue}>
       {children}
     </ViewportContext.Provider>
-  )
-}
+  );
+};
 
 export default ViewportProvider;

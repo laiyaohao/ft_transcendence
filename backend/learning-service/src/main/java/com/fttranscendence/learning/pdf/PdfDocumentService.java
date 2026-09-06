@@ -36,13 +36,7 @@ public class PdfDocumentService {
         try (PDDocument document = new PDDocument(); ByteArrayOutputStream bytes = new ByteArrayOutputStream()) {
             applyMetadata(document, worksheet);
             PageWriter writer = new PageWriter(document, loadFonts(document), "Worksheet");
-            writer.heading(worksheet.getTitle());
-            writer.body("Worksheet code: " + worksheet.getCode());
-            if (worksheet.getInstructions() != null && !worksheet.getInstructions().isBlank()) {
-                writer.spacer(6);
-                writer.boldBody("Instructions");
-                writer.body(worksheet.getInstructions());
-            }
+            writeWorksheetHeader(writer, worksheet);
             writer.spacer(10);
 
             int number = 1;
@@ -56,6 +50,21 @@ public class PdfDocumentService {
         } catch (IOException exception) {
             throw new PdfGenerationException("Unable to generate the worksheet PDF.", exception);
         }
+    }
+
+    private void writeWorksheetHeader(PageWriter writer, Worksheet worksheet) throws IOException {
+        writer.heading(worksheet.getTitle());
+        writer.body("Worksheet code: " + worksheet.getCode());
+
+        boolean hasInstructions = worksheet.getInstructions() != null
+            && !worksheet.getInstructions().isBlank();
+        if (!hasInstructions) {
+            return;
+        }
+
+        writer.spacer(6);
+        writer.boldBody("Instructions");
+        writer.body(worksheet.getInstructions());
     }
 
     /**

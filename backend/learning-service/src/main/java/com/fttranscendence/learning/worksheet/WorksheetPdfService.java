@@ -11,8 +11,11 @@ public class WorksheetPdfService {
     private final PdfDocumentService pdfDocuments;
     private final WorksheetService worksheetService;
 
-    public WorksheetPdfService(WorksheetRepository worksheets, PdfDocumentService pdfDocuments,
-            WorksheetService worksheetService) {
+    public WorksheetPdfService(
+            WorksheetRepository worksheets,
+            PdfDocumentService pdfDocuments,
+            WorksheetService worksheetService
+    ) {
         this.worksheets = worksheets;
         this.pdfDocuments = pdfDocuments;
         this.worksheetService = worksheetService;
@@ -20,17 +23,24 @@ public class WorksheetPdfService {
 
     @Transactional(readOnly = true)
     public PdfExport export(long tutorId, long worksheetId) {
-        Worksheet worksheet = worksheets.findByIdAndTutorId(worksheetId, tutorId)
+        Worksheet approvedWorksheet = worksheets.findByIdAndTutorId(worksheetId, tutorId)
             .orElseThrow(WorksheetService.WorksheetNotFoundException::new);
-        if (worksheet.getStatus() != Worksheet.Status.APPROVED) throw new WorksheetNotApprovedException();
-        return new PdfExport(pdfDocuments.createWorksheetPdf(worksheet), filename(worksheet));
+        if (approvedWorksheet.getStatus() != Worksheet.Status.APPROVED) {
+            throw new WorksheetNotApprovedException();
+        }
+        return export(approvedWorksheet);
     }
 
     /** Student access is proven by the linked profile and assignment, never by a supplied profile id. */
     @Transactional(readOnly = true)
     public PdfExport exportStudent(long loginUserId, long worksheetId) {
-        Worksheet worksheet = worksheetService.studentAssignedWorksheet(loginUserId, worksheetId);
-        return new PdfExport(pdfDocuments.createWorksheetPdf(worksheet), filename(worksheet));
+        Worksheet assignedWorksheet = worksheetService.studentAssignedWorksheet(loginUserId, worksheetId);
+        return export(assignedWorksheet);
+    }
+
+    private PdfExport export(Worksheet worksheet) {
+        byte[] pdfBytes = pdfDocuments.createWorksheetPdf(worksheet);
+        return new PdfExport(pdfBytes, filename(worksheet));
     }
 
     private String filename(Worksheet worksheet) {

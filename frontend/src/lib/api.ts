@@ -3,14 +3,50 @@ import { saveAuthSession, type AuthResponsePayload } from './auth';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081';
 
-export async function apiRequest(endpoint: string, options: RequestInit = {}) {
-  const token = localStorage.getItem('jwt_token');
-  const isAuthRoute = endpoint.startsWith('/api/auth/');
+interface ErrorResponseBody {
+  error?: unknown;
+  message?: unknown;
+}
 
+function getAuthorizationHeader(endpoint: string): HeadersInit {
+  const token = localStorage.getItem('jwt_token');
+  const isAuthenticationRoute = endpoint.startsWith('/api/auth/');
+
+  if (isAuthenticationRoute || !token) {
+    return {};
+  }
+
+  return { Authorization: `Bearer ${token}` };
+}
+
+function getJsonErrorMessage(body: string): string | null {
+  try {
+    const parsedBody = JSON.parse(body) as unknown;
+
+    if (typeof parsedBody !== 'object' || parsedBody === null) {
+      return null;
+    }
+
+    const errorBody = parsedBody as ErrorResponseBody;
+    if (typeof errorBody.message === 'string') {
+      return errorBody.message;
+    }
+
+    if (typeof errorBody.error === 'string') {
+      return errorBody.error;
+    }
+  } catch {
+    // Fall back to the plain-text response below.
+  }
+
+  return null;
+}
+
+export async function apiRequest(endpoint: string, options: RequestInit = {}) {
   return fetch(`${API_URL}${endpoint}`, {
     headers: {
       'Content-Type': 'application/json',
-      ...(!isAuthRoute && token ? { 'Authorization': `Bearer ${token}` } : {}),
+      ...getAuthorizationHeader(endpoint),
       ...options.headers,
     },
     ...options,
@@ -22,25 +58,16 @@ export async function getErrorMessage(response: Response) {
   const body = await response.text();
 
   if (contentType.includes('application/json')) {
-    try {
-      const data = JSON.parse(body) as unknown;
-      if (typeof data === 'object' && data !== null) {
-        if (typeof (data as { message?: string }).message === 'string') {
-          return (data as { message: string }).message;
-        }
-        if (typeof (data as { error?: string }).error === 'string') {
-          return (data as { error: string }).error;
-        }
-      }
-    } catch {
-      // Fall back to the plain-text response below.
+    const errorMessage = getJsonErrorMessage(body);
+
+    if (errorMessage) {
+      return errorMessage;
     }
   }
 
   return body || `Request failed with status ${response.status}`;
 }
 
-// Usage:
 export async function register(email: string, password: string, fullName: string) {
   const response = await apiRequest('/api/auth/register', {
     method: 'POST',
