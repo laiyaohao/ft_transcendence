@@ -449,6 +449,7 @@ public class WorksheetService {
     }
     private void requireClass(long tutorId, long classId) { ownedClass(tutorId, classId); }
     private void requireTopics(List<Long> topicIds) {
+        if (topicIds.isEmpty()) return;
         if (topics.findAllById(topicIds).size() != topicIds.size()) throw new InvalidWorksheetRequestException("Every topicId must exist.");
     }
     private Set<Long> validateTargets(long tutorId, long classId, WorksheetGenerationRequest.TargetMode mode, Set<Long> requested) {
@@ -489,6 +490,15 @@ public class WorksheetService {
      */
     private List<Question> selectBalancedQuestions(List<Long> topicIds, int questionCount,
             Question.QuestionType questionType, Question.Difficulty difficulty) {
+        if (topicIds.isEmpty()) {
+            List<Question> eligibleQuestions = questions.findAllDeterministicActiveQuestionBank(
+                questionType,
+                difficulty
+            );
+            return eligibleQuestions.size() < questionCount
+                ? List.of()
+                : eligibleQuestions.subList(0, questionCount);
+        }
         if (questionCount < topicIds.size()) {
             return List.of();
         }
@@ -510,8 +520,9 @@ public class WorksheetService {
         return selected;
     }
     private NormalizedGeneration normalize(WorksheetRequests.GenerateWorksheetRequest input) {
-        List<Long> topicIds = input.topicIds().stream().distinct().sorted().toList();
-        if (topicIds.size() != input.topicIds().size()) {
+        List<Long> requestedTopicIds = input.topicIds() == null ? List.of() : input.topicIds();
+        List<Long> topicIds = requestedTopicIds.stream().distinct().sorted().toList();
+        if (topicIds.size() != requestedTopicIds.size()) {
             throw new InvalidWorksheetRequestException("topicIds must be unique.");
         }
         if (input.questionCount() < topicIds.size()) {

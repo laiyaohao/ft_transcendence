@@ -31,6 +31,17 @@ describe("worksheet service", () => {
     expect(result.worksheet?.targetMode).toBe("CLASS");
   });
 
+  it("allows a worksheet generation request without topic IDs", async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ id: 1, classId: 2, status: "SUCCEEDED", failureMessage: null, worksheet }), { status: 201 }));
+
+    await expect(generateWorksheet(2, { targetMode: "CLASS", questionCount: 5 }, "all-questions-key"))
+      .resolves.toMatchObject({ id: 1, status: "SUCCEEDED" });
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/classes/2/worksheet-generation-requests"),
+      expect.objectContaining({ body: JSON.stringify({ targetMode: "CLASS", questionCount: 5 }) }),
+    );
+  });
+
   it("loads the owner-scoped worksheet with questions and assignments", async () => {
     vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ ...worksheet, status: "APPROVED", assignments: [{ id: 4, assignmentType: "CLASS", classId: 2, studentProfileId: null, assignedAt: "2026-08-27T10:00:00", dueAt: "2026-09-01T10:00:00" }] }), { status: 200 }));
     await expect(fetchTutorWorksheet(9)).resolves.toMatchObject({ id: 9, dueAt: "2026-09-01T10:00:00", targetMode: "CLASS" });

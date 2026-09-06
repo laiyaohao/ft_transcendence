@@ -52,7 +52,8 @@ export interface WorksheetGenerationRequest {
 export interface GenerateWorksheetRequest {
   targetMode: WorksheetTargetMode;
   studentIds?: number[];
-  topicIds: number[];
+  /** Omit to generate from all active eligible Question Bank questions. */
+  topicIds?: number[];
   questionCount: number;
   questionType?: QuestionType;
   difficulty?: QuestionDifficulty;
@@ -379,7 +380,7 @@ function requireId(value: number, message: string): void {
 
 export async function generateWorksheet(classId: number, request: GenerateWorksheetRequest, idempotencyKey: string): Promise<WorksheetGenerationRequest> {
   requireId(classId, "Class reference is invalid.");
-  if (!Array.isArray(request.topicIds) || !request.topicIds.every(positiveId) || request.topicIds.length === 0
+  if ((request.topicIds !== undefined && (!Array.isArray(request.topicIds) || !request.topicIds.every(positiveId)))
     || !Number.isSafeInteger(request.questionCount) || request.questionCount < 1 || request.questionCount > 100
     || (request.targetMode !== "CLASS" && request.targetMode !== "STUDENTS") || !nonEmpty(idempotencyKey)) {
     throw new WorksheetApiError("Worksheet configuration is invalid.", 400);

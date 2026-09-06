@@ -53,6 +53,19 @@ public interface QuestionRepository extends Repository<Question, Long> {
         @Param("difficulty") Question.Difficulty difficulty
     );
 
+    @Query("""
+        select question from Question question
+        join fetch question.syllabusTopic topic
+        where question.archiveState = com.fttranscendence.learning.question.Question.ArchiveState.ACTIVE
+          and (:questionType is null or question.questionType = :questionType)
+          and (:difficulty is null or question.difficulty = :difficulty)
+        order by topic.id asc, question.code asc, question.id asc
+        """)
+    List<Question> findAllDeterministicActiveQuestionBank(
+        @Param("questionType") Question.QuestionType questionType,
+        @Param("difficulty") Question.Difficulty difficulty
+    );
+
     @Query(
         value = """
             select question

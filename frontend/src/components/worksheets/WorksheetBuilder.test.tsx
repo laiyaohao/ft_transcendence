@@ -27,11 +27,29 @@ async function continueToConfiguration(user: ReturnType<typeof userEvent.setup>)
 }
 
 async function configureWaterTopic(user: ReturnType<typeof userEvent.setup>) {
-  await choose(user, "Subject", "Science"); await choose(user, "Level", "Primary 5"); await choose(user, "Theme", "Cycles"); await choose(user, "Topic", "Water");
-  await user.click(screen.getByRole("button", { name: "Add selected topic" }));
+  await choose(user, "Theme", "Cycles"); await choose(user, "Topic", "Water");
 }
 
 describe("WorksheetBuilder", () => {
+  it("defaults all worksheet Question Bank filters to Any and generates without topic IDs", async () => {
+    const user = userEvent.setup();
+    const generate = vi.fn().mockResolvedValue({ id: 1, status: "SUCCEEDED", message: "Ready", worksheet: { id: 9, code: "GEN-9", title: "Mixed practice", instructions: null, targetMode: "CLASS", status: "DRAFT", dueAt: null, questions: [{ id: 2, code: "Q", prompt: "Explain evaporation.", totalMarks: 2, questionType: "OPEN_ENDED", topicName: "Water" }], assignments: [] } });
+    render(<WorksheetBuilder generate={generate} loadClasses={async () => classes} loadSyllabus={async () => syllabus} loadQuestions={questions} />);
+
+    await chooseClass(user); await continueToConfiguration(user);
+    expect(screen.getByLabelText("Theme")).toHaveTextContent("Any Theme");
+    expect(screen.getByLabelText("Topic")).toHaveTextContent("Any Topic");
+    expect(screen.getByLabelText("Question type")).toHaveTextContent("Any Question Type");
+    expect(screen.getByLabelText("Difficulty")).toHaveTextContent("Any Difficulty");
+
+    await user.click(screen.getByRole("button", { name: "Generate worksheet draft" }));
+    expect(generate).toHaveBeenCalledWith(
+      1,
+      expect.not.objectContaining({ topicIds: expect.anything() }),
+      expect.any(String),
+    );
+  });
+
   it("loads Tutor classes in the generator, selects a class, then generates and approves a draft", async () => {
     const user = userEvent.setup();
     const generate = vi.fn().mockResolvedValue({ id: 1, status: "SUCCEEDED", message: "Ready", worksheet: { id: 9, code: "GEN-9", title: "Water drill", instructions: null, targetMode: "CLASS", status: "DRAFT", dueAt: null, questions: [{ id: 2, code: "Q", prompt: "Explain evaporation.", totalMarks: 2, questionType: "OPEN_ENDED", topicName: "Water" }], assignments: [] } });

@@ -18,6 +18,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SpringBootTest
 @Transactional
@@ -90,6 +91,39 @@ class WorksheetGenerationTest {
     }
 
     @Test
+    void generatesFromAllActiveEligibleQuestionsWhenNoTopicIdsAreProvided() {
+        TutorClass tutorClass = tutorClass();
+        long water = topics.findByCode("SCI_P5_CYCLES_MATTER_WATER_WATER").orElseThrow().getId();
+        long reproduction = topics.findByCode("SCI_P5_CYCLES_PLANTS_ANIMALS_REPRODUCTION").orElseThrow().getId();
+        insertQuestion("SCI-ALL-02", reproduction, "Reproduction question.", Question.QuestionType.DIAGRAM);
+        insertQuestion("SCI-ALL-01", water, "Water question.", Question.QuestionType.DIAGRAM);
+
+        WorksheetRequests.GenerationRequestResponse response = service.generate(
+            TUTOR_ID,
+            tutorClass.getId(),
+            "worksheet-all-questions-key",
+            new WorksheetRequests.GenerateWorksheetRequest(
+                WorksheetGenerationRequest.TargetMode.CLASS,
+                null,
+                2,
+                Question.QuestionType.DIAGRAM,
+                null,
+                null,
+                null,
+                null
+            )
+        );
+
+        assertEquals(WorksheetGenerationRequest.Status.SUCCEEDED, response.status());
+        assertEquals(List.of(), response.topicIds());
+        List<String> selectedCodes = response.worksheet().questions().stream()
+            .map(WorksheetRequests.QuestionSummary::code)
+            .toList();
+        assertEquals(2, selectedCodes.size());
+        assertTrue(selectedCodes.containsAll(List.of("SCI-ALL-01", "SCI-ALL-02")));
+    }
+
+    @Test
     void generatesAP6ScienceWorksheetFromSeededQuestionsUsingTypeAndDifficulty() {
         TutorClass tutorClass = tutorClass();
         long topic = topics.findByCode("SCI_P6_ENERGY_FORMS_USES_PHOTOSYNTHESIS").orElseThrow().getId();
@@ -114,7 +148,11 @@ class WorksheetGenerationTest {
     }
 
     private void insertQuestion(String code, long topicId, String prompt) {
-        jdbc.update("insert into questions (code, syllabus_topic_id, syllabus_topic_type, question_type, prompt, total_marks, model_answer, archive_state) values (?, ?, 'SUBTOPIC', 'OPEN_ENDED', ?, ?, 'Answer', 'ACTIVE')", code, topicId, prompt, BigDecimal.ONE);
+        insertQuestion(code, topicId, prompt, Question.QuestionType.OPEN_ENDED);
+    }
+
+    private void insertQuestion(String code, long topicId, String prompt, Question.QuestionType questionType) {
+        jdbc.update("insert into questions (code, syllabus_topic_id, syllabus_topic_type, question_type, prompt, total_marks, model_answer, archive_state) values (?, ?, 'SUBTOPIC', ?, ?, ?, 'Answer', 'ACTIVE')", code, topicId, questionType.name(), prompt, BigDecimal.ONE);
         long questionId = jdbc.queryForObject("select id from questions where code = ?", Long.class, code);
         jdbc.update("insert into marking_components (question_id, position, description, marks) values (?, 0, 'Criterion', ?)", questionId, BigDecimal.ONE);
         entityManager.clear();

@@ -18,7 +18,7 @@ public final class WorksheetRequests {
 
     public record GenerateWorksheetRequest(
         @NotNull WorksheetGenerationRequest.TargetMode targetMode,
-        @NotEmpty @Size(max = 100) List<@Positive Long> topicIds,
+        @Size(max = 100) List<@Positive Long> topicIds,
         @NotNull @Positive @Max(100) Integer questionCount,
         Question.QuestionType questionType,
         Question.Difficulty difficulty,
