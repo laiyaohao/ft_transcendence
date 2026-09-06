@@ -11,15 +11,21 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
+import java.io.ByteArrayOutputStream;
+import java.awt.image.BufferedImage;
+import javax.imageio.ImageIO;
 import java.time.Instant;
 import java.util.Date;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -121,6 +127,31 @@ class QuestionMutationIntegrationTest {
     }
 
     @Test
+    void storesValidPngImagesPrivatelyAndRejectsOtherContent() throws Exception {
+        long topicId = topicId("SCI_P5_CYCLES_MATTER_WATER_WATER");
+        mockMvc.perform(post("/api/learning/tutor/questions").header("Authorization", bearer("TUTOR", TUTOR_ID))
+                .contentType(MediaType.APPLICATION_JSON).content(request("SCI-WATER-IMAGE", topicId, "DIAGRAM", "Name this diagram.", "1.00",
+                    "Water cycle.", "ACTIVE", "Names the cycle", "1.00", null, null)))
+            .andExpect(status().isCreated());
+        long questionId = questionId("SCI-WATER-IMAGE");
+        MockMultipartFile png = new MockMultipartFile("file", "water-cycle.png", "image/png", onePixelPng());
+        String uploaded = mockMvc.perform(multipart("/api/learning/tutor/questions/{questionId}/images", questionId)
+                .file(png).header("Authorization", bearer("TUTOR", TUTOR_ID)))
+            .andExpect(status().isCreated()).andExpect(jsonPath("$.contentType").value("image/png"))
+            .andExpect(jsonPath("$.width").value(1)).andReturn().getResponse().getContentAsString();
+        long imageId = Long.parseLong(uploaded.replaceAll(".*\\\"id\\\":(\\d+).*", "$1"));
+        mockMvc.perform(get("/api/learning/tutor/questions/{questionId}/images/{imageId}", questionId, imageId)
+                .header("Authorization", bearer("TUTOR", TUTOR_ID)))
+            .andExpect(status().isOk()).andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().contentType("image/png"));
+        mockMvc.perform(delete("/api/learning/tutor/questions/{questionId}/images/{imageId}", questionId, imageId)
+                .header("Authorization", bearer("TUTOR", TUTOR_ID))).andExpect(status().isNoContent());
+        mockMvc.perform(multipart("/api/learning/tutor/questions/{questionId}/images", questionId)
+                .file(new MockMultipartFile("file", "not-an-image.png", "image/png", "not a png".getBytes(StandardCharsets.UTF_8)))
+                .header("Authorization", bearer("TUTOR", TUTOR_ID)))
+            .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_QUESTION_IMAGE"));
+    }
+
+    @Test
     void rejectsMissingMalformedAndUnauthorisedRequests() throws Exception {
         mockMvc.perform(get("/api/learning/tutor/questions/99999").header("Authorization", bearer("TUTOR", TUTOR_ID)))
             .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("QUESTION_NOT_FOUND"));
@@ -164,5 +195,12 @@ class QuestionMutationIntegrationTest {
             .setIssuedAt(Date.from(now)).setExpiration(Date.from(now.plusSeconds(600)))
             .signWith(Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8)), SignatureAlgorithm.HS256).compact();
         return "Bearer " + token;
+    }
+
+    private byte[] onePixelPng() throws java.io.IOException {
+        BufferedImage image = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB);
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        ImageIO.write(image, "png", bytes);
+        return bytes.toByteArray();
     }
 }

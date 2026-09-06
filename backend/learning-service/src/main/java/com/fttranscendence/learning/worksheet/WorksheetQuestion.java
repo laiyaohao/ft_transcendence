@@ -2,6 +2,7 @@ package com.fttranscendence.learning.worksheet;
 
 import com.fttranscendence.learning.question.Question;
 import jakarta.persistence.Column;
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
@@ -10,6 +11,8 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import jakarta.validation.constraints.DecimalMin;
@@ -18,6 +21,8 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(
@@ -67,8 +72,11 @@ public class WorksheetQuestion {
     private Question.QuestionType questionTypeSnapshot;
 
     @DecimalMin(value = "0.01")
-    @Column(name = "total_marks_snapshot", precision = 6, scale = 2)
     private BigDecimal totalMarksSnapshot;
+
+    @OneToMany(mappedBy = "worksheetQuestion", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @OrderBy("position ASC")
+    private List<WorksheetQuestionImage> images = new ArrayList<>();
 
     protected WorksheetQuestion() {
     }
@@ -85,6 +93,7 @@ public class WorksheetQuestion {
         promptSnapshot = source.getPrompt();
         questionTypeSnapshot = source.getQuestionType();
         totalMarksSnapshot = source.getTotalMarks();
+        source.getImages().forEach(image -> images.add(new WorksheetQuestionImage(this, images.size(), image)));
     }
 
     void attachTo(Worksheet worksheet) {
@@ -125,5 +134,9 @@ public class WorksheetQuestion {
 
     public BigDecimal getTotalMarksSnapshot() {
         return totalMarksSnapshot;
+    }
+
+    public List<WorksheetQuestionImage> getImages() {
+        return List.copyOf(images);
     }
 }

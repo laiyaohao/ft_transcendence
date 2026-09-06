@@ -75,8 +75,10 @@ public final class WorksheetRequests {
 
     public record ApproveWorksheetRequest(@Future LocalDateTime dueAt) { }
 
+    public record ImageSummary(Long id, String filename, String contentType, int width, int height) { }
     public record QuestionSummary(Long id, String code, String prompt, Question.QuestionType questionType,
-                                  BigDecimal totalMarks, Long syllabusTopicId, String syllabusTopicName) { }
+                                  BigDecimal totalMarks, Long syllabusTopicId, String syllabusTopicName,
+                                  List<ImageSummary> images) { }
 
     /** Assignment data is only exposed through the owner-scoped Tutor worksheet endpoint. */
     public record AssignmentSummary(Long id, Worksheet.AudienceType assignmentType, Long classId,
@@ -98,7 +100,7 @@ public final class WorksheetRequests {
                         item.getPromptSnapshot() == null ? question.getPrompt() : item.getPromptSnapshot(),
                         item.getQuestionTypeSnapshot() == null ? question.getQuestionType() : item.getQuestionTypeSnapshot(),
                         item.getTotalMarksSnapshot() == null ? question.getTotalMarks() : item.getTotalMarksSnapshot(),
-                        question.getSyllabusTopic().getId(), question.getSyllabusTopic().getName());
+                        question.getSyllabusTopic().getId(), question.getSyllabusTopic().getName(), imageSummaries(item));
                 }).toList(), worksheet.getAssignments().stream().map(assignment -> new AssignmentSummary(
                     assignment.getId(), assignment.getAssignmentType(), assignment.getClassId(),
                     assignment.getStudentProfileId(), assignment.getAssignedAt(), assignment.getDueAt()
@@ -152,7 +154,7 @@ public final class WorksheetRequests {
                         item.getPromptSnapshot() == null ? question.getPrompt() : item.getPromptSnapshot(),
                         item.getQuestionTypeSnapshot() == null ? question.getQuestionType() : item.getQuestionTypeSnapshot(),
                         item.getTotalMarksSnapshot() == null ? question.getTotalMarks() : item.getTotalMarksSnapshot(),
-                        question.getSyllabusTopic().getId(), question.getSyllabusTopic().getName());
+                        question.getSyllabusTopic().getId(), question.getSyllabusTopic().getName(), imageSummaries(item));
                 }).toList(), assignment.getAssignedAt(), assignment.getDueAt());
         }
     }
@@ -162,4 +164,9 @@ public final class WorksheetRequests {
     public record ScoreSummary(BigDecimal earned, BigDecimal available, BigDecimal percent) { }
 
     public enum StudentWorksheetStatus { ASSIGNED, SUBMITTED, MARKED }
+
+    private static List<ImageSummary> imageSummaries(WorksheetQuestion item) {
+        return item.getImages().stream().map(image -> new ImageSummary(image.getId(), image.getOriginalFilename(),
+            image.getContentType(), image.getWidth(), image.getHeight())).toList();
+    }
 }

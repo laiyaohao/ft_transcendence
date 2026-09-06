@@ -11,11 +11,13 @@ import Link from "next/link";
 import {
   approveWorksheet,
   downloadWorksheetPdf,
+  fetchWorksheetImageUrl,
   updateWorksheet,
   type TutorWorksheet,
   type UpdateWorksheetRequest,
 } from "@/services/worksheets";
 import { fetchTutorQuestions, type QuestionBankItem } from "@/services/questions";
+import SecureImageGallery from "@/components/questions/SecureImageGallery";
 
 type Props = {
   worksheet: TutorWorksheet;
@@ -23,6 +25,7 @@ type Props = {
   update?: typeof updateWorksheet;
   downloadPdf?: typeof downloadWorksheetPdf;
   loadQuestions?: typeof fetchTutorQuestions;
+  onApproved?: (worksheet: TutorWorksheet) => void;
 };
 
 const lightCard = { borderColor: "#EBE4D9", bgcolor: "#FFFDFA", borderRadius: "14px" };
@@ -52,7 +55,7 @@ function questionTypeLabel(value: string): string {
 }
 
 /** Owner-only worksheet management, deliberately separate from the Student result route. */
-export default function TutorWorksheetDetail({ worksheet, approve = approveWorksheet, update = updateWorksheet, downloadPdf = downloadWorksheetPdf, loadQuestions = fetchTutorQuestions }: Props) {
+export default function TutorWorksheetDetail({ worksheet, approve = approveWorksheet, update = updateWorksheet, downloadPdf = downloadWorksheetPdf, loadQuestions = fetchTutorQuestions, onApproved }: Props) {
   const [current, setCurrent] = React.useState(worksheet);
   const [editing, setEditing] = React.useState(false);
   const [title, setTitle] = React.useState(worksheet.title);
@@ -61,17 +64,10 @@ export default function TutorWorksheetDetail({ worksheet, approve = approveWorks
   const [dueAt, setDueAt] = React.useState(datetimeLocal(worksheet.dueAt));
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
-  const [approvalConfirmed, setApprovalConfirmed] = React.useState(false);
   const approvalInProgress = React.useRef(false);
   const [questionBank, setQuestionBank] = React.useState<QuestionBankItem[] | null>(null);
   const [loadingQuestionBank, setLoadingQuestionBank] = React.useState(false);
   const [replacingQuestionId, setReplacingQuestionId] = React.useState<number | null>(null);
-
-  React.useEffect(() => {
-    if (!approvalConfirmed) return;
-    const dismissConfirmation = window.setTimeout(() => setApprovalConfirmed(false), 3600);
-    return () => window.clearTimeout(dismissConfirmation);
-  }, [approvalConfirmed]);
 
   const resetForm = React.useCallback((value: TutorWorksheet) => {
     setTitle(value.title);
@@ -94,14 +90,13 @@ export default function TutorWorksheetDetail({ worksheet, approve = approveWorks
     approvalInProgress.current = true;
     setBusy(true);
     setError(null);
-    setApprovalConfirmed(false);
 
     try {
       const approvedWorksheet = await approve(current.id, dueAt || undefined);
       setCurrent(approvedWorksheet);
       resetForm(approvedWorksheet);
       setEditing(false);
-      setApprovalConfirmed(true);
+      onApproved?.(approvedWorksheet);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Worksheet could not be approved.");
     } finally {
@@ -196,7 +191,6 @@ export default function TutorWorksheetDetail({ worksheet, approve = approveWorks
     {current.status === "ARCHIVED" && <Box role="status" sx={{ bgcolor: "#F6EFE6", borderLeft: "3px solid #B4573F", borderRadius: "0 10px 10px 0", p: 1.5, mb: 2.5, color: "#5A544C", fontSize: 13 }}>This worksheet is archived and remains available as a read-only record.</Box>}
     {editable && current.questions.length === 0 && <Box role="status" sx={{ bgcolor: "#F6EFE6", borderLeft: "3px solid #B4573F", borderRadius: "0 10px 10px 0", p: 1.5, mb: 2.5, color: "#5A544C", fontSize: 13 }}>Add at least one question before approval can assign this worksheet.</Box>}
     {error && <Box role="alert" sx={{ bgcolor: "#F6EFE6", borderLeft: "3px solid #B4573F", borderRadius: "0 10px 10px 0", p: 1.5, mb: 2.5, color: "#5A544C", fontSize: 13 }}>{error}</Box>}
-    {approvalConfirmed && <Box role="status" aria-live="polite" aria-atomic="true" sx={{ position: "fixed", bottom: 26, left: "50%", transform: "translateX(-50%)", zIndex: 90, maxWidth: "92vw", bgcolor: "#1B1917", color: "#F4EFE6", borderRadius: "11px", px: 2.75, py: 1.75, boxShadow: "0 12px 34px rgba(42,38,34,.28)", fontSize: 13.5 }}>Worksheet Sent to Students</Box>}
     {editing && editable && <Card component="section" variant="outlined" sx={{ ...lightCard, p: { xs: 2, sm: 3 }, mb: 2.5 }}>
       <Typography component="h2" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 23, mb: 0.5 }}>Edit generated draft</Typography>
       <Typography sx={{ color: "#6F675E", fontSize: 13, mb: 2 }}>Change the content and question order before the Tutor approves assignment.</Typography>
@@ -211,7 +205,7 @@ export default function TutorWorksheetDetail({ worksheet, approve = approveWorks
       <Box sx={{ flex: "1 1 460px", minWidth: 0 }}><Card component="section" variant="outlined" sx={{ ...lightCard, p: { xs: 2, sm: 3 } }}>
         <Typography component="h2" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 23, mb: 0.5 }}>Questions</Typography>
         <Typography sx={{ color: "#6F675E", fontSize: 13, mb: 2 }}>{topics.length ? `Topics: ${topics.join(" · ")}` : "Topics are unavailable for this legacy worksheet."}</Typography>
-        {orderedQuestions.length === 0 ? <Box sx={{ border: "1px dashed #DCCFBE", borderRadius: "12px", p: 2, color: "#6F675E", fontSize: 13 }}>No questions are attached to this worksheet yet.</Box> : <Box component="ol" sx={{ m: 0, pl: 3.5 }}>{orderedQuestions.map((question, index) => <Box component="li" key={question.id} sx={{ py: 1.5, borderBottom: index === orderedQuestions.length - 1 ? "none" : "1px solid #F0EAE0" }}><Box sx={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "start", gap: 1 }}><Box sx={{ minWidth: 0, flex: "1 1 300px" }}><Typography sx={{ fontSize: 13.5, fontWeight: 600, lineHeight: 1.45 }}>{question.prompt}</Typography><Typography sx={{ color: "#8B837A", fontSize: 11.5, mt: 0.5 }}>{question.code} · {question.topicName} · {questionTypeLabel(question.questionType)} · {question.totalMarks.toFixed(1)} marks</Typography></Box>{editing && <Stack direction="row" spacing={0.5} useFlexGap sx={{ flexWrap: "wrap" }}><Button size="small" aria-label={`Move question ${index + 1} up`} onClick={() => moveQuestion(index, -1)} disabled={index === 0 || busy} sx={{ minWidth: 34, color: "#6F675E" }}>Up</Button><Button size="small" aria-label={`Move question ${index + 1} down`} onClick={() => moveQuestion(index, 1)} disabled={index === orderedQuestions.length - 1 || busy} sx={{ minWidth: 34, color: "#6F675E" }}>Down</Button><Button size="small" aria-label={`Replace question ${index + 1}`} onClick={() => setReplacingQuestionId(question.id)} disabled={busy || loadingQuestionBank || questionBank === null} sx={{ minWidth: 34, color: "#6F675E" }}>Replace</Button><Button size="small" aria-label={`Remove question ${index + 1}`} onClick={() => removeQuestion(question.id)} disabled={busy || questionIds.length <= 1} sx={{ minWidth: 34, color: "#B4573F" }}>Remove</Button></Stack>}</Box></Box>)}</Box>}
+        {orderedQuestions.length === 0 ? <Box sx={{ border: "1px dashed #DCCFBE", borderRadius: "12px", p: 2, color: "#6F675E", fontSize: 13 }}>No questions are attached to this worksheet yet.</Box> : <Box component="ol" sx={{ m: 0, pl: 3.5 }}>{orderedQuestions.map((question, index) => <Box component="li" key={question.id} sx={{ py: 1.5, borderBottom: index === orderedQuestions.length - 1 ? "none" : "1px solid #F0EAE0" }}><Box sx={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "start", gap: 1 }}><Box sx={{ minWidth: 0, flex: "1 1 300px" }}><Typography sx={{ fontSize: 13.5, fontWeight: 600, lineHeight: 1.45 }}>{question.prompt}</Typography><SecureImageGallery images={question.images ?? []} loadImage={(imageId) => fetchWorksheetImageUrl("tutor", current.id, imageId)} /><Typography sx={{ color: "#8B837A", fontSize: 11.5, mt: 0.5 }}>{question.code} · {question.topicName} · {questionTypeLabel(question.questionType)} · {question.totalMarks.toFixed(1)} marks</Typography></Box>{editing && <Stack direction="row" spacing={0.5} useFlexGap sx={{ flexWrap: "wrap" }}><Button size="small" aria-label={`Move question ${index + 1} up`} onClick={() => moveQuestion(index, -1)} disabled={index === 0 || busy} sx={{ minWidth: 34, color: "#6F675E" }}>Up</Button><Button size="small" aria-label={`Move question ${index + 1} down`} onClick={() => moveQuestion(index, 1)} disabled={index === orderedQuestions.length - 1 || busy} sx={{ minWidth: 34, color: "#6F675E" }}>Down</Button><Button size="small" aria-label={`Replace question ${index + 1}`} onClick={() => setReplacingQuestionId(question.id)} disabled={busy || loadingQuestionBank || questionBank === null} sx={{ minWidth: 34, color: "#6F675E" }}>Replace</Button><Button size="small" aria-label={`Remove question ${index + 1}`} onClick={() => removeQuestion(question.id)} disabled={busy || questionIds.length <= 1} sx={{ minWidth: 34, color: "#B4573F" }}>Remove</Button></Stack>}</Box></Box>)}</Box>}
         {editing && <Box component="section" aria-label="Draft question controls" sx={{ mt: 2, pt: 2, borderTop: "1px solid #F0EAE0" }}><Typography sx={{ fontWeight: 700, fontSize: 14 }}>Draft question controls</Typography><Typography sx={{ color: "#6F675E", fontSize: 12.5, mt: 0.5 }}>Remove, replace, or add active question-bank items. Changes are saved only when you save this draft.</Typography>{questionBank === null ? <Button onClick={() => void loadActiveQuestionBank()} disabled={loadingQuestionBank || busy} sx={{ mt: 1, border: "1px solid #E4DCD0", color: "#2A2622", textTransform: "none" }}>{loadingQuestionBank ? "Loading active questions…" : "Load active question bank"}</Button> : <Box sx={{ mt: 1.25 }}><Typography sx={{ color: "#8B837A", fontSize: 12, mb: 0.75 }}>{replacingQuestionId === null ? "Add an active question" : "Choose an active replacement question"}</Typography>{availableQuestions.length ? <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>{availableQuestions.map((question) => <Button key={question.id} size="small" onClick={() => addOrReplaceQuestion(question.id)} disabled={busy} sx={{ border: "1px solid #E4DCD0", color: "#2A2622", textTransform: "none" }}>{replacingQuestionId === null ? `Add ${question.code}` : `Replace with ${question.code}`}</Button>)}</Stack> : <Typography sx={{ color: "#8B837A", fontSize: 12 }}>No unselected active questions are available for these worksheet topics.</Typography>}{replacingQuestionId !== null && <Button size="small" onClick={() => setReplacingQuestionId(null)} disabled={busy} sx={{ mt: 0.75, color: "#6F675E", textTransform: "none" }}>Cancel replacement</Button>}</Box>}</Box>}
       </Card></Box>
       <Box sx={{ flex: "0 1 320px", minWidth: 0 }}><Stack spacing={2.5}>

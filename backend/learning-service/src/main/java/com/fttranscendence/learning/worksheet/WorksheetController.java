@@ -40,15 +40,17 @@ public class WorksheetController {
     private final WorksheetService worksheets;
     private final DiagnosticWorksheetService diagnostics;
     private final WorksheetPdfService worksheetPdfs;
+    private final WorksheetImageService worksheetImages;
 
     public WorksheetController(
             WorksheetService worksheets,
             DiagnosticWorksheetService diagnostics,
-            WorksheetPdfService worksheetPdfs
+            WorksheetPdfService worksheetPdfs, WorksheetImageService worksheetImages
     ) {
         this.worksheets = worksheets;
         this.diagnostics = diagnostics;
         this.worksheetPdfs = worksheetPdfs;
+        this.worksheetImages = worksheetImages;
     }
 
     @PostMapping(value = "/tutor/classes/{classId}/worksheet-generation-requests", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -104,6 +106,13 @@ public class WorksheetController {
         return pdfResponse(export);
     }
 
+    @GetMapping("/tutor/worksheets/{worksheetId}/images/{imageId}")
+    public ResponseEntity<byte[]> tutorWorksheetImage(@AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable @Positive long worksheetId, @PathVariable @Positive long imageId) {
+        WorksheetImageService.ImageContent image = worksheetImages.tutorImage(user.userId(), worksheetId, imageId);
+        return ResponseEntity.ok().contentType(MediaType.parseMediaType(image.contentType())).body(image.bytes());
+    }
+
     @PatchMapping(value = "/tutor/worksheets/{worksheetId}", consumes = MediaType.APPLICATION_JSON_VALUE)
     public WorksheetRequests.WorksheetResponse updateWorksheet(@AuthenticationPrincipal AuthenticatedUser user,
             @PathVariable @Positive long worksheetId, @Valid @RequestBody WorksheetRequests.UpdateWorksheetRequest request) {
@@ -140,6 +149,13 @@ public class WorksheetController {
     public WorksheetRequests.StudentWorksheetDetail studentWorksheet(
             @AuthenticationPrincipal AuthenticatedUser user, @PathVariable @Positive long worksheetId) {
         return worksheets.getStudentWorksheet(user.userId(), worksheetId);
+    }
+
+    @GetMapping("/student/worksheets/{worksheetId}/images/{imageId}")
+    public ResponseEntity<byte[]> studentWorksheetImage(@AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable @Positive long worksheetId, @PathVariable @Positive long imageId) {
+        WorksheetImageService.ImageContent image = worksheetImages.studentImage(user.userId(), worksheetId, imageId);
+        return ResponseEntity.ok().contentType(MediaType.parseMediaType(image.contentType())).body(image.bytes());
     }
 
     @GetMapping(value = "/student/worksheets/{worksheetId}/pdf", produces = MediaType.APPLICATION_PDF_VALUE)

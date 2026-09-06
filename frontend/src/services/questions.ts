@@ -43,11 +43,21 @@ export interface QuestionMarkingComponent {
   keywords: string[];
 }
 
+export interface QuestionImage {
+  id: number;
+  filename: string;
+  contentType: "image/png" | "image/jpeg";
+  width: number;
+  height: number;
+}
+
 /** Complete Tutor-only shape used for question creation and editing. */
 export interface TutorQuestion extends QuestionBankItem {
   modelAnswer: string;
   markingComponents: QuestionMarkingComponent[];
   keywords: string[];
+  /** Empty for text-only and legacy question responses. */
+  images?: QuestionImage[];
   createdAt: string;
   updatedAt: string;
 }
@@ -80,6 +90,7 @@ export class QuestionApiError extends Error {
 const LEARNING_API_URL = process.env.NEXT_PUBLIC_LEARNING_API_URL || "http://localhost:8083";
 const GRADING_API_URL = process.env.NEXT_PUBLIC_GRADING_API_URL || "http://localhost:8082";
 const QUESTION_BANK_PATH = "/api/learning/tutor/questions";
+const QUESTION_IMPORT_PATH = "/api/learning/tutor/question-imports";
 const QUESTION_TYPES: readonly QuestionType[] = ["MULTIPLE_CHOICE", "TRUE_FALSE", "FILL_IN_THE_BLANK", "SHORT_ANSWER", "OPEN_ENDED", "CALCULATION", "DIAGRAM"];
 const QUESTION_DIFFICULTIES: readonly QuestionDifficulty[] = ["FOUNDATION", "APPLICATION", "CHALLENGE"];
 const WORKSHEET_DRAFT_QUESTION_IDS_KEY = "worksheet_draft_question_ids";
@@ -140,12 +151,21 @@ function isMarkingComponent(value: unknown): value is QuestionMarkingComponent {
     && Array.isArray(candidate.keywords) && candidate.keywords.every(isNonEmptyString);
 }
 
+function isQuestionImage(value: unknown): value is QuestionImage {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return isPositiveId(candidate.id) && isNonEmptyString(candidate.filename)
+    && (candidate.contentType === "image/png" || candidate.contentType === "image/jpeg")
+    && isPositiveId(candidate.width) && isPositiveId(candidate.height);
+}
+
 function isTutorQuestion(value: unknown): value is TutorQuestion {
   if (!isQuestionBankItem(value)) return false;
   const candidate = value as unknown as Record<string, unknown>;
   return isNonEmptyString(candidate.modelAnswer)
     && Array.isArray(candidate.markingComponents) && candidate.markingComponents.every(isMarkingComponent)
     && Array.isArray(candidate.keywords) && candidate.keywords.every(isNonEmptyString)
+    && (candidate.images === undefined || (Array.isArray(candidate.images) && candidate.images.every(isQuestionImage)))
     && isNonEmptyString(candidate.createdAt) && isNonEmptyString(candidate.updatedAt);
 }
 
@@ -252,6 +272,163 @@ export function createTutorQuestion(request: QuestionMutationRequest): Promise<T
 export function updateTutorQuestion(questionId: number, request: QuestionMutationRequest): Promise<TutorQuestion> {
   if (!isPositiveId(questionId)) return Promise.reject(new QuestionApiError("Question reference is invalid.", 400));
   return saveQuestion(`${QUESTION_BANK_PATH}/${questionId}`, "PUT", request);
+}
+
+function imageHeaders(): HeadersInit {
+  const token = typeof window === "undefined" ? null : window.localStorage.getItem("jwt_token");
+  return { Accept: "image/png, image/jpeg", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+}
+
+export async function uploadQuestionImage(questionId: number, file: File): Promise<QuestionImage> {
+  if (!isPositiveId(questionId)) throw new QuestionApiError("Question reference is invalid.", 400);
+  if (!(file instanceof File) || !["image/png", "image/jpeg"].includes(file.type) || file.size < 1 || file.size > 8 * 1024 * 1024) {
+    throw new QuestionApiError("Choose a PNG or JPEG image no larger than 8 MB.", 400);
+  }
+  const form = new FormData(); form.append("file", file);
+  const response = await fetch(`${LEARNING_API_URL}${QUESTION_BANK_PATH}/${questionId}/images`, {
+    method: "POST", headers: authHeaders(), body: form,
+  });
+  if (!response.ok) throw await responseError(response, "upload this image");
+  const image = await response.json() as unknown;
+  if (!isQuestionImage(image)) throw new Error("The learning service returned an invalid question image.");
+  return image;
+}
+
+export async function deleteQuestionImage(questionId: number, imageId: number): Promise<void> {
+  if (!isPositiveId(questionId) || !isPositiveId(imageId)) throw new QuestionApiError("Question image reference is invalid.", 400);
+  const response = await fetch(`${LEARNING_API_URL}${QUESTION_BANK_PATH}/${questionId}/images/${imageId}`, {
+    method: "DELETE", headers: authHeaders(),
+  });
+  if (!response.ok) throw await responseError(response, "remove this image");
+}
+
+export async function fetchQuestionImageUrl(questionId: number, imageId: number): Promise<string> {
+  const response = await fetch(`${LEARNING_API_URL}${QUESTION_BANK_PATH}/${questionId}/images/${imageId}`, { headers: imageHeaders() });
+  if (!response.ok) throw await responseError(response, "load this image");
+  const contentType = response.headers.get("content-type") || "";
+  if (!/^image\/(png|jpeg)(?:;|$)/i.test(contentType)) throw new QuestionApiError("The learning service returned an invalid image.", 502);
+  return URL.createObjectURL(await response.blob());
+}
+
+export type QuestionImportCandidateStatus = "READY_FOR_REVIEW" | "UNCERTAIN" | "FAILED" | "IMPORTED";
+
+export interface QuestionImportCandidate {
+  id: number;
+  number: number;
+  status: QuestionImportCandidateStatus;
+  confidence: number;
+  warningMessage: string | null;
+  code: string | null;
+  syllabusTopicId: number | null;
+  prompt: string;
+  modelAnswer: string;
+  totalMarks: number;
+  questionType: QuestionType;
+  difficulty: QuestionDifficulty;
+  suggestedTags: string;
+  includeSourceImage: boolean;
+  source: { pageId: number; filename: string; pageNumber: number };
+}
+
+export interface QuestionImportBatch {
+  id: number;
+  status: "READY_FOR_REVIEW" | "FAILED" | "IMPORTED";
+  originalFilename: string;
+  candidates: QuestionImportCandidate[];
+}
+
+export interface QuestionImportCandidateUpdate {
+  code?: string | null;
+  syllabusTopicId?: number | null;
+  prompt?: string;
+  modelAnswer?: string;
+  totalMarks?: number;
+  questionType?: QuestionType;
+  difficulty?: QuestionDifficulty;
+  includeSourceImage: boolean;
+}
+
+function isQuestionImportCandidate(value: unknown): value is QuestionImportCandidate {
+  if (typeof value !== "object" || value === null) return false;
+  const item = value as Record<string, unknown>;
+  const source = item.source as Record<string, unknown> | null;
+  return isPositiveId(item.id) && isNonNegativeInteger(item.number) && typeof item.status === "string"
+    && ["READY_FOR_REVIEW", "UNCERTAIN", "FAILED", "IMPORTED"].includes(item.status)
+    && isNonNegativeInteger(item.confidence) && item.confidence <= 100
+    && (item.warningMessage === null || typeof item.warningMessage === "string")
+    && (item.code === null || typeof item.code === "string")
+    && (item.syllabusTopicId === null || isPositiveId(item.syllabusTopicId))
+    && typeof item.prompt === "string" && typeof item.modelAnswer === "string"
+    && typeof item.totalMarks === "number" && Number.isFinite(item.totalMarks) && item.totalMarks > 0
+    && isQuestionType(item.questionType) && isQuestionDifficulty(item.difficulty)
+    && typeof item.suggestedTags === "string" && typeof item.includeSourceImage === "boolean"
+    && source !== null && isPositiveId(source.pageId) && isNonEmptyString(source.filename)
+    && isPositiveId(source.pageNumber);
+}
+
+function parseQuestionImportBatch(payload: unknown): QuestionImportBatch {
+  if (typeof payload !== "object" || payload === null) throw new Error("The learning service returned an invalid import batch.");
+  const batch = payload as Record<string, unknown>;
+  if (!isPositiveId(batch.id) || typeof batch.status !== "string" || !["READY_FOR_REVIEW", "FAILED", "IMPORTED"].includes(batch.status)
+    || !isNonEmptyString(batch.originalFilename) || !Array.isArray(batch.candidates) || !batch.candidates.every(isQuestionImportCandidate)) {
+    throw new Error("The learning service returned an invalid import batch.");
+  }
+  return batch as unknown as QuestionImportBatch;
+}
+
+export async function uploadQuestionImport(files: File[]): Promise<QuestionImportBatch> {
+  if (!Array.isArray(files) || files.length < 1 || files.length > 20
+    || files.some((file) => !(file instanceof File) || file.size < 1 || file.size > 25 * 1024 * 1024
+      || !["application/pdf", "image/png", "image/jpeg"].includes(file.type))) {
+    throw new QuestionApiError("Choose up to 20 PDF, PNG, or JPEG files no larger than 25 MB each.", 400);
+  }
+  const form = new FormData();
+  files.forEach((file) => form.append("files", file));
+  const response = await fetch(`${LEARNING_API_URL}${QUESTION_IMPORT_PATH}`, { method: "POST", headers: authHeaders(), body: form });
+  if (!response.ok) throw await responseError(response, "process this import");
+  return parseQuestionImportBatch(await response.json());
+}
+
+export async function updateQuestionImportCandidate(batchId: number, candidateId: number, update: QuestionImportCandidateUpdate): Promise<QuestionImportCandidate> {
+  if (!isPositiveId(batchId) || !isPositiveId(candidateId) || !Number.isFinite(update.totalMarks ?? 1) || (update.totalMarks ?? 1) <= 0) {
+    throw new QuestionApiError("Question import details are invalid.", 400);
+  }
+  const response = await fetch(`${LEARNING_API_URL}${QUESTION_IMPORT_PATH}/${batchId}/candidates/${candidateId}`, {
+    method: "PUT", headers: mutationHeaders(), body: JSON.stringify(update),
+  });
+  if (!response.ok) throw await responseError(response, "save this import draft");
+  const candidate = await response.json() as unknown;
+  if (!isQuestionImportCandidate(candidate)) throw new Error("The learning service returned an invalid import draft.");
+  return candidate;
+}
+
+export async function importQuestionImportCandidates(batchId: number, candidateIds: number[]): Promise<{ questionIds: number[]; message: string }> {
+  if (!isPositiveId(batchId) || !Array.isArray(candidateIds) || candidateIds.length < 1 || !candidateIds.every(isPositiveId)) {
+    throw new QuestionApiError("Choose at least one valid import draft.", 400);
+  }
+  const response = await fetch(`${LEARNING_API_URL}${QUESTION_IMPORT_PATH}/${batchId}/import`, {
+    method: "POST", headers: mutationHeaders(), body: JSON.stringify({ candidateIds }),
+  });
+  if (!response.ok) throw await responseError(response, "import reviewed questions");
+  const result = await response.json() as unknown;
+  if (typeof result !== "object" || result === null) {
+    throw new Error("The learning service returned an invalid import result.");
+  }
+  const resultRecord = result as Record<string, unknown>;
+  const questionIds = resultRecord.questionIds;
+  if (!Array.isArray(questionIds) || !questionIds.every(isPositiveId) || !isNonEmptyString(resultRecord.message)) {
+    throw new Error("The learning service returned an invalid import result.");
+  }
+  return result as { questionIds: number[]; message: string };
+}
+
+export async function fetchQuestionImportSourcePageUrl(batchId: number, pageId: number): Promise<string> {
+  if (!isPositiveId(batchId) || !isPositiveId(pageId)) throw new QuestionApiError("Source page reference is invalid.", 400);
+  const response = await fetch(`${LEARNING_API_URL}${QUESTION_IMPORT_PATH}/${batchId}/source-pages/${pageId}/image`, { headers: imageHeaders() });
+  if (!response.ok) throw await responseError(response, "load this source page");
+  const contentType = response.headers.get("content-type") || "";
+  if (!/^image\/(png|jpeg)(?:;|$)/i.test(contentType)) throw new QuestionApiError("The learning service returned an invalid source image.", 502);
+  return URL.createObjectURL(await response.blob());
 }
 
 export interface QuestionRuleCheckResult {

@@ -15,9 +15,11 @@ import { useParams } from "next/navigation";
 
 import {
   downloadStudentWorksheetPdf,
+  fetchWorksheetImageUrl,
   fetchStudentWorksheet,
   type StudentWorksheetDetail,
 } from "@/services/worksheets";
+import SecureImageGallery from "@/components/questions/SecureImageGallery";
 
 const INK = "#2A2622";
 const MUTED = "#6F675E";
@@ -71,6 +73,7 @@ function Detail({ worksheet, onExport, exporting }: {
       {worksheet.questions.length === 0 ? <Box role="status" sx={{ border: "1px dashed #DCCFBE", borderRadius: "10px", p: 2, color: MUTED, fontSize: 13 }}>This approved worksheet has no questions available. Please contact your tutor.</Box> : <Box component="ol" sx={{ m: 0, pl: { xs: 2.75, sm: 3.5 } }}>
         {worksheet.questions.map((question, index) => <Box component="li" key={question.id} sx={{ py: 2, borderBottom: index === worksheet.questions.length - 1 ? "none" : "1px solid #F0EAE0" }}>
           <Typography sx={{ color: INK, fontWeight: 600, fontSize: 14.5, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{question.prompt}</Typography>
+          <SecureImageGallery images={question.images ?? []} loadImage={(imageId) => fetchWorksheetImageUrl("student", worksheet.id, imageId)} />
           <Typography sx={{ color: "#8B837A", fontSize: 11.5, mt: .75 }}>{question.code} · {question.topicName} · {questionTypeLabel(question.questionType)} · {question.totalMarks.toFixed(1)} marks</Typography>
         </Box>)}
       </Box>}

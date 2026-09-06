@@ -17,13 +17,16 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.Map;
 import java.util.LinkedHashMap;
@@ -33,9 +36,11 @@ import java.util.LinkedHashMap;
 public class QuestionController {
 
     private final QuestionService questionService;
+    private final QuestionImageService questionImages;
 
-    public QuestionController(QuestionService questionService) {
+    public QuestionController(QuestionService questionService, QuestionImageService questionImages) {
         this.questionService = questionService;
+        this.questionImages = questionImages;
     }
 
     @GetMapping
@@ -69,6 +74,25 @@ public class QuestionController {
         return questionService.update(questionId, request);
     }
 
+    @PostMapping(value = "/{questionId}/images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<QuestionImageService.ImageSummary> uploadImage(
+        @PathVariable @Positive long questionId, @RequestPart("file") MultipartFile file
+    ) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(questionImages.upload(questionId, file));
+    }
+
+    @GetMapping("/{questionId}/images/{imageId}")
+    public ResponseEntity<byte[]> image(@PathVariable @Positive long questionId, @PathVariable @Positive long imageId) {
+        QuestionImageService.ImageContent content = questionImages.content(questionId, imageId);
+        return ResponseEntity.ok().contentType(MediaType.parseMediaType(content.contentType())).body(content.bytes());
+    }
+
+    @DeleteMapping("/{questionId}/images/{imageId}")
+    public ResponseEntity<Void> deleteImage(@PathVariable @Positive long questionId, @PathVariable @Positive long imageId) {
+        questionImages.remove(questionId, imageId);
+        return ResponseEntity.noContent().build();
+    }
+
     @ExceptionHandler(QuestionService.QuestionNotFoundException.class)
     ResponseEntity<ClassController.ApiError> notFound(QuestionService.QuestionNotFoundException exception) {
         return error(HttpStatus.NOT_FOUND, "QUESTION_NOT_FOUND", "Question was not found", Map.of());
@@ -87,6 +111,16 @@ public class QuestionController {
     @ExceptionHandler(QuestionService.InvalidQuestionRequestException.class)
     ResponseEntity<ClassController.ApiError> invalidRequest(QuestionService.InvalidQuestionRequestException exception) {
         return error(HttpStatus.BAD_REQUEST, "INVALID_QUESTION_REQUEST", exception.getMessage(), Map.of(exception.field(), exception.getMessage()));
+    }
+
+    @ExceptionHandler(QuestionImageService.ImageNotFoundException.class)
+    ResponseEntity<ClassController.ApiError> imageNotFound(QuestionImageService.ImageNotFoundException exception) {
+        return error(HttpStatus.NOT_FOUND, "QUESTION_IMAGE_NOT_FOUND", "Question image was not found", Map.of());
+    }
+
+    @ExceptionHandler(QuestionImageService.InvalidImageException.class)
+    ResponseEntity<ClassController.ApiError> invalidImage(QuestionImageService.InvalidImageException exception) {
+        return error(HttpStatus.BAD_REQUEST, "INVALID_QUESTION_IMAGE", exception.getMessage(), Map.of("file", exception.getMessage()));
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)

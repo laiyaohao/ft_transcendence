@@ -57,12 +57,12 @@ function questionTopicNodes(nodes: SyllabusNode[]): SyllabusNode[] {
 /** A tutor-controlled draft: machine/evidence output remains distinct from approval. */
 export function WorksheetBuilder({ classId, generate = generateWorksheet, generateDiagnostic = generateDiagnosticWorksheet,
   approve = approveWorksheet, update = updateWorksheet, loadSyllabus, loadStudents = fetchTutorStudents,
-  loadClasses = fetchTutorClasses, loadDiagnostic = fetchDiagnosticRecommendations, loadQuestions = fetchTutorQuestions, initialStudentId,
+  loadClasses = fetchTutorClasses, loadDiagnostic = fetchDiagnosticRecommendations, loadQuestions = fetchTutorQuestions, initialStudentId, onApproved,
 }: { classId?: number; generate?: typeof generateWorksheet; generateDiagnostic?: typeof generateDiagnosticWorksheet;
   approve?: typeof approveWorksheet; update?: typeof updateWorksheet; loadSyllabus?: () => Promise<SyllabusTree>;
   loadStudents?: (classId?: number) => Promise<TutorStudent[]>; loadClasses?: () => Promise<TutorClass[]>;
   loadDiagnostic?: (classId: number) => Promise<DiagnosticRecommendations>;
-  loadQuestions?: typeof fetchTutorQuestions; initialStudentId?: number; }) {
+  loadQuestions?: typeof fetchTutorQuestions; initialStudentId?: number; onApproved?: (worksheet: TutorWorksheet) => void; }) {
   const [syllabus, setSyllabus] = React.useState<SyllabusTree | null>(null);
   const [syllabusError, setSyllabusError] = React.useState<string | null>(null);
   const [themeId, setThemeId] = React.useState<number | null>(null);
@@ -80,14 +80,7 @@ export function WorksheetBuilder({ classId, generate = generateWorksheet, genera
   const [configurationOpen, setConfigurationOpen] = React.useState(false);
   const [diagnostic, setDiagnostic] = React.useState(false); const [recommendations, setRecommendations] = React.useState<DiagnosticRecommendations | null>(null);
   const [draft, setDraft] = React.useState<TutorWorksheet | null>(null); const [bank, setBank] = React.useState<QuestionBankItem[]>([]); const [error, setError] = React.useState<string | null>(null); const [busy, setBusy] = React.useState(false);
-  const [approvalConfirmed, setApprovalConfirmed] = React.useState(false);
   const approvalInProgress = React.useRef(false);
-
-  React.useEffect(() => {
-    if (!approvalConfirmed) return;
-    const dismissConfirmation = window.setTimeout(() => setApprovalConfirmed(false), 3600);
-    return () => window.clearTimeout(dismissConfirmation);
-  }, [approvalConfirmed]);
 
   React.useEffect(() => {
     let current = true;
@@ -210,12 +203,11 @@ export function WorksheetBuilder({ classId, generate = generateWorksheet, genera
     approvalInProgress.current = true;
     setBusy(true);
     setError(null);
-    setApprovalConfirmed(false);
 
     try {
       const approvedWorksheet = await approve(draft.id, dueAt || undefined);
       setDraft(approvedWorksheet);
-      setApprovalConfirmed(true);
+      onApproved?.(approvedWorksheet);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Worksheet could not be approved.");
     } finally {
@@ -261,7 +253,7 @@ export function WorksheetBuilder({ classId, generate = generateWorksheet, genera
       {error && <Typography role="alert" sx={{ color: "#B4573F", mt: 2 }}>{error}</Typography>}<Button onClick={() => void submit()} disabled={busy} sx={{ mt: 2, bgcolor: "#E08A72", color: "#1B1917", textTransform: "none", minHeight: 42, fontWeight: 600, borderRadius: "10px" }}>{busy ? "Creating draft…" : diagnostic ? "Generate diagnostic draft" : "Generate worksheet draft"}</Button>
     </Card> : <Card variant="outlined" sx={{ ...card, p: { xs: 2, sm: 3 } }}><Typography component="h2" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 25 }}>{draft.title}</Typography><Typography sx={{ color: "#6F675E", mb: 1.5 }}>{draft.worksheetType === "DIAGNOSTIC" ? "Diagnostic draft" : "Draft"} — Tutor review required before assignment.</Typography><Box sx={{ bgcolor: "#1B1917", borderRadius: "12px", p: 2, mb: 2 }}><Typography sx={{ color: "#E08A72", fontSize: 10.5, fontWeight: 700, letterSpacing: ".1em" }}>AI PREVIEW</Typography><Typography sx={{ color: "#CFC7BC", fontSize: 13, mt: .5 }}>{draft.instructions || "The selected question mix is ready for your review."}</Typography><Typography sx={{ color: "#7A7268", fontSize: 10.5, mt: 1 }}>Suggestion only — edit and approval remain tutor decisions.</Typography></Box><Typography component="h3" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 22, mb: 1 }}>Edit question order</Typography>
       <Box sx={{ display: "grid", gap: 1.1 }}>{draft.questions.map((question, index) => <Box key={question.id} sx={{ display: "flex", gap: 1.2, p: 1.5, border: "1px solid #EBE4D9", borderRadius: "12px" }}><Box sx={{ display: "grid", gap: .35, alignContent: "start" }}><Button aria-label={`Move question ${index + 1} up`} onClick={() => move(index, -1)} disabled={busy || index === 0} sx={{ minWidth: 30, width: 30, height: 30, p: 0, ...secondary }}>↑</Button><Typography sx={{ textAlign: "center", fontFamily: "'Playfair Display', Georgia, serif" }}>{index + 1}</Typography><Button aria-label={`Move question ${index + 1} down`} onClick={() => move(index, 1)} disabled={busy || index === draft.questions.length - 1} sx={{ minWidth: 30, width: 30, height: 30, p: 0, ...secondary }}>↓</Button></Box><Box sx={{ flex: 1, minWidth: 0 }}><Typography sx={{ color: "#8B837A", fontSize: 11.5 }}>{question.questionType.replaceAll("_", " ")} · {question.topicName}</Typography><Typography sx={{ fontSize: 13.5, lineHeight: 1.55 }}>{question.prompt}</Typography><Typography sx={{ color: "#8B837A", fontSize: 11.5, mt: .4 }}>{question.totalMarks.toFixed(1)} marks</Typography></Box><Box sx={{ display: "grid", gap: .5 }}><Button aria-label={`Replace question ${index + 1}`} onClick={() => replace(question.id)} disabled={busy} sx={{ minWidth: 34, width: 34, height: 34, p: 0, ...secondary }}>↻</Button><Button aria-label={`Remove question ${index + 1}`} onClick={() => void saveQuestions(draft.questions.filter((item) => item.id !== question.id).map((item) => item.id))} disabled={busy || draft.questions.length === 1} sx={{ minWidth: 34, width: 34, height: 34, p: 0, border: "1px solid #EBE4D9", color: "#B4573F", borderRadius: "8px" }}>×</Button></Box></Box>)}</Box>
-      {bank.filter((item) => !draft.questions.some((question) => question.id === item.id)).slice(0, 4).map((item) => <Button key={item.id} onClick={() => void saveQuestions([...draft.questions.map((question) => question.id), item.id])} disabled={busy} sx={{ ...secondary, mr: .75, mt: 1.5 }}>Add {item.code}</Button>)}{error && <Typography role="alert" sx={{ color: "#B4573F", mt: 1.5 }}>{error}</Typography>}{approvalConfirmed && <Box role="status" aria-live="polite" aria-atomic="true" sx={{ position: "fixed", bottom: 26, left: "50%", transform: "translateX(-50%)", zIndex: 90, maxWidth: "92vw", bgcolor: "#1B1917", color: "#F4EFE6", borderRadius: "11px", px: 2.75, py: 1.75, boxShadow: "0 12px 34px rgba(42,38,34,.28)", fontSize: 13.5 }}>Worksheet Sent to Students</Box>}<Box sx={{ display: "flex", flexWrap: "wrap", gap: 1.25, mt: 2 }}><Button onClick={() => void approveDraft()} disabled={busy || draft.questions.length === 0 || draft.status !== "DRAFT"} sx={{ bgcolor: "#9E3A24", color: "#FFFDFA", textTransform: "none", minHeight: 42, borderRadius: "10px" }}>{draft.status === "APPROVED" ? "Worksheet approved" : "Approve & assign worksheet"}</Button><Button onClick={() => setDraft(null)} disabled={busy || draft.status !== "DRAFT"} sx={secondary}>Back to configuration</Button></Box>
+      {bank.filter((item) => !draft.questions.some((question) => question.id === item.id)).slice(0, 4).map((item) => <Button key={item.id} onClick={() => void saveQuestions([...draft.questions.map((question) => question.id), item.id])} disabled={busy} sx={{ ...secondary, mr: .75, mt: 1.5 }}>Add {item.code}</Button>)}{error && <Typography role="alert" sx={{ color: "#B4573F", mt: 1.5 }}>{error}</Typography>}<Box sx={{ display: "flex", flexWrap: "wrap", gap: 1.25, mt: 2 }}><Button onClick={() => void approveDraft()} disabled={busy || draft.questions.length === 0 || draft.status !== "DRAFT"} sx={{ bgcolor: "#9E3A24", color: "#FFFDFA", textTransform: "none", minHeight: 42, borderRadius: "10px" }}>{draft.status === "APPROVED" ? "Worksheet approved" : "Approve & assign worksheet"}</Button><Button onClick={() => setDraft(null)} disabled={busy || draft.status !== "DRAFT"} sx={secondary}>Back to configuration</Button></Box>
     </Card>}
   </Box>;
 }

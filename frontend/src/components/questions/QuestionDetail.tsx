@@ -17,10 +17,12 @@ import {
   addQuestionToWorksheetDraft,
   checkTutorQuestionAnswer,
   fetchTutorQuestion,
+  fetchQuestionImageUrl,
   isQuestionInWorksheetDraft,
   type QuestionRuleCheckResult,
   type TutorQuestion,
 } from "@/services/questions";
+import SecureImageGallery from "@/components/questions/SecureImageGallery";
 
 export interface QuestionDetailProps {
   questionId: number;
@@ -135,7 +137,7 @@ export default function QuestionDetail({
         </Box>
         <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2.5, alignItems: "flex-start" }}>
           <Box sx={{ flex: "1 1 460px", minWidth: 0, display: "grid", gap: 2.5 }}>
-            <Card component="section" aria-labelledby="question-prompt-heading" variant="outlined" sx={{ ...card, p: { xs: 2, sm: 2.5 } }}><Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: .75, mb: 1.5 }}><Chip label={typeLabel(question.questionType).toUpperCase()} size="small" sx={{ height: 23, bgcolor: "#F0EAE0", color: "#6F675E", fontSize: 9.5, fontWeight: 700, letterSpacing: ".05em" }} /><Chip label={question.archiveState} size="small" sx={{ height: 23, bgcolor: question.archiveState === "ACTIVE" ? "#E9EEE8" : "#F0EAE0", color: question.archiveState === "ACTIVE" ? "#4A6B50" : "#6F675E", fontSize: 9.5, fontWeight: 700, letterSpacing: ".05em" }} /></Box><Typography id="question-prompt-heading" component="h2" sx={{ fontFamily: serif, fontSize: 21, fontWeight: 500, mb: 1.25 }}>Question</Typography><Typography sx={{ color: "#2A2622", fontSize: 15, lineHeight: 1.75, whiteSpace: "pre-wrap" }}>{question.prompt}</Typography></Card>
+            <Card component="section" aria-labelledby="question-prompt-heading" variant="outlined" sx={{ ...card, p: { xs: 2, sm: 2.5 } }}><Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: .75, mb: 1.5 }}><Chip label={typeLabel(question.questionType).toUpperCase()} size="small" sx={{ height: 23, bgcolor: "#F0EAE0", color: "#6F675E", fontSize: 9.5, fontWeight: 700, letterSpacing: ".05em" }} /><Chip label={question.archiveState} size="small" sx={{ height: 23, bgcolor: question.archiveState === "ACTIVE" ? "#E9EEE8" : "#F0EAE0", color: question.archiveState === "ACTIVE" ? "#4A6B50" : "#6F675E", fontSize: 9.5, fontWeight: 700, letterSpacing: ".05em" }} /></Box><Typography id="question-prompt-heading" component="h2" sx={{ fontFamily: serif, fontSize: 21, fontWeight: 500, mb: 1.25 }}>Question</Typography><Typography sx={{ color: "#2A2622", fontSize: 15, lineHeight: 1.75, whiteSpace: "pre-wrap" }}>{question.prompt}</Typography><SecureImageGallery images={question.images ?? []} loadImage={(imageId) => fetchQuestionImageUrl(question.id, imageId)} /></Card>
             <Card component="section" aria-labelledby="marking-heading" variant="outlined" sx={{ ...card, p: { xs: 2, sm: 2.5 } }}><Typography id="marking-heading" component="h2" sx={{ fontFamily: serif, fontSize: 21, fontWeight: 500, mb: 1.5 }}>Marking guidance</Typography><Box component="ol" sx={{ m: 0, pl: 2.5, display: "grid", gap: 1.1 }}>{question.markingComponents.map((component) => <Box component="li" key={`${component.position}-${component.description}`} sx={{ pl: .35, color: "#2A2622" }}><Box sx={{ display: "flex", justifyContent: "space-between", gap: 1.5, borderBottom: "1px solid #F0EAE0", pb: 1.1 }}><Typography sx={{ fontSize: 13.5, lineHeight: 1.55 }}>{component.description}</Typography><Typography sx={{ color: "#6F675E", fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{component.marks.toFixed(1)} marks</Typography></Box></Box>)}</Box><Box sx={{ mt: 2, pt: 1.75, borderTop: "1px solid #EFE8DE" }}><Typography sx={{ color: "#A09488", fontSize: 10.5, fontWeight: 600, letterSpacing: ".09em", mb: .6 }}>MODEL ANSWER</Typography><Typography sx={{ color: "#4A443D", fontSize: 13.5, lineHeight: 1.65, whiteSpace: "pre-wrap" }}>{question.modelAnswer}</Typography></Box></Card>
           </Box>
           <Box sx={{ flex: "0 1 320px", minWidth: 0, display: "grid", gap: 2.5 }}>

@@ -13,6 +13,16 @@ export interface WorksheetQuestion {
   /** Present for API-loaded drafts; optional only for legacy in-memory test fixtures. */
   topicId?: number;
   topicName: string;
+  /** Empty for text-only and legacy worksheet fixtures. */
+  images?: WorksheetQuestionImage[];
+}
+
+export interface WorksheetQuestionImage {
+  id: number;
+  filename: string;
+  contentType: "image/png" | "image/jpeg";
+  width: number;
+  height: number;
 }
 
 export interface WorksheetAssignment {
@@ -200,6 +210,16 @@ function isQuestionType(value: unknown): value is QuestionType {
   return typeof value === "string" && questionTypes.includes(value as QuestionType);
 }
 
+function parseWorksheetImage(payload: unknown): WorksheetQuestionImage {
+  if (!isRecord(payload) || !positiveId(payload.id) || !nonEmpty(payload.filename)
+    || (payload.contentType !== "image/png" && payload.contentType !== "image/jpeg")
+    || !positiveId(payload.width) || !positiveId(payload.height)) {
+    throw new Error("The learning service returned an invalid worksheet image.");
+  }
+  return { id: payload.id, filename: payload.filename, contentType: payload.contentType,
+    width: payload.width, height: payload.height };
+}
+
 function isWorksheetStatus(value: unknown): value is WorksheetStatus {
   return value === "DRAFT" || value === "APPROVED" || value === "ARCHIVED";
 }
@@ -217,6 +237,23 @@ function headers(): HeadersInit {
   return { Accept: "application/json", "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
 }
 
+export async function fetchWorksheetImageUrl(
+  audience: "tutor" | "student", worksheetId: number, imageId: number,
+): Promise<string> {
+  if (!positiveId(worksheetId) || !positiveId(imageId)) throw new WorksheetApiError("Worksheet image reference is invalid.", 400);
+  const token = typeof window === "undefined" ? null : localStorage.getItem("jwt_token");
+  const response = await fetch(`${base}/api/learning/${audience}/worksheets/${worksheetId}/images/${imageId}`, {
+    headers: { Accept: "image/png, image/jpeg", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as { message?: string } | null;
+    throw new WorksheetApiError(payload?.message || `Worksheet image request failed (${response.status}).`, response.status);
+  }
+  const contentType = response.headers.get("content-type") || "";
+  if (!/^image\/(png|jpeg)(?:;|$)/i.test(contentType)) throw new WorksheetApiError("The learning service returned an invalid image.", 502);
+  return URL.createObjectURL(await response.blob());
+}
+
 async function json(response: Response): Promise<unknown> {
   if (!response.ok) {
     const body = await response.json().catch(() => null) as { message?: string } | null;
@@ -228,10 +265,12 @@ async function json(response: Response): Promise<unknown> {
 function parseQuestion(payload: unknown): WorksheetQuestion {
   if (!isRecord(payload) || !positiveId(payload.id) || !nonEmpty(payload.code) || !nonEmpty(payload.prompt)
     || typeof payload.totalMarks !== "number" || !Number.isFinite(payload.totalMarks) || payload.totalMarks <= 0
-    || !isQuestionType(payload.questionType) || !positiveId(payload.syllabusTopicId) || !nonEmpty(payload.syllabusTopicName)) {
+    || !isQuestionType(payload.questionType) || !positiveId(payload.syllabusTopicId) || !nonEmpty(payload.syllabusTopicName)
+    || !(payload.images === undefined || Array.isArray(payload.images))) {
     throw new Error("The learning service returned an invalid worksheet question.");
   }
-  return { id: payload.id, code: payload.code, prompt: payload.prompt, totalMarks: payload.totalMarks, questionType: payload.questionType, topicId: payload.syllabusTopicId, topicName: payload.syllabusTopicName };
+  return { id: payload.id, code: payload.code, prompt: payload.prompt, totalMarks: payload.totalMarks, questionType: payload.questionType, topicId: payload.syllabusTopicId, topicName: payload.syllabusTopicName,
+    images: payload.images === undefined ? [] : payload.images.map(parseWorksheetImage) };
 }
 
 function parseAssignment(payload: unknown): WorksheetAssignment {

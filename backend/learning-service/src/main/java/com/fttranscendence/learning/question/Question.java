@@ -148,6 +148,10 @@ public class Question {
     @Column(name = "keyword", nullable = false, length = 80)
     private List<@NotBlank @Size(max = 80) String> keywords = new ArrayList<>();
 
+    @OneToMany(mappedBy = "question", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @OrderBy("position ASC")
+    private List<QuestionImage> images = new ArrayList<>();
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -297,6 +301,16 @@ public class Question {
         keywords.addAll(replacements);
     }
 
+    public QuestionImage addImage(String filename, String contentType, byte[] bytes, int width, int height) {
+        QuestionImage image = new QuestionImage(this, images.size(), filename, contentType, bytes, width, height);
+        images.add(image);
+        return image;
+    }
+
+    public void removeImage(QuestionImage image) {
+        images.remove(image);
+    }
+
     public void archive() {
         archiveState = ArchiveState.ARCHIVED;
     }
@@ -376,6 +390,8 @@ public class Question {
     public List<String> getKeywords() {
         return List.copyOf(keywords);
     }
+
+    public List<QuestionImage> getImages() { return List.copyOf(images); }
 
     public LocalDateTime getCreatedAt() {
         return createdAt;

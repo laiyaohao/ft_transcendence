@@ -4,6 +4,7 @@ import com.fttranscendence.learning.question.Question;
 import com.fttranscendence.learning.report.ReportResponse;
 import com.fttranscendence.learning.worksheet.Worksheet;
 import com.fttranscendence.learning.worksheet.WorksheetQuestion;
+import com.fttranscendence.learning.worksheet.WorksheetQuestionImage;
 import tools.jackson.databind.JsonNode;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDDocumentInformation;
@@ -12,11 +13,15 @@ import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.font.PDType0Font;
+import org.apache.pdfbox.pdmodel.graphics.image.LosslessFactory;
+import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.ByteArrayInputStream;
+import javax.imageio.ImageIO;
 import java.math.BigDecimal;
 import java.text.Normalizer;
 import java.util.ArrayList;
@@ -42,7 +47,10 @@ public class PdfDocumentService {
             int number = 1;
             for (WorksheetQuestion worksheetQuestion : worksheet.getQuestions()) {
                 Question question = worksheetQuestion.getQuestion();
-                writer.question(number++, question.getPrompt(), question.getQuestionType(), question.getTotalMarks());
+                String prompt = worksheetQuestion.getPromptSnapshot() == null ? question.getPrompt() : worksheetQuestion.getPromptSnapshot();
+                Question.QuestionType type = worksheetQuestion.getQuestionTypeSnapshot() == null ? question.getQuestionType() : worksheetQuestion.getQuestionTypeSnapshot();
+                BigDecimal marks = worksheetQuestion.getTotalMarksSnapshot() == null ? question.getTotalMarks() : worksheetQuestion.getTotalMarksSnapshot();
+                writer.question(number++, prompt, type, marks, worksheetQuestion.getImages());
             }
             writer.finish();
             document.save(bytes);
@@ -213,10 +221,15 @@ public class PdfDocumentService {
             writeLines(wrap(value, fonts.regular(), BODY_SIZE), fonts.regular(), BODY_SIZE, BODY_LEADING);
         }
 
-        private void question(int number, String prompt, Question.QuestionType type, BigDecimal marks) throws IOException {
+        private void question(int number, String prompt, Question.QuestionType type, BigDecimal marks,
+                              List<WorksheetQuestionImage> images) throws IOException {
             writeLines(wrap(number + ". " + prompt, fonts.bold(), BODY_SIZE), fonts.bold(), BODY_SIZE, BODY_LEADING);
             String details = "Type: " + readableType(type) + (marks == null ? "" : "  *  Marks: " + marks.stripTrailingZeros().toPlainString());
             writeLines(wrap(details, fonts.regular(), 9), fonts.regular(), 9, 12);
+            for (WorksheetQuestionImage image : images) {
+                drawImage(image);
+                spacer(8);
+            }
             int answerLines = switch (type) {
                 case TRUE_FALSE, MULTIPLE_CHOICE -> 2;
                 case FILL_IN_THE_BLANK -> 3;
@@ -230,6 +243,20 @@ public class PdfDocumentService {
                 y -= 13;
             }
             spacer(12);
+        }
+
+        private void drawImage(WorksheetQuestionImage source) throws IOException {
+            java.awt.image.BufferedImage decoded = ImageIO.read(new ByteArrayInputStream(source.getImageBytes()));
+            if (decoded == null) throw new IOException("Worksheet image snapshot cannot be decoded");
+            float maxWidth = PAGE_SIZE.getWidth() - (MARGIN * 2);
+            float maxHeight = 280;
+            float scale = Math.min(maxWidth / decoded.getWidth(), maxHeight / decoded.getHeight());
+            float width = Math.max(1, decoded.getWidth() * scale);
+            float height = Math.max(1, decoded.getHeight() * scale);
+            ensureSpace(height);
+            PDImageXObject pdfImage = LosslessFactory.createFromImage(document, decoded);
+            content.drawImage(pdfImage, MARGIN, y - height, width, height);
+            y -= height;
         }
 
         private void spacer(float height) throws IOException {

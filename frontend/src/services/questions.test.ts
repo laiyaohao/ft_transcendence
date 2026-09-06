@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { QuestionApiError, addQuestionToWorksheetDraft, checkTutorQuestionAnswer, createTutorQuestion, fetchTutorQuestion, fetchTutorQuestions, isQuestionInWorksheetDraft, parseQuestionBankPage, parseTutorQuestion, updateTutorQuestion } from "./questions";
+import { QuestionApiError, addQuestionToWorksheetDraft, checkTutorQuestionAnswer, createTutorQuestion, fetchTutorQuestion, fetchTutorQuestions, importQuestionImportCandidates, isQuestionInWorksheetDraft, parseQuestionBankPage, parseTutorQuestion, updateQuestionImportCandidate, updateTutorQuestion, uploadQuestionImport } from "./questions";
 
 const response = {
   items: [{
@@ -122,5 +122,27 @@ describe("question bank service", () => {
     vi.spyOn(Storage.prototype, "setItem").mockImplementationOnce(() => { throw new Error("Storage blocked"); });
     expect(addQuestionToWorksheetDraft(7)).toEqual({ ids: [], added: false, storageUnavailable: true });
     expect(isQuestionInWorksheetDraft(7)).toBe(false);
+  });
+
+  it("uploads only supported import files and keeps reviewed drafts on Tutor endpoints", async () => {
+    const file = new File(["scan"], "scan.png", { type: "image/png" });
+    const batch = { id: 12, status: "READY_FOR_REVIEW", originalFilename: "Question import", candidates: [{
+      id: 31, number: 1, status: "UNCERTAIN", confidence: 0, warningMessage: "Review", code: null,
+      syllabusTopicId: null, prompt: "", modelAnswer: "", totalMarks: 1, questionType: "OPEN_ENDED",
+      difficulty: "FOUNDATION", suggestedTags: "image-import", includeSourceImage: true,
+      source: { pageId: 22, filename: "scan.png", pageNumber: 1 },
+    }] };
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify(batch), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ...batch.candidates[0], prompt: "Explain evaporation.", modelAnswer: "Gains heat." }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ questionIds: [90], message: "Pending review." }), { status: 200 }));
+
+    await expect(uploadQuestionImport([file])).resolves.toEqual(batch);
+    await expect(updateQuestionImportCandidate(12, 31, { prompt: "Explain evaporation.", modelAnswer: "Gains heat.", syllabusTopicId: 14, totalMarks: 1, questionType: "OPEN_ENDED", difficulty: "FOUNDATION", includeSourceImage: true })).resolves.toMatchObject({ id: 31 });
+    await expect(importQuestionImportCandidates(12, [31])).resolves.toEqual({ questionIds: [90], message: "Pending review." });
+    expect(fetch).toHaveBeenNthCalledWith(1, "http://localhost:8083/api/learning/tutor/question-imports", expect.objectContaining({ method: "POST", body: expect.any(FormData) }));
+    expect(fetch).toHaveBeenNthCalledWith(2, "http://localhost:8083/api/learning/tutor/question-imports/12/candidates/31", expect.objectContaining({ method: "PUT" }));
+    expect(fetch).toHaveBeenNthCalledWith(3, "http://localhost:8083/api/learning/tutor/question-imports/12/import", expect.objectContaining({ method: "POST", body: JSON.stringify({ candidateIds: [31] }) }));
+    await expect(uploadQuestionImport([new File(["x"], "not-supported.gif", { type: "image/gif" })])).rejects.toMatchObject({ status: 400 });
   });
 });

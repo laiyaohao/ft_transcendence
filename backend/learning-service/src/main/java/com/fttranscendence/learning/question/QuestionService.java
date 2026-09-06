@@ -402,6 +402,7 @@ public class QuestionService {
         Question.ArchiveState archiveState,
         List<MarkingComponentDetail> markingComponents,
         List<String> keywords,
+        List<QuestionImageService.ImageSummary> images,
         java.time.LocalDateTime createdAt,
         java.time.LocalDateTime updatedAt
     ) {
@@ -436,6 +437,7 @@ public class QuestionService {
                 question.getArchiveState(),
                 markingComponents,
                 question.getKeywords(),
+                question.getImages().stream().map(QuestionImageService.ImageSummary::from).toList(),
                 question.getCreatedAt(),
                 question.getUpdatedAt()
             );

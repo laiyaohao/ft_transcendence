@@ -2,13 +2,16 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Page from "./page";
-import { fetchTutorWorksheet, type TutorWorksheet } from "@/services/worksheets";
+import { approveWorksheet, fetchTutorWorksheet, type TutorWorksheet } from "@/services/worksheets";
 
-const navigation = vi.hoisted(() => ({ worksheetId: "7" }));
-vi.mock("next/navigation", () => ({ useParams: () => navigation }));
+const navigation = vi.hoisted(() => ({ worksheetId: "7", replace: vi.fn() }));
+vi.mock("next/navigation", () => ({
+  useParams: () => navigation,
+  useRouter: () => ({ replace: navigation.replace }),
+}));
 vi.mock("@/services/worksheets", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/services/worksheets")>();
-  return { ...actual, fetchTutorWorksheet: vi.fn() };
+  return { ...actual, approveWorksheet: vi.fn(), fetchTutorWorksheet: vi.fn() };
 });
 
 const worksheet: TutorWorksheet = {
@@ -18,7 +21,12 @@ const worksheet: TutorWorksheet = {
 };
 
 describe("Tutor worksheet detail page", () => {
-  beforeEach(() => { navigation.worksheetId = "7"; vi.mocked(fetchTutorWorksheet).mockReset(); });
+  beforeEach(() => {
+    navigation.worksheetId = "7";
+    navigation.replace.mockReset();
+    vi.mocked(fetchTutorWorksheet).mockReset();
+    vi.mocked(approveWorksheet).mockReset();
+  });
   it("renders loading then the owner-scoped worksheet", async () => {
     let resolve: ((value: TutorWorksheet) => void) | undefined;
     vi.mocked(fetchTutorWorksheet).mockImplementation(() => new Promise((done) => { resolve = done; }));
@@ -41,5 +49,14 @@ describe("Tutor worksheet detail page", () => {
     render(<Page />);
     expect(screen.getByRole("alert")).toHaveTextContent("worksheet reference is invalid");
     expect(fetchTutorWorksheet).not.toHaveBeenCalled();
+  });
+  it("replaces the detail route after a successful approval and keeps its class filter", async () => {
+    vi.mocked(fetchTutorWorksheet).mockResolvedValue({ ...worksheet, sourceClassId: 12 });
+    vi.mocked(approveWorksheet).mockResolvedValue({ ...worksheet, sourceClassId: 12, status: "APPROVED", assignments: [{ id: 1, assignmentType: "CLASS", classId: 12, studentProfileId: null, assignedAt: "2026-09-06T10:00:00", dueAt: null }] });
+    render(<Page />);
+
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Approve & assign worksheet" }));
+
+    expect(navigation.replace).toHaveBeenCalledWith("/tutor/worksheets?classId=12&approved=1");
   });
 });
