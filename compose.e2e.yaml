@@ -34,6 +34,16 @@ services:
       LEARNING_DB_PASSWORD: e2e-password
       JWT_SECRET: e2e-only-signing-secret-change-before-any-real-deployment
       LEARNING_MARKING_SYNC_KEY: e2e-only-learning-sync-key
+      AI_VISION_ENABLED: "true"
+      AI_VISION_URL: http://ai-ocr-mock:8080/v1/chat/completions
+      AI_VISION_MODEL: fixture-ocr-model
+      AI_VISION_API_KEY: offline-fixture-key
+      AI_VISION_TIMEOUT_MS: 5000
+      AI_VISION_MAX_REQUESTS_PER_MINUTE: 20
+      AI_VISION_MAX_ATTEMPTS: 2
+      AI_VISION_RETRY_DELAY_MS: 100
+      AI_VISION_STALE_RUN_MS: 5000
+      AI_VISION_WORKER_DELAY_MS: 100
       FRONTEND_ALLOWED_ORIGINS: http://127.0.0.1:3000
   ai-ocr-mock:
     profiles: ["e2e"]

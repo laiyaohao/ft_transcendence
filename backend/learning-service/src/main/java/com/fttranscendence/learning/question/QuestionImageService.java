@@ -11,9 +11,9 @@ import org.springframework.web.multipart.MultipartFile;
 
 @Service
 public class QuestionImageService {
-    static final long MAX_IMAGE_BYTES = 8L * 1024 * 1024;
-    static final int MAX_IMAGES_PER_QUESTION = 10;
-    static final long MAX_IMAGE_PIXELS = 20_000_000L;
+    public static final long MAX_IMAGE_BYTES = 8L * 1024 * 1024;
+    public static final int MAX_IMAGES_PER_QUESTION = 10;
+    public static final long MAX_IMAGE_PIXELS = 20_000_000L;
 
     private final QuestionRepository questions;
     private final QuestionImageRepository images;
@@ -33,17 +33,18 @@ public class QuestionImageService {
         try { bytes = file.getBytes(); } catch (IOException exception) {
             throw new InvalidImageException("The image could not be read.");
         }
-        String contentType = detectedContentType(bytes);
-        BufferedImage decoded = decode(bytes);
-        if ((long) decoded.getWidth() * decoded.getHeight() > MAX_IMAGE_PIXELS) {
-            throw new InvalidImageException("Image dimensions are too large.");
-        }
-        if (question.getImages().size() >= MAX_IMAGES_PER_QUESTION) {
-            throw new InvalidImageException("A question can have at most 10 images.");
-        }
-        QuestionImage image = question.addImage(safeFilename(file.getOriginalFilename()), contentType, bytes,
-            decoded.getWidth(), decoded.getHeight());
-        return ImageSummary.from(images.save(image));
+        return attachValidated(question, file.getOriginalFilename(), bytes, null);
+    }
+
+    /**
+     * Stores a diagram cropped from an accepted import source page.  Import
+     * processing uses this same validation and persistence path as tutor image
+     * uploads; it never attempts to recreate a diagram from OCR text.
+     */
+    @Transactional
+    public ImageSummary attachImportedCrop(long questionId, String filename, String declaredContentType, byte[] bytes) {
+        Question question = questions.findById(questionId).orElseThrow(QuestionService.QuestionNotFoundException::new);
+        return attachValidated(question, filename, bytes, declaredContentType);
     }
 
     @Transactional(readOnly = true)
@@ -70,6 +71,27 @@ public class QuestionImageService {
         if (png) return "image/png";
         if (jpeg) return "image/jpeg";
         throw new InvalidImageException("Only PNG and JPEG images are supported.");
+    }
+
+    private ImageSummary attachValidated(Question question, String filename, byte[] bytes,
+                                         String declaredContentType) {
+        if (bytes == null || bytes.length == 0 || bytes.length > MAX_IMAGE_BYTES) {
+            throw new InvalidImageException("Choose a PNG or JPEG image no larger than 8 MB.");
+        }
+        String contentType = detectedContentType(bytes);
+        if (declaredContentType != null && !declaredContentType.equals(contentType)) {
+            throw new InvalidImageException("The declared image type does not match its contents.");
+        }
+        BufferedImage decoded = decode(bytes);
+        if ((long) decoded.getWidth() * decoded.getHeight() > MAX_IMAGE_PIXELS) {
+            throw new InvalidImageException("Image dimensions are too large.");
+        }
+        if (question.getImages().size() >= MAX_IMAGES_PER_QUESTION) {
+            throw new InvalidImageException("A question can have at most 10 images.");
+        }
+        QuestionImage image = question.addImage(safeFilename(filename), contentType, bytes,
+            decoded.getWidth(), decoded.getHeight());
+        return ImageSummary.from(images.save(image));
     }
 
     private BufferedImage decode(byte[] bytes) {

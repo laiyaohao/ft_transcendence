@@ -310,7 +310,7 @@ export async function fetchQuestionImageUrl(questionId: number, imageId: number)
   return URL.createObjectURL(await response.blob());
 }
 
-export type QuestionImportCandidateStatus = "READY_FOR_REVIEW" | "UNCERTAIN" | "FAILED" | "IMPORTED";
+export type QuestionImportCandidateStatus = "READY_FOR_REVIEW" | "UNCERTAIN" | "FAILED" | "IMPORTED" | "REJECTED" | "SUPERSEDED";
 
 export interface QuestionImportCandidate {
   id: number;
@@ -328,11 +328,70 @@ export interface QuestionImportCandidate {
   suggestedTags: string;
   includeSourceImage: boolean;
   source: { pageId: number; filename: string; pageNumber: number };
+  diagramCrops?: QuestionImportDiagramCrop[];
+  suggestions?: QuestionImportSuggestions;
+  confidenceByField?: QuestionImportFieldConfidence;
+  lineage?: QuestionImportLineage;
+  duplicateWarnings?: QuestionImportDuplicateWarning[];
+}
+
+export interface QuestionImportSuggestions {
+  prompt: string;
+  modelAnswer: string;
+  totalMarks: number;
+  questionType: QuestionType;
+  difficulty: QuestionDifficulty;
+  tags: string;
+}
+
+export interface QuestionImportFieldConfidence {
+  prompt: number | null;
+  modelAnswer: number | null;
+  classification: number | null;
+  marks: number | null;
+}
+
+export interface QuestionImportLineage {
+  parentCandidateId: number | null;
+  supersededByCandidateId: number | null;
+  rejectionReason: string | null;
+  isRejected: boolean;
+}
+
+export interface QuestionImportDuplicateWarning {
+  target: QuestionImportDuplicateTarget;
+  signals: QuestionImportDuplicateSignal[];
+  strongestSignal: number;
+}
+
+export interface QuestionImportDuplicateTarget {
+  kind: "IMPORT_DRAFT" | "IMPORTED_QUESTION" | "QUESTION_BANK";
+  candidateId: number | null;
+  questionId: number | null;
+  label: string;
+}
+
+export interface QuestionImportDuplicateSignal {
+  code: "NORMALIZED_PROMPT_SIMILARITY" | "SOURCE_CHECKSUM_PAGE_IDENTITY"
+    | "EXACT_PAGE_IMAGE_SHA256" | "EXACT_IMAGE_SHA256"
+    | "NEAR_IMAGE_PERCEPTUAL_HASH" | "MATCHING_MARKS_TYPE_TOPIC";
+  strength: number;
+  detail: string;
+}
+
+export interface QuestionImportDiagramCrop {
+  id: number;
+  regionId: string;
+  subQuestionId: string | null;
+  rectangle: { x: number; y: number; width: number; height: number };
+  width: number;
+  height: number;
+  contentType: "image/png";
 }
 
 export interface QuestionImportBatch {
   id: number;
-  status: "READY_FOR_REVIEW" | "FAILED" | "IMPORTED";
+  status: "QUEUED" | "RUNNING" | "READY_FOR_REVIEW" | "FAILED" | "IMPORTED";
   originalFilename: string;
   candidates: QuestionImportCandidate[];
 }
@@ -353,7 +412,7 @@ function isQuestionImportCandidate(value: unknown): value is QuestionImportCandi
   const item = value as Record<string, unknown>;
   const source = item.source as Record<string, unknown> | null;
   return isPositiveId(item.id) && isNonNegativeInteger(item.number) && typeof item.status === "string"
-    && ["READY_FOR_REVIEW", "UNCERTAIN", "FAILED", "IMPORTED"].includes(item.status)
+    && ["READY_FOR_REVIEW", "UNCERTAIN", "FAILED", "IMPORTED", "REJECTED", "SUPERSEDED"].includes(item.status)
     && isNonNegativeInteger(item.confidence) && item.confidence <= 100
     && (item.warningMessage === null || typeof item.warningMessage === "string")
     && (item.code === null || typeof item.code === "string")
@@ -363,17 +422,99 @@ function isQuestionImportCandidate(value: unknown): value is QuestionImportCandi
     && isQuestionType(item.questionType) && isQuestionDifficulty(item.difficulty)
     && typeof item.suggestedTags === "string" && typeof item.includeSourceImage === "boolean"
     && source !== null && isPositiveId(source.pageId) && isNonEmptyString(source.filename)
-    && isPositiveId(source.pageNumber);
+    && isPositiveId(source.pageNumber) && (item.diagramCrops === undefined
+      || Array.isArray(item.diagramCrops) && item.diagramCrops.every(isQuestionImportDiagramCrop))
+    && (item.suggestions === undefined || isQuestionImportSuggestions(item.suggestions))
+    && (item.confidenceByField === undefined || isQuestionImportFieldConfidence(item.confidenceByField))
+    && (item.lineage === undefined || isQuestionImportLineage(item.lineage))
+    && (item.duplicateWarnings === undefined || Array.isArray(item.duplicateWarnings)
+      && item.duplicateWarnings.every(isQuestionImportDuplicateWarning));
+}
+
+function isNullableConfidence(value: unknown): boolean {
+  return value === null || isNonNegativeInteger(value) && value <= 100;
+}
+
+function isQuestionImportSuggestions(value: unknown): value is QuestionImportSuggestions {
+  if (typeof value !== "object" || value === null) return false;
+  const suggestion = value as Record<string, unknown>;
+  return typeof suggestion.prompt === "string" && typeof suggestion.modelAnswer === "string"
+    && typeof suggestion.totalMarks === "number" && Number.isFinite(suggestion.totalMarks)
+    && isQuestionType(suggestion.questionType) && isQuestionDifficulty(suggestion.difficulty)
+    && typeof suggestion.tags === "string";
+}
+
+function isQuestionImportFieldConfidence(value: unknown): value is QuestionImportFieldConfidence {
+  if (typeof value !== "object" || value === null) return false;
+  const confidence = value as Record<string, unknown>;
+  return isNullableConfidence(confidence.prompt) && isNullableConfidence(confidence.modelAnswer)
+    && isNullableConfidence(confidence.classification) && isNullableConfidence(confidence.marks);
+}
+
+function isQuestionImportLineage(value: unknown): value is QuestionImportLineage {
+  if (typeof value !== "object" || value === null) return false;
+  const lineage = value as Record<string, unknown>;
+  return (lineage.parentCandidateId === null || isPositiveId(lineage.parentCandidateId))
+    && (lineage.supersededByCandidateId === null || isPositiveId(lineage.supersededByCandidateId))
+    && (lineage.rejectionReason === null || typeof lineage.rejectionReason === "string")
+    && typeof lineage.isRejected === "boolean";
+}
+
+function isQuestionImportDuplicateWarning(value: unknown): value is QuestionImportDuplicateWarning {
+  if (typeof value !== "object" || value === null) return false;
+  const warning = value as Record<string, unknown>;
+  return isQuestionImportDuplicateTarget(warning.target)
+    && Array.isArray(warning.signals) && warning.signals.length > 0
+    && warning.signals.every(isQuestionImportDuplicateSignal)
+    && isNonNegativeInteger(warning.strongestSignal) && warning.strongestSignal <= 100;
+}
+
+function isQuestionImportDuplicateTarget(value: unknown): value is QuestionImportDuplicateTarget {
+  if (typeof value !== "object" || value === null) return false;
+  const target = value as Record<string, unknown>;
+  return typeof target.kind === "string"
+    && ["IMPORT_DRAFT", "IMPORTED_QUESTION", "QUESTION_BANK"].includes(target.kind)
+    && (target.candidateId === null || isPositiveId(target.candidateId))
+    && (target.questionId === null || isPositiveId(target.questionId))
+    && isNonEmptyString(target.label);
+}
+
+function isQuestionImportDuplicateSignal(value: unknown): value is QuestionImportDuplicateSignal {
+  if (typeof value !== "object" || value === null) return false;
+  const signal = value as Record<string, unknown>;
+  return typeof signal.code === "string"
+    && ["NORMALIZED_PROMPT_SIMILARITY", "SOURCE_CHECKSUM_PAGE_IDENTITY", "EXACT_PAGE_IMAGE_SHA256",
+      "EXACT_IMAGE_SHA256", "NEAR_IMAGE_PERCEPTUAL_HASH", "MATCHING_MARKS_TYPE_TOPIC"].includes(signal.code)
+    && isNonNegativeInteger(signal.strength) && signal.strength <= 100
+    && isNonEmptyString(signal.detail);
+}
+
+function isQuestionImportDiagramCrop(value: unknown): value is QuestionImportDiagramCrop {
+  if (typeof value !== "object" || value === null) return false;
+  const crop = value as Record<string, unknown>;
+  const rectangle = crop.rectangle as Record<string, unknown> | null;
+  return isPositiveId(crop.id) && isNonEmptyString(crop.regionId)
+    && (crop.subQuestionId === null || isNonEmptyString(crop.subQuestionId))
+    && rectangle !== null && isNonNegativeInteger(rectangle.x) && isNonNegativeInteger(rectangle.y)
+    && isPositiveId(rectangle.width) && isPositiveId(rectangle.height)
+    && isPositiveId(crop.width) && isPositiveId(crop.height) && crop.contentType === "image/png";
 }
 
 function parseQuestionImportBatch(payload: unknown): QuestionImportBatch {
   if (typeof payload !== "object" || payload === null) throw new Error("The learning service returned an invalid import batch.");
   const batch = payload as Record<string, unknown>;
-  if (!isPositiveId(batch.id) || typeof batch.status !== "string" || !["READY_FOR_REVIEW", "FAILED", "IMPORTED"].includes(batch.status)
+  if (!isPositiveId(batch.id) || typeof batch.status !== "string" || !["QUEUED", "RUNNING", "READY_FOR_REVIEW", "FAILED", "IMPORTED"].includes(batch.status)
     || !isNonEmptyString(batch.originalFilename) || !Array.isArray(batch.candidates) || !batch.candidates.every(isQuestionImportCandidate)) {
     throw new Error("The learning service returned an invalid import batch.");
   }
   return batch as unknown as QuestionImportBatch;
+}
+
+export async function fetchQuestionImportBatch(batchId: number): Promise<QuestionImportBatch> {
+  if (!isPositiveId(batchId)) throw new QuestionApiError("Import batch reference is invalid.", 400);
+  const response = await fetch(`${LEARNING_API_URL}${QUESTION_IMPORT_PATH}/${batchId}`, { headers: authHeaders() });
+  if (!response.ok) throw await responseError(response, "load this import batch");
+  return parseQuestionImportBatch(await response.json());
 }
 
 export async function uploadQuestionImport(files: File[]): Promise<QuestionImportBatch> {
@@ -422,12 +563,76 @@ export async function importQuestionImportCandidates(batchId: number, candidateI
   return result as { questionIds: number[]; message: string };
 }
 
+async function updateQuestionImportBatch(
+  batchId: number,
+  path: string,
+  body?: unknown,
+): Promise<QuestionImportBatch> {
+  if (!isPositiveId(batchId)) throw new QuestionApiError("Import batch reference is invalid.", 400);
+  const response = await fetch(`${LEARNING_API_URL}${QUESTION_IMPORT_PATH}/${batchId}${path}`, {
+    method: "POST",
+    headers: mutationHeaders(),
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  if (!response.ok) throw await responseError(response, "update this import review");
+  return parseQuestionImportBatch(await response.json());
+}
+
+export function rejectQuestionImportCandidate(batchId: number, candidateId: number, reason?: string): Promise<QuestionImportBatch> {
+  if (!isPositiveId(candidateId)) throw new QuestionApiError("Import draft reference is invalid.", 400);
+  return updateQuestionImportBatch(batchId, `/candidates/${candidateId}/reject`, { reason: reason?.trim() || null });
+}
+
+export function restoreQuestionImportCandidate(batchId: number, candidateId: number): Promise<QuestionImportBatch> {
+  if (!isPositiveId(candidateId)) throw new QuestionApiError("Import draft reference is invalid.", 400);
+  return updateQuestionImportBatch(batchId, `/candidates/${candidateId}/restore`);
+}
+
+export function moveQuestionImportDiagramCrops(batchId: number, cropIds: number[], targetCandidateId: number): Promise<QuestionImportBatch> {
+  if (!cropIds.length || !cropIds.every(isPositiveId) || !isPositiveId(targetCandidateId)) {
+    throw new QuestionApiError("Diagram attachment references are invalid.", 400);
+  }
+  return updateQuestionImportBatch(batchId, "/diagram-crops/move", { cropIds, targetCandidateId });
+}
+
+export function mergeQuestionImportCandidates(batchId: number, targetCandidateId: number, candidateIds: number[]): Promise<QuestionImportBatch> {
+  if (!isPositiveId(targetCandidateId) || candidateIds.length < 2 || !candidateIds.every(isPositiveId)) {
+    throw new QuestionApiError("Select at least two valid drafts to merge.", 400);
+  }
+  return updateQuestionImportBatch(batchId, "/candidates/merge", { targetCandidateId, candidateIds });
+}
+
+export function splitQuestionImportCandidate(
+  batchId: number,
+  candidateId: number,
+  drafts: Array<{ prompt: string; modelAnswer: string }>,
+): Promise<QuestionImportBatch> {
+  if (!isPositiveId(candidateId) || drafts.length < 2 || drafts.some((draft) => !draft.prompt.trim() || !draft.modelAnswer.trim())) {
+    throw new QuestionApiError("Provide question text and a model answer for every split draft.", 400);
+  }
+  return updateQuestionImportBatch(batchId, `/candidates/${candidateId}/split`, { drafts });
+}
+
 export async function fetchQuestionImportSourcePageUrl(batchId: number, pageId: number): Promise<string> {
   if (!isPositiveId(batchId) || !isPositiveId(pageId)) throw new QuestionApiError("Source page reference is invalid.", 400);
   const response = await fetch(`${LEARNING_API_URL}${QUESTION_IMPORT_PATH}/${batchId}/source-pages/${pageId}/image`, { headers: imageHeaders() });
   if (!response.ok) throw await responseError(response, "load this source page");
   const contentType = response.headers.get("content-type") || "";
   if (!/^image\/(png|jpeg)(?:;|$)/i.test(contentType)) throw new QuestionApiError("The learning service returned an invalid source image.", 502);
+  return URL.createObjectURL(await response.blob());
+}
+
+export async function fetchQuestionImportDiagramCropUrl(batchId: number, cropId: number): Promise<string> {
+  if (!isPositiveId(batchId) || !isPositiveId(cropId)) {
+    throw new QuestionApiError("Diagram crop reference is invalid.", 400);
+  }
+  const response = await fetch(`${LEARNING_API_URL}${QUESTION_IMPORT_PATH}/${batchId}/diagram-crops/${cropId}/image`,
+    { headers: imageHeaders() });
+  if (!response.ok) throw await responseError(response, "load this diagram crop");
+  const contentType = response.headers.get("content-type") || "";
+  if (!/^image\/png(?:;|$)/i.test(contentType)) {
+    throw new QuestionApiError("The learning service returned an invalid diagram crop.", 502);
+  }
   return URL.createObjectURL(await response.blob());
 }
 

@@ -17,6 +17,14 @@ public interface QuestionRepository extends Repository<Question, Long> {
 
     Optional<Question> findById(Long id);
 
+    @Query("""
+        select distinct question from Question question
+        join fetch question.syllabusTopic topic
+        left join fetch question.images image
+        order by question.id asc
+        """)
+    List<Question> findAllForDuplicateComparison();
+
     boolean existsByCode(String code);
 
     @Query("""

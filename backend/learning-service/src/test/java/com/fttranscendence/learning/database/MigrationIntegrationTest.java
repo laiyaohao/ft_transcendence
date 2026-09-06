@@ -27,6 +27,7 @@ class MigrationIntegrationTest {
 
     @BeforeEach
     void clearClasses() {
+        jdbcTemplate.update("DELETE FROM question_import_diagram_crops");
         jdbcTemplate.update("DELETE FROM question_import_candidates");
         jdbcTemplate.update("DELETE FROM question_import_source_pages");
         jdbcTemplate.update("DELETE FROM question_import_batches");
@@ -89,8 +90,9 @@ class MigrationIntegrationTest {
         assertEquals(1, tableCount("class_insight_ranking_overrides"));
         assertEquals(1, tableCount("class_insight_refresh_queue"));
         assertEquals(1, tableCount("tutor_notes"));
-        assertEquals("25", flyway.info().current().getVersion().getVersion());
-        assertEquals(25, versionedMigrationCount());
+        assertEquals(1, tableCount("question_import_diagram_crops"));
+        assertEquals("28", flyway.info().current().getVersion().getVersion());
+        assertEquals(28, versionedMigrationCount());
         assertEquals(1, jdbcTemplate.queryForObject(
             "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'PUBLIC' "
                 + "AND LOWER(TABLE_NAME) = 'mastery_diagnostic_evidence' AND LOWER(COLUMN_NAME) = 'mistake_type'",

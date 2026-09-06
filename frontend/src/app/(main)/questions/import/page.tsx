@@ -2,7 +2,6 @@
 
 import Box from "@mui/material/Box";
 import Link from "next/link";
-import Typography from "@mui/material/Typography";
 
 import QuestionImportReview from "@/components/questions/QuestionImportReview";
 

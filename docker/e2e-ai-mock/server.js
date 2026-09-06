@@ -13,6 +13,21 @@ const MARKING_SUGGESTION = JSON.stringify({
   missing_keywords: ["energy"],
   feedback: "Explain that water gains energy before it evaporates.",
 });
+const QUESTION_PAGE_ANALYSIS = JSON.stringify({
+  candidates: [
+    {
+      number: 1,
+      prompt: "1. Explain how water evaporates.",
+      modelAnswer: "Water gains heat energy and changes into water vapour.",
+      confidence: 96,
+      questionType: "OPEN_ENDED",
+      difficulty: "FOUNDATION",
+      tags: ["water", "evaporation"],
+      boundingBox: { x: 0, y: 0, width: 1, height: 1 },
+      warningMessage: "",
+    },
+  ],
+});
 
 function createChatCompletionResponse(content) {
   return JSON.stringify({
@@ -25,6 +40,9 @@ function isVisionRequest(body) {
 }
 
 function getMockResponseContent(body) {
+  if (body.includes("question_page_analysis")) {
+    return QUESTION_PAGE_ANALYSIS;
+  }
   return isVisionRequest(body) ? OCR_TRANSCRIPTION : MARKING_SUGGESTION;
 }
 

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { QuestionApiError, addQuestionToWorksheetDraft, checkTutorQuestionAnswer, createTutorQuestion, fetchTutorQuestion, fetchTutorQuestions, importQuestionImportCandidates, isQuestionInWorksheetDraft, parseQuestionBankPage, parseTutorQuestion, updateQuestionImportCandidate, updateTutorQuestion, uploadQuestionImport } from "./questions";
+import { QuestionApiError, addQuestionToWorksheetDraft, checkTutorQuestionAnswer, createTutorQuestion, fetchTutorQuestion, fetchTutorQuestions, importQuestionImportCandidates, isQuestionInWorksheetDraft, mergeQuestionImportCandidates, moveQuestionImportDiagramCrops, parseQuestionBankPage, parseTutorQuestion, rejectQuestionImportCandidate, restoreQuestionImportCandidate, splitQuestionImportCandidate, updateQuestionImportCandidate, updateTutorQuestion, uploadQuestionImport } from "./questions";
 
 const response = {
   items: [{
@@ -144,5 +144,48 @@ describe("question bank service", () => {
     expect(fetch).toHaveBeenNthCalledWith(2, "http://localhost:8083/api/learning/tutor/question-imports/12/candidates/31", expect.objectContaining({ method: "PUT" }));
     expect(fetch).toHaveBeenNthCalledWith(3, "http://localhost:8083/api/learning/tutor/question-imports/12/import", expect.objectContaining({ method: "POST", body: JSON.stringify({ candidateIds: [31] }) }));
     await expect(uploadQuestionImport([new File(["x"], "not-supported.gif", { type: "image/gif" })])).rejects.toMatchObject({ status: 400 });
+  });
+
+  it("keeps review workflow mutations batch-scoped and explicit", async () => {
+    const batch = { id: 12, status: "READY_FOR_REVIEW", originalFilename: "Question import", candidates: [{
+      id: 31, number: 1, status: "READY_FOR_REVIEW", confidence: 95, warningMessage: null, code: null,
+      syllabusTopicId: null, prompt: "Explain evaporation.", modelAnswer: "Gains heat.", totalMarks: 1,
+      questionType: "OPEN_ENDED", difficulty: "FOUNDATION", suggestedTags: "water", includeSourceImage: true,
+      source: { pageId: 22, filename: "scan.png", pageNumber: 1 }, diagramCrops: [],
+      suggestions: { prompt: "Explain evaporation.", modelAnswer: "Gains heat.", totalMarks: 1, questionType: "OPEN_ENDED", difficulty: "FOUNDATION", tags: "water" },
+      confidenceByField: { prompt: 95, modelAnswer: null, classification: 90, marks: null },
+      lineage: { parentCandidateId: null, supersededByCandidateId: null, rejectionReason: null, isRejected: false },
+      duplicateWarnings: [{
+        target: { kind: "QUESTION_BANK", candidateId: null, questionId: 77, label: "Question Bank item SCI-WATER-77" },
+        signals: [{
+          code: "NORMALIZED_PROMPT_SIMILARITY", strength: 100,
+          detail: "The normalized question text matches exactly.",
+        }, {
+          code: "MATCHING_MARKS_TYPE_TOPIC", strength: 70,
+          detail: "Marks, reviewed question type, and syllabus topic all match.",
+        }],
+        strongestSignal: 100,
+      }],
+    }, {
+      id: 32, number: 2, status: "READY_FOR_REVIEW", confidence: 95, warningMessage: null, code: null,
+      syllabusTopicId: null, prompt: "Explain evaporation.", modelAnswer: "Gains heat.", totalMarks: 1,
+      questionType: "OPEN_ENDED", difficulty: "FOUNDATION", suggestedTags: "water", includeSourceImage: true,
+      source: { pageId: 22, filename: "scan.png", pageNumber: 1 }, diagramCrops: [],
+    }] };
+    vi.mocked(fetch).mockImplementation(() => Promise.resolve(new Response(JSON.stringify(batch), { status: 200 })));
+
+    await rejectQuestionImportCandidate(12, 31, "Duplicate scan");
+    await restoreQuestionImportCandidate(12, 31);
+    await moveQuestionImportDiagramCrops(12, [71], 32);
+    await mergeQuestionImportCandidates(12, 31, [31, 32]);
+    await splitQuestionImportCandidate(12, 31, [
+      { prompt: "Part A", modelAnswer: "A" }, { prompt: "Part B", modelAnswer: "B" },
+    ]);
+
+    expect(fetch).toHaveBeenNthCalledWith(1, "http://localhost:8083/api/learning/tutor/question-imports/12/candidates/31/reject", expect.objectContaining({ method: "POST", body: JSON.stringify({ reason: "Duplicate scan" }) }));
+    expect(fetch).toHaveBeenNthCalledWith(2, "http://localhost:8083/api/learning/tutor/question-imports/12/candidates/31/restore", expect.objectContaining({ method: "POST" }));
+    expect(fetch).toHaveBeenNthCalledWith(3, "http://localhost:8083/api/learning/tutor/question-imports/12/diagram-crops/move", expect.objectContaining({ body: JSON.stringify({ cropIds: [71], targetCandidateId: 32 }) }));
+    expect(fetch).toHaveBeenNthCalledWith(4, "http://localhost:8083/api/learning/tutor/question-imports/12/candidates/merge", expect.objectContaining({ body: JSON.stringify({ targetCandidateId: 31, candidateIds: [31, 32] }) }));
+    expect(fetch).toHaveBeenNthCalledWith(5, "http://localhost:8083/api/learning/tutor/question-imports/12/candidates/31/split", expect.objectContaining({ body: JSON.stringify({ drafts: [{ prompt: "Part A", modelAnswer: "A" }, { prompt: "Part B", modelAnswer: "B" }] }) }));
   });
 });

@@ -113,6 +113,18 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       # Must be the same backend-only value supplied to grading-service.
       LEARNING_MARKING_SYNC_KEY: ${LEARNING_MARKING_SYNC_KEY:?LEARNING_MARKING_SYNC_KEY is required}
+      # OCR provider settings are deliberately passed only to the learning
+      # backend. No AI credential is supplied to the frontend container.
+      AI_VISION_ENABLED: ${AI_VISION_ENABLED:-true}
+      AI_VISION_URL: ${AI_VISION_URL:-${AI_ENGINE_URL:?AI_ENGINE_URL is required}}
+      AI_VISION_MODEL: ${AI_VISION_MODEL:?AI_VISION_MODEL is required}
+      AI_VISION_API_KEY: ${AI_VISION_API_KEY:-${AI_ENGINE_API_KEY:?AI_ENGINE_API_KEY is required}}
+      AI_VISION_TIMEOUT_MS: ${AI_VISION_TIMEOUT_MS:-30000}
+      AI_VISION_MAX_REQUESTS_PER_MINUTE: ${AI_VISION_MAX_REQUESTS_PER_MINUTE:-20}
+      AI_VISION_MAX_ATTEMPTS: ${AI_VISION_MAX_ATTEMPTS:-3}
+      AI_VISION_RETRY_DELAY_MS: ${AI_VISION_RETRY_DELAY_MS:-60000}
+      AI_VISION_STALE_RUN_MS: ${AI_VISION_STALE_RUN_MS:-180000}
+      AI_VISION_WORKER_DELAY_MS: ${AI_VISION_WORKER_DELAY_MS:-5000}
       # Auth-service owns login identities and Student roles. Keep this private
       # Compose address rather than calling a browser-published port.
       AUTH_SERVICE_URL: ${AUTH_SERVICE_URL:-http://auth-service:8081}
