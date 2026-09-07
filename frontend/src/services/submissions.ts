@@ -1,6 +1,7 @@
 export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 const ACCEPTED_TYPES = new Set(["application/pdf", "image/jpeg", "image/png"]);
-const gradingUrl = process.env.NEXT_PUBLIC_GRADING_API_URL || "http://localhost:8082";
+const gradingUrl =
+  process.env.NEXT_PUBLIC_GRADING_API_URL || "http://localhost:8082";
 
 export type UploadPage = {
   id: string;
@@ -102,7 +103,9 @@ export type SubmissionDocument = {
 
 function parseSubmissionDocument(value: unknown): SubmissionDocument {
   if (!value || typeof value !== "object") {
-    throw new SubmissionApiError("The submission document response is invalid.");
+    throw new SubmissionApiError(
+      "The submission document response is invalid.",
+    );
   }
 
   const raw = value as Record<string, unknown>;
@@ -126,13 +129,17 @@ function parseSubmissionDocument(value: unknown): SubmissionDocument {
     !Array.isArray(raw.pages);
 
   if (hasInvalidDocumentDetails) {
-    throw new SubmissionApiError("The submission document response is invalid.");
+    throw new SubmissionApiError(
+      "The submission document response is invalid.",
+    );
   }
 
   const pageIds = new Set<number>();
   const pages = (raw.pages as unknown[]).map((value): OcrPage => {
     if (!value || typeof value !== "object") {
-      throw new SubmissionApiError("The submission document response is invalid.");
+      throw new SubmissionApiError(
+        "The submission document response is invalid.",
+      );
     }
 
     const page = value as Record<string, unknown>;
@@ -149,7 +156,9 @@ function parseSubmissionDocument(value: unknown): SubmissionDocument {
         page.status !== "UNREADABLE");
 
     if (hasInvalidPageDetails) {
-      throw new SubmissionApiError("The submission document response is invalid.");
+      throw new SubmissionApiError(
+        "The submission document response is invalid.",
+      );
     }
 
     pageIds.add(page.id as number);
@@ -232,7 +241,9 @@ export async function createOcrDocument(input: {
   return parseSubmissionDocument(await response.json());
 }
 
-export async function fetchSubmissionDocument(documentId: number): Promise<SubmissionDocument> {
+export async function fetchSubmissionDocument(
+  documentId: number,
+): Promise<SubmissionDocument> {
   if (!Number.isSafeInteger(documentId) || documentId <= 0) {
     throw new SubmissionApiError("The submission ID is invalid.", 400);
   }
@@ -305,7 +316,10 @@ export type SubmissionForTutorReview = {
   submissionIds: number[];
   status: "PENDING_REVIEW";
 };
-export async function submitOcrForTutorReview(documentId: number, answers: OcrAnswerMapping[]): Promise<SubmissionForTutorReview> {
+export async function submitOcrForTutorReview(
+  documentId: number,
+  answers: OcrAnswerMapping[],
+): Promise<SubmissionForTutorReview> {
   const hasInvalidAnswer = answers.some(
     (answer) =>
       !Number.isSafeInteger(answer.extractionId) ||
@@ -346,7 +360,7 @@ export async function submitOcrForTutorReview(documentId: number, answers: OcrAn
     );
   }
 
-  const body = await response.json() as Record<string, unknown>;
+  const body = (await response.json()) as Record<string, unknown>;
   const hasInvalidResponse =
     !Number.isSafeInteger(body.submissionDocumentId) ||
     body.submissionDocumentId !== documentId ||
@@ -409,11 +423,15 @@ function parseManualAnswerDraft(value: unknown): ManualAnswerDraft {
       }
 
       const answer = item as Record<string, unknown>;
-      return !validId(answer.questionBankId) || typeof answer.answer !== "string";
+      return (
+        !validId(answer.questionBankId) || typeof answer.answer !== "string"
+      );
     });
 
   const hasInvalidResponse =
-    !(body.submissionDocumentId === null || validId(body.submissionDocumentId)) ||
+    !(
+      body.submissionDocumentId === null || validId(body.submissionDocumentId)
+    ) ||
     !Array.isArray(body.answers) ||
     hasInvalidAnswer ||
     body.inputMethod !== "MANUAL" ||
@@ -493,7 +511,8 @@ export async function saveManualAnswers(
     !Array.isArray(input.answers) ||
     input.answers.length === 0 ||
     input.answers.some(
-      (entry) => !validId(entry.questionBankId) || typeof entry.answer !== "string",
+      (entry) =>
+        !validId(entry.questionBankId) || typeof entry.answer !== "string",
     );
   const hasDuplicateQuestion =
     Array.isArray(input.answers) &&
@@ -527,7 +546,7 @@ export async function saveManualAnswers(
     );
   }
 
-  const body = await response.json() as Record<string, unknown>;
+  const body = (await response.json()) as Record<string, unknown>;
   const hasInvalidResponse =
     !validId(body.submissionDocumentId) ||
     !Array.isArray(body.submissionIds) ||
@@ -549,10 +568,7 @@ export async function saveManualAnswers(
 
 export type MarkingReviewStatus = "PENDING_REVIEW" | "FLAGGED" | "APPROVED";
 export type DiagnosticCategory =
-  | "CONCEPT"
-  | "KEYWORD"
-  | "EXPRESSION"
-  | "APPLICATION";
+  "CONCEPT" | "KEYWORD" | "EXPRESSION" | "APPLICATION";
 export type MistakeType =
   | "CONCEPT_MISUNDERSTANDING"
   | "CALCULATION_ERROR"
@@ -639,10 +655,7 @@ export type ManualResultsResponse = {
 
 /** A Student-visible marking result. Final marks and feedback are supplied only after Tutor approval. */
 export type StudentWorksheetResultOutcome =
-  | "CORRECT"
-  | "PARTIAL"
-  | "INCORRECT"
-  | "REVIEW_NEEDED";
+  "CORRECT" | "PARTIAL" | "INCORRECT" | "REVIEW_NEEDED";
 export type StudentWorksheetResult = {
   submissionId: number;
   worksheetQuestionId: number;
@@ -884,39 +897,41 @@ export function parseManualResultsResponse(
   }
 
   const seenStudentIds = new Set<number>();
-  const students = response.students.map((value): ManualResultStudentProgress => {
-    const progress = getRecord(value);
-    const hasInvalidProgress =
-      !progress ||
-      !isPositiveSafeInteger(progress.studentId) ||
-      !Number.isSafeInteger(progress.completedQuestions) ||
-      (progress.completedQuestions as number) < 0 ||
-      !Array.isArray(progress.results) ||
-      seenStudentIds.has(progress.studentId as number);
+  const students = response.students.map(
+    (value): ManualResultStudentProgress => {
+      const progress = getRecord(value);
+      const hasInvalidProgress =
+        !progress ||
+        !isPositiveSafeInteger(progress.studentId) ||
+        !Number.isSafeInteger(progress.completedQuestions) ||
+        (progress.completedQuestions as number) < 0 ||
+        !Array.isArray(progress.results) ||
+        seenStudentIds.has(progress.studentId as number);
 
-    if (hasInvalidProgress) {
-      throw new SubmissionApiError("The manual result response is invalid.");
-    }
+      if (hasInvalidProgress) {
+        throw new SubmissionApiError("The manual result response is invalid.");
+      }
 
-    const studentId = progress.studentId as number;
-    const completedQuestions = progress.completedQuestions as number;
-    seenStudentIds.add(studentId);
+      const studentId = progress.studentId as number;
+      const completedQuestions = progress.completedQuestions as number;
+      seenStudentIds.add(studentId);
 
-    const results = (progress.results as unknown[]).map(parseMarkingReview);
-    const hasInvalidResults =
-      results.length !== completedQuestions ||
-      results.some(
-        (result) =>
-          result.studentId !== studentId ||
-          result.worksheetId !== response.worksheetId,
-      );
+      const results = (progress.results as unknown[]).map(parseMarkingReview);
+      const hasInvalidResults =
+        results.length !== completedQuestions ||
+        results.some(
+          (result) =>
+            result.studentId !== studentId ||
+            result.worksheetId !== response.worksheetId,
+        );
 
-    if (hasInvalidResults) {
-      throw new SubmissionApiError("The manual result response is invalid.");
-    }
+      if (hasInvalidResults) {
+        throw new SubmissionApiError("The manual result response is invalid.");
+      }
 
-    return { studentId, completedQuestions, results };
-  });
+      return { studentId, completedQuestions, results };
+    },
+  );
 
   return { worksheetId: response.worksheetId, students };
 }
@@ -928,7 +943,9 @@ function parseStudentWorksheetResult(
   const result = getRecord(value);
 
   if (!result) {
-    throw new SubmissionApiError("The student worksheet results response is invalid.");
+    throw new SubmissionApiError(
+      "The student worksheet results response is invalid.",
+    );
   }
 
   const resultIds = [
@@ -953,7 +970,9 @@ function parseStudentWorksheetResult(
     (result.reviewedAt !== null && typeof result.reviewedAt !== "string");
 
   if (hasInvalidResult) {
-    throw new SubmissionApiError("The student worksheet results response is invalid.");
+    throw new SubmissionApiError(
+      "The student worksheet results response is invalid.",
+    );
   }
 
   const isApproved = result.reviewStatus === "APPROVED";
@@ -966,7 +985,9 @@ function parseStudentWorksheetResult(
         result.modelAnswer !== null));
 
   if (hasLeakedOrMissingApprovalData) {
-    throw new SubmissionApiError("The student worksheet results response is invalid.");
+    throw new SubmissionApiError(
+      "The student worksheet results response is invalid.",
+    );
   }
 
   const submissionId = result.submissionId as number;
@@ -1114,10 +1135,13 @@ async function requestMarkingReview(
   path: string,
   init?: RequestInit,
 ): Promise<MarkingReview> {
-  const response = await fetch(`${gradingUrl}/api/grading/tutor/reviews${path}`, {
-    ...init,
-    headers: getJsonRequestHeaders(init),
-  });
+  const response = await fetch(
+    `${gradingUrl}/api/grading/tutor/reviews${path}`,
+    {
+      ...init,
+      headers: getJsonRequestHeaders(init),
+    },
+  );
 
   if (!response.ok) {
     const body = await getErrorResponse(response);
@@ -1302,7 +1326,9 @@ export async function fetchStudentWorksheetResults(
   return parseStudentWorksheetResultsResponse(await response.json());
 }
 
-function createStudentMistakeQuery(filters: StudentMistakeFilters): URLSearchParams {
+function createStudentMistakeQuery(
+  filters: StudentMistakeFilters,
+): URLSearchParams {
   const query = new URLSearchParams();
 
   for (const [name, value] of Object.entries(filters)) {

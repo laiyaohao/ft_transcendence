@@ -30,14 +30,23 @@ const classes: TutorClass[] = [
 describe("ClassList", () => {
   it("shows a loading skeleton before rendering class cards", async () => {
     let resolve!: (value: TutorClass[]) => void;
-    const loadClasses = vi.fn(() => new Promise<TutorClass[]>((complete) => { resolve = complete; }));
+    const loadClasses = vi.fn(
+      () =>
+        new Promise<TutorClass[]>((complete) => {
+          resolve = complete;
+        }),
+    );
 
     render(<ClassList loadClasses={loadClasses} />);
 
     expect(screen.getByTestId("class-list-skeleton")).toBeVisible();
     resolve(classes);
-    expect(await screen.findByRole("link", { name: "Open Primary 5 Science" })).toHaveAttribute("href", "/classes/12");
-    expect(screen.getByRole("link", { name: "Open Primary 6 Maths" })).toHaveAttribute("href", "/classes/20");
+    expect(
+      await screen.findByRole("link", { name: "Open Primary 5 Science" }),
+    ).toHaveAttribute("href", "/classes/12");
+    expect(
+      screen.getByRole("link", { name: "Open Primary 6 Maths" }),
+    ).toHaveAttribute("href", "/classes/20");
   });
 
   it("renders supplied classes, schedules, and a responsive card grid", async () => {
@@ -46,7 +55,9 @@ describe("ClassList", () => {
     expect(await screen.findByText("Primary 5 Science")).toBeVisible();
     expect(screen.getByText("Monday 16:00–17:30")).toBeVisible();
     expect(screen.getByText("Schedule to be confirmed")).toBeVisible();
-    expect(screen.getByTestId("class-grid")).toHaveStyle({ gridTemplateColumns: "repeat(auto-fill, minmax(310px, 1fr))" });
+    expect(screen.getByTestId("class-grid")).toHaveStyle({
+      gridTemplateColumns: "repeat(auto-fill, minmax(310px, 1fr))",
+    });
   });
 
   it("filters by status and searches class name, subject, or level", async () => {
@@ -65,14 +76,23 @@ describe("ClassList", () => {
   });
 
   it("gives a retryable error for a failed or invalid class response", async () => {
-    const loadClasses = vi.fn()
-      .mockRejectedValueOnce(new Error("The learning service returned an invalid class list. Please try again."))
+    const loadClasses = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new Error(
+          "The learning service returned an invalid class list. Please try again.",
+        ),
+      )
       .mockResolvedValueOnce(classes);
     const user = userEvent.setup();
     render(<ClassList loadClasses={loadClasses} />);
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("invalid class list");
-    await user.click(screen.getByRole("button", { name: "Retry loading classes" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "invalid class list",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Retry loading classes" }),
+    );
     expect(await screen.findByText("Primary 5 Science")).toBeVisible();
     expect(loadClasses).toHaveBeenCalledTimes(2);
   });
@@ -82,14 +102,20 @@ describe("ClassList", () => {
     const refresh = vi.fn().mockResolvedValue([]);
     const { rerender } = render(<ClassList loadClasses={refresh} />);
 
-    expect(await screen.findByRole("heading", { name: "No classes yet" })).toBeVisible();
+    expect(
+      await screen.findByRole("heading", { name: "No classes yet" }),
+    ).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Refresh classes" }));
     expect(refresh).toHaveBeenCalledTimes(2);
 
     rerender(<ClassList loadClasses={async () => classes} />);
     await screen.findByText("Primary 5 Science");
     await user.type(screen.getByLabelText("Search classes"), "history");
-    expect(await screen.findByRole("heading", { name: "No classes match these filters" })).toBeVisible();
+    expect(
+      await screen.findByRole("heading", {
+        name: "No classes match these filters",
+      }),
+    ).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Clear filters" }));
     expect(await screen.findByText("Primary 5 Science")).toBeVisible();
   });
@@ -97,7 +123,9 @@ describe("ClassList", () => {
   it("keeps each card link available to keyboard and assistive technology", async () => {
     render(<ClassList loadClasses={async () => classes} />);
 
-    const card = await screen.findByRole("link", { name: "Open Primary 5 Science" });
+    const card = await screen.findByRole("link", {
+      name: "Open Primary 5 Science",
+    });
     expect(card).not.toHaveAttribute("tabindex", "-1");
     expect(within(card).getByText("Open class summary")).toBeVisible();
   });

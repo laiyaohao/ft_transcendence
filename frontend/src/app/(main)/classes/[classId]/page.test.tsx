@@ -8,7 +8,9 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@/components/classes/ClassDetail", () => ({
-  default: ({ classId }: { classId: number }) => <output data-testid="class-detail-route">{classId}</output>,
+  default: ({ classId }: { classId: number }) => (
+    <output data-testid="class-detail-route">{classId}</output>
+  ),
 }));
 
 import ClassDetailPage from "./page";

@@ -36,7 +36,11 @@ function LoadingAlerts() {
   return (
     <Box aria-label="Loading alerts" sx={{ display: "grid", gap: 1.25 }}>
       {[0, 1, 2].map((index) => (
-        <Card key={index} variant="outlined" sx={{ p: 2, bgcolor: "#FFFDFA", borderColor: "#EBE4D9" }}>
+        <Card
+          key={index}
+          variant="outlined"
+          sx={{ p: 2, bgcolor: "#FFFDFA", borderColor: "#EBE4D9" }}
+        >
           <Skeleton height={26} width="40%" />
           <Skeleton height={44} />
         </Card>
@@ -47,9 +51,27 @@ function LoadingAlerts() {
 
 function EmptyAlerts() {
   return (
-    <Card component="section" variant="outlined" sx={{ textAlign: "center", p: 4, minHeight: 280, display: "grid", placeItems: "center", bgcolor: "#FFFDFA", border: "1px dashed #DCCFBE" }}>
+    <Card
+      component="section"
+      variant="outlined"
+      sx={{
+        textAlign: "center",
+        p: 4,
+        minHeight: 280,
+        display: "grid",
+        placeItems: "center",
+        bgcolor: "#FFFDFA",
+        border: "1px dashed #DCCFBE",
+      }}
+    >
       <Box>
-        <Typography component="h2" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 23 }}>
+        <Typography
+          component="h2"
+          sx={{
+            fontFamily: "'Playfair Display', Georgia, serif",
+            fontSize: 23,
+          }}
+        >
           No active alerts
         </Typography>
         <Typography sx={{ color: "#8B837A", mt: 0.75 }}>
@@ -86,7 +108,8 @@ export default function AlertList({
         if (isCurrent) setAlerts(loadedAlerts);
       },
       (reason: unknown) => {
-        if (isCurrent) setError(errorMessage(reason, "Alerts could not be loaded."));
+        if (isCurrent)
+          setError(errorMessage(reason, "Alerts could not be loaded."));
       },
     );
 
@@ -95,12 +118,17 @@ export default function AlertList({
     };
   }, [loadAlerts]);
 
-  const updateAlert = async (alert: TutorAlert, action: (id: number) => Promise<TutorAlert>) => {
+  const updateAlert = async (
+    alert: TutorAlert,
+    action: (id: number) => Promise<TutorAlert>,
+  ) => {
     setBusyAlertId(alert.id);
     setError(null);
     try {
       const updatedAlert = await action(alert.id);
-      setAlerts((currentAlerts) => (currentAlerts ?? []).filter(({ id }) => id !== updatedAlert.id));
+      setAlerts((currentAlerts) =>
+        (currentAlerts ?? []).filter(({ id }) => id !== updatedAlert.id),
+      );
     } catch (reason) {
       setError(errorMessage(reason, "Alert could not be updated."));
     } finally {
@@ -111,12 +139,38 @@ export default function AlertList({
   if (!alerts && !error) return <LoadingAlerts />;
   if (error) {
     return (
-      <Card component="section" role="alert" variant="outlined" sx={{ p: 3, maxWidth: 560, bgcolor: "#FFFDFA", borderColor: "#EBE4D9", borderLeft: "3px solid #B4573F" }}>
-        <Typography component="h2" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 21 }}>
+      <Card
+        component="section"
+        role="alert"
+        variant="outlined"
+        sx={{
+          p: 3,
+          maxWidth: 560,
+          bgcolor: "#FFFDFA",
+          borderColor: "#EBE4D9",
+          borderLeft: "3px solid #B4573F",
+        }}
+      >
+        <Typography
+          component="h2"
+          sx={{
+            fontFamily: "'Playfair Display', Georgia, serif",
+            fontSize: 21,
+          }}
+        >
           Alerts could not be loaded
         </Typography>
         <Typography sx={{ mt: 0.75, color: "#5A544C" }}>{error}</Typography>
-        <Button onClick={() => void load()} variant="outlined" sx={{ mt: 1.5, textTransform: "none", borderColor: "#E4DCD0", color: "#2A2622" }}>
+        <Button
+          onClick={() => void load()}
+          variant="outlined"
+          sx={{
+            mt: 1.5,
+            textTransform: "none",
+            borderColor: "#E4DCD0",
+            color: "#2A2622",
+          }}
+        >
           Try again
         </Button>
       </Card>
@@ -130,29 +184,94 @@ export default function AlertList({
         const presentation = severityPresentation[alert.severity];
 
         return (
-          <Card key={alert.id} component="article" variant="outlined" sx={{ p: { xs: 2, sm: 2.25 }, bgcolor: "#FFFDFA", borderColor: "#EBE4D9", borderRadius: "12px", boxShadow: "none" }}>
-            <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "flex-start", justifyContent: "space-between", gap: 1 }}>
+          <Card
+            key={alert.id}
+            component="article"
+            variant="outlined"
+            sx={{
+              p: { xs: 2, sm: 2.25 },
+              bgcolor: "#FFFDFA",
+              borderColor: "#EBE4D9",
+              borderRadius: "12px",
+              boxShadow: "none",
+            }}
+          >
+            <Box
+              sx={{
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "flex-start",
+                justifyContent: "space-between",
+                gap: 1,
+              }}
+            >
               <Box sx={{ minWidth: 0, flex: "1 1 280px" }}>
-                <Typography component="h2" sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 21 }}>
+                <Typography
+                  component="h2"
+                  sx={{
+                    fontFamily: "'Playfair Display', Georgia, serif",
+                    fontSize: 21,
+                  }}
+                >
                   {alert.title}
                 </Typography>
-                <Typography sx={{ color: "#6F675E", fontSize: 13.5, mt: 0.5, lineHeight: 1.55 }}>
+                <Typography
+                  sx={{
+                    color: "#6F675E",
+                    fontSize: 13.5,
+                    mt: 0.5,
+                    lineHeight: 1.55,
+                  }}
+                >
                   {alert.message}
                 </Typography>
                 <Typography sx={{ color: "#8B837A", fontSize: 12, mt: 0.9 }}>
                   Student:{" "}
-                  <Link href={`/students/${alert.studentId}`} style={{ color: "inherit" }}>
+                  <Link
+                    href={`/students/${alert.studentId}`}
+                    style={{ color: "inherit" }}
+                  >
                     {alert.studentName}
                   </Link>
                 </Typography>
               </Box>
-              <Chip label={presentation.label} size="small" sx={{ bgcolor: presentation.bg, color: presentation.color, fontWeight: 700, fontSize: 10, letterSpacing: ".04em" }} />
+              <Chip
+                label={presentation.label}
+                size="small"
+                sx={{
+                  bgcolor: presentation.bg,
+                  color: presentation.color,
+                  fontWeight: 700,
+                  fontSize: 10,
+                  letterSpacing: ".04em",
+                }}
+              />
             </Box>
             <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1, mt: 1.5 }}>
-              <Button onClick={() => void updateAlert(alert, resolve)} disabled={busyAlertId !== null} sx={{ minHeight: 36, textTransform: "none", bgcolor: "#9E3A24", color: "#FFFDFA", "&:hover": { bgcolor: "#8A3120" } }}>
+              <Button
+                onClick={() => void updateAlert(alert, resolve)}
+                disabled={busyAlertId !== null}
+                sx={{
+                  minHeight: 36,
+                  textTransform: "none",
+                  bgcolor: "#9E3A24",
+                  color: "#FFFDFA",
+                  "&:hover": { bgcolor: "#8A3120" },
+                }}
+              >
                 Resolve alert
               </Button>
-              <Button onClick={() => void updateAlert(alert, dismiss)} disabled={busyAlertId !== null} variant="outlined" sx={{ minHeight: 36, textTransform: "none", borderColor: "#E4DCD0", color: "#5A544C" }}>
+              <Button
+                onClick={() => void updateAlert(alert, dismiss)}
+                disabled={busyAlertId !== null}
+                variant="outlined"
+                sx={{
+                  minHeight: 36,
+                  textTransform: "none",
+                  borderColor: "#E4DCD0",
+                  color: "#5A544C",
+                }}
+              >
                 Dismiss alert
               </Button>
             </Box>

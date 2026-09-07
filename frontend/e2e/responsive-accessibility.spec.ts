@@ -7,15 +7,25 @@ const viewports = [
 ];
 
 for (const viewport of viewports) {
-  test(`login is usable without horizontal overflow on ${viewport.name}`, async ({ page }) => {
+  test(`login is usable without horizontal overflow on ${viewport.name}`, async ({
+    page,
+  }) => {
     await page.setViewportSize(viewport);
     await page.goto("/login");
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth,
+        ),
+      )
+      .toBe(true);
   });
 }
 
-test("login labels, focus order, and visible focus are keyboard accessible", async ({ page }) => {
+test("login labels, focus order, and visible focus are keyboard accessible", async ({
+  page,
+}) => {
   await page.goto("/login");
   await expect(page.getByLabel(/email/i)).toBeVisible();
   await expect(page.getByLabel(/password/i)).toBeVisible();
@@ -25,7 +35,9 @@ test("login labels, focus order, and visible focus are keyboard accessible", asy
   await expect(page.locator(":focus")).toBeVisible();
 });
 
-test("authenticated route redirects without a session instead of exposing protected content", async ({ page }) => {
+test("authenticated route redirects without a session instead of exposing protected content", async ({
+  page,
+}) => {
   await page.goto("/worksheets");
   await expect(page).toHaveURL(/\/login/);
 });

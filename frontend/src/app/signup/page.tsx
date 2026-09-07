@@ -1,5 +1,5 @@
-import SignUp from './signup';
-import StyledBox from '@/components/styled-box';
+import SignUp from "./signup";
+import StyledBox from "@/components/styled-box";
 
 export default function Page() {
   return (

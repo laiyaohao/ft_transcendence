@@ -1,11 +1,11 @@
-import { render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { createTheme } from '@mui/material/styles';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { createTheme } from "@mui/material/styles";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import ViewportContext from '@/context/viewport-context';
+import ViewportContext from "@/context/viewport-context";
 
-import Topbar from './topbar';
+import Topbar from "./topbar";
 
 const testState = vi.hoisted(() => ({
   push: vi.fn(),
@@ -14,12 +14,12 @@ const testState = vi.hoisted(() => ({
   clearAuthSession: vi.fn(),
 }));
 
-vi.mock('next/navigation', () => ({
+vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: testState.push, replace: testState.replace }),
 }));
 
-vi.mock('@/lib/auth', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/auth')>();
+vi.mock("@/lib/auth", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/auth")>();
   return {
     ...actual,
     getBrowserSession: testState.getBrowserSession,
@@ -46,49 +46,59 @@ function renderTopbar() {
   return { handleToggleHeaderMenu };
 }
 
-describe('Topbar', () => {
+describe("Topbar", () => {
   beforeEach(() => {
     testState.push.mockReset();
     testState.replace.mockReset();
     testState.getBrowserSession.mockReset();
     testState.clearAuthSession.mockReset();
     testState.getBrowserSession.mockReturnValue({
-      token: 'token',
-      email: 'tutor@example.com',
-      role: 'TUTOR',
+      token: "token",
+      email: "tutor@example.com",
+      role: "TUTOR",
       expiresAt: Date.now() + 60_000,
     });
   });
 
-  it('uses the light tutor shell without a color-mode control', () => {
+  it("uses the light tutor shell without a color-mode control", () => {
     renderTopbar();
 
-    expect(screen.getByRole('link', { name: 'Skip to content' })).toHaveAttribute('href', '#main-content');
-    expect(screen.queryByText('Color mode')).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Skip to content" }),
+    ).toHaveAttribute("href", "#main-content");
+    expect(screen.queryByText("Color mode")).not.toBeInTheDocument();
   });
 
-  it('opens the account menu by keyboard and displays the signed-in identity', async () => {
+  it("opens the account menu by keyboard and displays the signed-in identity", async () => {
     const user = userEvent.setup();
     renderTopbar();
-    await waitFor(() => expect(testState.getBrowserSession).toHaveBeenCalledOnce());
+    await waitFor(() =>
+      expect(testState.getBrowserSession).toHaveBeenCalledOnce(),
+    );
 
-    const accountButton = screen.getByRole('button', { name: 'Open account menu' });
+    const accountButton = screen.getByRole("button", {
+      name: "Open account menu",
+    });
     accountButton.focus();
-    await user.keyboard('{Enter}');
+    await user.keyboard("{Enter}");
 
-    expect(await screen.findByRole('menu', { name: 'Account options' })).toBeVisible();
-    expect(screen.getByText('tutor@example.com')).toBeVisible();
-    expect(screen.queryByRole('menuitem', { name: 'Profile' })).not.toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: 'Logout' })).toBeVisible();
+    expect(
+      await screen.findByRole("menu", { name: "Account options" }),
+    ).toBeVisible();
+    expect(screen.getByText("tutor@example.com")).toBeVisible();
+    expect(
+      screen.queryByRole("menuitem", { name: "Profile" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Logout" })).toBeVisible();
   });
 
-  it('clears the browser session and redirects when Logout is selected', async () => {
+  it("clears the browser session and redirects when Logout is selected", async () => {
     const user = userEvent.setup();
     renderTopbar();
-    await user.click(screen.getByRole('button', { name: 'Open account menu' }));
-    await user.click(await screen.findByRole('menuitem', { name: 'Logout' }));
+    await user.click(screen.getByRole("button", { name: "Open account menu" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Logout" }));
 
     expect(testState.clearAuthSession).toHaveBeenCalledOnce();
-    expect(testState.replace).toHaveBeenCalledWith('/login');
+    expect(testState.replace).toHaveBeenCalledWith("/login");
   });
 });

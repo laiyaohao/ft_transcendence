@@ -126,7 +126,10 @@ export interface TutorStudentProfile {
  * The student endpoint deliberately uses the same factual profile shape as the
  * tutor endpoint, but never exposes tutor-only alerts, reports, or notes.
  */
-export interface StudentSelfProfile extends Omit<TutorStudentProfile, "tutorOnly"> {
+export interface StudentSelfProfile extends Omit<
+  TutorStudentProfile,
+  "tutorOnly"
+> {
   tutorOnly: null;
 }
 
@@ -146,7 +149,11 @@ export class StudentApiError extends Error {
   readonly status: number;
   readonly fields: Record<string, string>;
 
-  constructor(message: string, status: number, fields: Record<string, string> = {}) {
+  constructor(
+    message: string,
+    status: number,
+    fields: Record<string, string> = {},
+  ) {
     super(message);
     this.name = "StudentApiError";
     this.status = status;
@@ -154,7 +161,8 @@ export class StudentApiError extends Error {
   }
 }
 
-const LEARNING_API_URL = process.env.NEXT_PUBLIC_LEARNING_API_URL || "http://localhost:8083";
+const LEARNING_API_URL =
+  process.env.NEXT_PUBLIC_LEARNING_API_URL || "http://localhost:8083";
 const STUDENT_LIST_PATH = "/api/learning/tutor/students";
 
 function isNonEmptyString(value: unknown): value is string {
@@ -182,7 +190,12 @@ function isNonNegativeInteger(value: unknown): value is number {
 }
 
 function isPercentage(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100;
+  return (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= 0 &&
+    value <= 100
+  );
 }
 
 function isOptionalPercentage(value: unknown): value is number | null {
@@ -190,196 +203,265 @@ function isOptionalPercentage(value: unknown): value is number | null {
 }
 
 function isMasteryStatus(value: unknown): value is MasteryStatus {
-  return value === "NOT_STARTED" || value === "MASTERED" || value === "IMPROVING"
-    || value === "PRACTISING" || value === "LEARNING" || value === "NEEDS_REVISION";
+  return (
+    value === "NOT_STARTED" ||
+    value === "MASTERED" ||
+    value === "IMPROVING" ||
+    value === "PRACTISING" ||
+    value === "LEARNING" ||
+    value === "NEEDS_REVISION"
+  );
 }
 
-function isOptionalMasteryStatus(value: unknown): value is MasteryStatus | null {
+function isOptionalMasteryStatus(
+  value: unknown,
+): value is MasteryStatus | null {
   return value === null || isMasteryStatus(value);
 }
 
-function isStudentClassMembership(value: unknown): value is StudentClassMembership {
+function isStudentClassMembership(
+  value: unknown,
+): value is StudentClassMembership {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
-  return isPositiveNumber(candidate.id)
-    && isNonEmptyString(candidate.className)
-    && isNonEmptyString(candidate.subject)
-    && isNonEmptyString(candidate.level);
+  return (
+    isPositiveNumber(candidate.id) &&
+    isNonEmptyString(candidate.className) &&
+    isNonEmptyString(candidate.subject) &&
+    isNonEmptyString(candidate.level)
+  );
 }
 
 function isTutorStudent(value: unknown): value is TutorStudent {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
-  return isPositiveNumber(candidate.id)
-    && isPositiveNumber(candidate.tutorId)
-    && isNonEmptyString(candidate.fullName)
-    && isOptionalPositiveNumber(candidate.loginUserId)
-    && Array.isArray(candidate.classes)
-    && candidate.classes.every(isStudentClassMembership)
-    && isDateTime(candidate.createdAt)
-    && isDateTime(candidate.updatedAt);
+  return (
+    isPositiveNumber(candidate.id) &&
+    isPositiveNumber(candidate.tutorId) &&
+    isNonEmptyString(candidate.fullName) &&
+    isOptionalPositiveNumber(candidate.loginUserId) &&
+    Array.isArray(candidate.classes) &&
+    candidate.classes.every(isStudentClassMembership) &&
+    isDateTime(candidate.createdAt) &&
+    isDateTime(candidate.updatedAt)
+  );
 }
 
-function isAvailableStudentAccount(value: unknown): value is AvailableStudentAccount {
+function isAvailableStudentAccount(
+  value: unknown,
+): value is AvailableStudentAccount {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
-  return isPositiveNumber(candidate.id)
-    && isNonEmptyString(candidate.fullName)
-    && isNonEmptyString(candidate.email)
-    && (candidate.level === null || isNonEmptyString(candidate.level));
+  return (
+    isPositiveNumber(candidate.id) &&
+    isNonEmptyString(candidate.fullName) &&
+    isNonEmptyString(candidate.email) &&
+    (candidate.level === null || isNonEmptyString(candidate.level))
+  );
 }
 
 function isStudentProfileClass(value: unknown): value is StudentProfileClass {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
-  return isPositiveNumber(candidate.id)
-    && isNonEmptyString(candidate.className)
-    && isNonEmptyString(candidate.subject)
-    && isNonEmptyString(candidate.level)
-    && (candidate.status === "ACTIVE" || candidate.status === "INACTIVE");
+  return (
+    isPositiveNumber(candidate.id) &&
+    isNonEmptyString(candidate.className) &&
+    isNonEmptyString(candidate.subject) &&
+    isNonEmptyString(candidate.level) &&
+    (candidate.status === "ACTIVE" || candidate.status === "INACTIVE")
+  );
 }
 
-function isStudentProfileMetrics(value: unknown): value is StudentProfileMetrics {
+function isStudentProfileMetrics(
+  value: unknown,
+): value is StudentProfileMetrics {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
-  return isOptionalPercentage(candidate.averageMastery)
-    && isNonNegativeInteger(candidate.topicCount)
-    && isNonNegativeInteger(candidate.totalAttempts)
-    && isOptionalDateTime(candidate.lastCalculatedAt);
+  return (
+    isOptionalPercentage(candidate.averageMastery) &&
+    isNonNegativeInteger(candidate.topicCount) &&
+    isNonNegativeInteger(candidate.totalAttempts) &&
+    isOptionalDateTime(candidate.lastCalculatedAt)
+  );
 }
 
 function isStudentProfileTopic(value: unknown): value is StudentProfileTopic {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
-  return isPositiveNumber(candidate.topicId)
-    && isNonEmptyString(candidate.topicName)
-    && isPercentage(candidate.score)
-    && isMasteryStatus(candidate.status);
+  return (
+    isPositiveNumber(candidate.topicId) &&
+    isNonEmptyString(candidate.topicName) &&
+    isPercentage(candidate.score) &&
+    isMasteryStatus(candidate.status)
+  );
 }
 
-function isStudentProfileMasteryTopic(value: unknown): value is StudentProfileMasteryTopic {
+function isStudentProfileMasteryTopic(
+  value: unknown,
+): value is StudentProfileMasteryTopic {
   if (!isStudentProfileTopic(value)) return false;
   const candidate = value as unknown as Record<string, unknown>;
-  return isNonEmptyString(candidate.topicCode)
-    && isNonNegativeInteger(candidate.attemptCount)
-    && isOptionalDateTime(candidate.calculatedAt);
+  return (
+    isNonEmptyString(candidate.topicCode) &&
+    isNonNegativeInteger(candidate.attemptCount) &&
+    isOptionalDateTime(candidate.calculatedAt)
+  );
 }
 
-function isStudentProfileHistoryItem(value: unknown): value is StudentProfileHistoryItem {
+function isStudentProfileHistoryItem(
+  value: unknown,
+): value is StudentProfileHistoryItem {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
-  return isPositiveNumber(candidate.topicId)
-    && isNonEmptyString(candidate.topicName)
-    && isOptionalPercentage(candidate.previousScore)
-    && isOptionalPercentage(candidate.newScore)
-    && isOptionalMasteryStatus(candidate.previousStatus)
-    && isOptionalMasteryStatus(candidate.newStatus)
-    && (candidate.reason === null || isNonEmptyString(candidate.reason))
-    && isOptionalDateTime(candidate.occurredAt);
+  return (
+    isPositiveNumber(candidate.topicId) &&
+    isNonEmptyString(candidate.topicName) &&
+    isOptionalPercentage(candidate.previousScore) &&
+    isOptionalPercentage(candidate.newScore) &&
+    isOptionalMasteryStatus(candidate.previousStatus) &&
+    isOptionalMasteryStatus(candidate.newStatus) &&
+    (candidate.reason === null || isNonEmptyString(candidate.reason)) &&
+    isOptionalDateTime(candidate.occurredAt)
+  );
 }
 
-function isStudentProfileWorksheet(value: unknown): value is StudentProfileWorksheet {
+function isStudentProfileWorksheet(
+  value: unknown,
+): value is StudentProfileWorksheet {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
-  return isPositiveNumber(candidate.worksheetId)
-    && isNonEmptyString(candidate.title)
-    && (candidate.assignmentType === "CLASS" || candidate.assignmentType === "STUDENT")
-    && isOptionalPositiveNumber(candidate.classId)
-    && isOptionalDateTime(candidate.assignedAt)
-    && isOptionalDateTime(candidate.dueAt);
+  return (
+    isPositiveNumber(candidate.worksheetId) &&
+    isNonEmptyString(candidate.title) &&
+    (candidate.assignmentType === "CLASS" ||
+      candidate.assignmentType === "STUDENT") &&
+    isOptionalPositiveNumber(candidate.classId) &&
+    isOptionalDateTime(candidate.assignedAt) &&
+    isOptionalDateTime(candidate.dueAt)
+  );
 }
 
 function isStudentProfileAlert(value: unknown): value is StudentProfileAlert {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
-  return isPositiveNumber(candidate.id)
-    && isNonEmptyString(candidate.type)
-    && isNonEmptyString(candidate.severity)
-    && isNonEmptyString(candidate.status)
-    && isNonEmptyString(candidate.title)
-    && isOptionalDateTime(candidate.createdAt);
+  return (
+    isPositiveNumber(candidate.id) &&
+    isNonEmptyString(candidate.type) &&
+    isNonEmptyString(candidate.severity) &&
+    isNonEmptyString(candidate.status) &&
+    isNonEmptyString(candidate.title) &&
+    isOptionalDateTime(candidate.createdAt)
+  );
 }
 
 function isStudentProfileReport(value: unknown): value is StudentProfileReport {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
-  return isPositiveNumber(candidate.id)
-    && isNonEmptyString(candidate.reportCode)
-    && isNonEmptyString(candidate.status)
-    && isOptionalDateTime(candidate.periodStart)
-    && isOptionalDateTime(candidate.periodEnd)
-    && isOptionalDateTime(candidate.generatedAt)
-    && isOptionalDateTime(candidate.finalizedAt);
+  return (
+    isPositiveNumber(candidate.id) &&
+    isNonEmptyString(candidate.reportCode) &&
+    isNonEmptyString(candidate.status) &&
+    isOptionalDateTime(candidate.periodStart) &&
+    isOptionalDateTime(candidate.periodEnd) &&
+    isOptionalDateTime(candidate.generatedAt) &&
+    isOptionalDateTime(candidate.finalizedAt)
+  );
 }
 
-function isTutorOnlyStudentProfile(value: unknown): value is TutorOnlyStudentProfile {
+function isTutorOnlyStudentProfile(
+  value: unknown,
+): value is TutorOnlyStudentProfile {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
-  return Array.isArray(candidate.activeAlerts)
-    && candidate.activeAlerts.every(isStudentProfileAlert)
-    && Array.isArray(candidate.reports)
-    && candidate.reports.every(isStudentProfileReport)
-    && isNonNegativeInteger(candidate.approvedWorksheetCount);
+  return (
+    Array.isArray(candidate.activeAlerts) &&
+    candidate.activeAlerts.every(isStudentProfileAlert) &&
+    Array.isArray(candidate.reports) &&
+    candidate.reports.every(isStudentProfileReport) &&
+    isNonNegativeInteger(candidate.approvedWorksheetCount)
+  );
 }
 
 function isTutorStudentProfile(value: unknown): value is TutorStudentProfile {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
   const learningProfile = candidate.learningProfile;
-  return isPositiveNumber(candidate.id)
-    && isNonEmptyString(candidate.fullName)
-    && Array.isArray(candidate.classes)
-    && candidate.classes.every(isStudentProfileClass)
-    && isStudentProfileMetrics(candidate.metrics)
-    && Array.isArray(candidate.mastery)
-    && candidate.mastery.every(isStudentProfileMasteryTopic)
-    && typeof learningProfile === "object" && learningProfile !== null
-    && Array.isArray((learningProfile as Record<string, unknown>).strengths)
-    && (learningProfile as Record<string, unknown>).strengths instanceof Array
-    && ((learningProfile as Record<string, unknown>).strengths as unknown[]).every(isStudentProfileTopic)
-    && Array.isArray((learningProfile as Record<string, unknown>).focusAreas)
-    && ((learningProfile as Record<string, unknown>).focusAreas as unknown[]).every(isStudentProfileTopic)
-    && Array.isArray(candidate.history)
-    && candidate.history.every(isStudentProfileHistoryItem)
-    && Array.isArray(candidate.worksheets)
-    && candidate.worksheets.every(isStudentProfileWorksheet)
-    && (candidate.tutorOnly === null || isTutorOnlyStudentProfile(candidate.tutorOnly));
+  return (
+    isPositiveNumber(candidate.id) &&
+    isNonEmptyString(candidate.fullName) &&
+    Array.isArray(candidate.classes) &&
+    candidate.classes.every(isStudentProfileClass) &&
+    isStudentProfileMetrics(candidate.metrics) &&
+    Array.isArray(candidate.mastery) &&
+    candidate.mastery.every(isStudentProfileMasteryTopic) &&
+    typeof learningProfile === "object" &&
+    learningProfile !== null &&
+    Array.isArray((learningProfile as Record<string, unknown>).strengths) &&
+    (learningProfile as Record<string, unknown>).strengths instanceof Array &&
+    ((learningProfile as Record<string, unknown>).strengths as unknown[]).every(
+      isStudentProfileTopic,
+    ) &&
+    Array.isArray((learningProfile as Record<string, unknown>).focusAreas) &&
+    (
+      (learningProfile as Record<string, unknown>).focusAreas as unknown[]
+    ).every(isStudentProfileTopic) &&
+    Array.isArray(candidate.history) &&
+    candidate.history.every(isStudentProfileHistoryItem) &&
+    Array.isArray(candidate.worksheets) &&
+    candidate.worksheets.every(isStudentProfileWorksheet) &&
+    (candidate.tutorOnly === null ||
+      isTutorOnlyStudentProfile(candidate.tutorOnly))
+  );
 }
 
 function isTutorNote(value: unknown): value is TutorNote {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
-  return isPositiveNumber(candidate.id)
-    && isPositiveNumber(candidate.studentId)
-    && isNonEmptyString(candidate.content)
-    && isDateTime(candidate.createdAt)
-    && isDateTime(candidate.updatedAt);
+  return (
+    isPositiveNumber(candidate.id) &&
+    isPositiveNumber(candidate.studentId) &&
+    isNonEmptyString(candidate.content) &&
+    isDateTime(candidate.createdAt) &&
+    isDateTime(candidate.updatedAt)
+  );
 }
 
 export function parseTutorStudent(payload: unknown): TutorStudent {
   if (!isTutorStudent(payload)) {
-    throw new Error("The learning service returned an invalid student. Please try again.");
+    throw new Error(
+      "The learning service returned an invalid student. Please try again.",
+    );
   }
   return payload;
 }
 
 export function parseTutorStudents(payload: unknown): TutorStudent[] {
   if (!Array.isArray(payload) || !payload.every(isTutorStudent)) {
-    throw new Error("The learning service returned an invalid student list. Please try again.");
+    throw new Error(
+      "The learning service returned an invalid student list. Please try again.",
+    );
   }
   return payload;
 }
 
-export function parseAvailableStudentAccounts(payload: unknown): AvailableStudentAccount[] {
+export function parseAvailableStudentAccounts(
+  payload: unknown,
+): AvailableStudentAccount[] {
   if (!Array.isArray(payload) || !payload.every(isAvailableStudentAccount)) {
-    throw new Error("The learning service returned an invalid Student account list. Please try again.");
+    throw new Error(
+      "The learning service returned an invalid Student account list. Please try again.",
+    );
   }
   return payload;
 }
 
-export function parseTutorStudentProfile(payload: unknown): TutorStudentProfile {
+export function parseTutorStudentProfile(
+  payload: unknown,
+): TutorStudentProfile {
   if (!isTutorStudentProfile(payload)) {
-    throw new Error("The learning service returned an invalid student profile. Please try again.");
+    throw new Error(
+      "The learning service returned an invalid student profile. Please try again.",
+    );
   }
   return payload;
 }
@@ -387,21 +469,27 @@ export function parseTutorStudentProfile(payload: unknown): TutorStudentProfile 
 export function parseStudentSelfProfile(payload: unknown): StudentSelfProfile {
   const profile = parseTutorStudentProfile(payload);
   if (profile.tutorOnly !== null) {
-    throw new Error("The learning service returned an invalid student profile. Please try again.");
+    throw new Error(
+      "The learning service returned an invalid student profile. Please try again.",
+    );
   }
   return { ...profile, tutorOnly: null };
 }
 
 export function parseTutorNote(payload: unknown): TutorNote {
   if (!isTutorNote(payload)) {
-    throw new Error("The learning service returned an invalid tutor note. Please try again.");
+    throw new Error(
+      "The learning service returned an invalid tutor note. Please try again.",
+    );
   }
   return payload;
 }
 
 export function parseTutorNotes(payload: unknown): TutorNote[] {
   if (!Array.isArray(payload) || !payload.every(isTutorNote)) {
-    throw new Error("The learning service returned an invalid tutor note list. Please try again.");
+    throw new Error(
+      "The learning service returned an invalid tutor note list. Please try again.",
+    );
   }
   return payload;
 }
@@ -409,27 +497,39 @@ export function parseTutorNotes(payload: unknown): TutorNote[] {
 function errorFields(payload: Record<string, unknown>): Record<string, string> {
   if (typeof payload.fields !== "object" || payload.fields === null) return {};
   return Object.fromEntries(
-    Object.entries(payload.fields).filter((entry): entry is [string, string] => isNonEmptyString(entry[1])),
+    Object.entries(payload.fields).filter((entry): entry is [string, string] =>
+      isNonEmptyString(entry[1]),
+    ),
   );
 }
 
 async function responseError(response: Response): Promise<StudentApiError> {
   try {
-    const payload = await response.json() as unknown;
+    const payload = (await response.json()) as unknown;
     if (typeof payload === "object" && payload !== null) {
       const record = payload as Record<string, unknown>;
       if (isNonEmptyString(record.message)) {
-        return new StudentApiError(record.message, response.status, errorFields(record));
+        return new StudentApiError(
+          record.message,
+          response.status,
+          errorFields(record),
+        );
       }
     }
   } catch {
     // Use the status fallback for non-JSON or empty error responses.
   }
-  return new StudentApiError(`The learning service could not complete your student request (status ${response.status}).`, response.status);
+  return new StudentApiError(
+    `The learning service could not complete your student request (status ${response.status}).`,
+    response.status,
+  );
 }
 
 function authHeaders(includeJsonContentType = false): HeadersInit {
-  const token = typeof window === "undefined" ? null : window.localStorage.getItem("jwt_token");
+  const token =
+    typeof window === "undefined"
+      ? null
+      : window.localStorage.getItem("jwt_token");
   return {
     Accept: "application/json",
     ...(includeJsonContentType ? { "Content-Type": "application/json" } : {}),
@@ -437,56 +537,85 @@ function authHeaders(includeJsonContentType = false): HeadersInit {
   };
 }
 
-export async function fetchTutorStudents(classId?: number): Promise<TutorStudent[]> {
+export async function fetchTutorStudents(
+  classId?: number,
+): Promise<TutorStudent[]> {
   const suffix = classId === undefined ? "" : `?classId=${classId}`;
-  const response = await fetch(`${LEARNING_API_URL}${STUDENT_LIST_PATH}${suffix}`, { headers: authHeaders() });
+  const response = await fetch(
+    `${LEARNING_API_URL}${STUDENT_LIST_PATH}${suffix}`,
+    { headers: authHeaders() },
+  );
   if (!response.ok) throw await responseError(response);
   return parseTutorStudents(await response.json());
 }
 
 /** Searches real STUDENT-role accounts that are not already claimed by a Tutor. */
-export async function fetchAvailableStudentAccounts(search = ""): Promise<AvailableStudentAccount[]> {
+export async function fetchAvailableStudentAccounts(
+  search = "",
+): Promise<AvailableStudentAccount[]> {
   const query = search.trim();
   const suffix = query ? `?search=${encodeURIComponent(query)}` : "";
-  const response = await fetch(`${LEARNING_API_URL}/api/learning/tutor/student-accounts${suffix}`, { headers: authHeaders() });
+  const response = await fetch(
+    `${LEARNING_API_URL}/api/learning/tutor/student-accounts${suffix}`,
+    { headers: authHeaders() },
+  );
   if (!response.ok) throw await responseError(response);
   return parseAvailableStudentAccounts(await response.json());
 }
 
-export async function fetchTutorStudent(studentId: number): Promise<TutorStudent> {
+export async function fetchTutorStudent(
+  studentId: number,
+): Promise<TutorStudent> {
   if (!Number.isSafeInteger(studentId) || studentId <= 0) {
     throw new StudentApiError("The student reference is invalid.", 400);
   }
-  const response = await fetch(`${LEARNING_API_URL}${STUDENT_LIST_PATH}/${studentId}`, { headers: authHeaders() });
+  const response = await fetch(
+    `${LEARNING_API_URL}${STUDENT_LIST_PATH}/${studentId}`,
+    { headers: authHeaders() },
+  );
   if (!response.ok) throw await responseError(response);
   return parseTutorStudent(await response.json());
 }
 
-export async function fetchTutorStudentProfile(studentId: number): Promise<TutorStudentProfile> {
+export async function fetchTutorStudentProfile(
+  studentId: number,
+): Promise<TutorStudentProfile> {
   if (!Number.isSafeInteger(studentId) || studentId <= 0) {
     throw new StudentApiError("The student reference is invalid.", 400);
   }
-  const response = await fetch(`${LEARNING_API_URL}${STUDENT_LIST_PATH}/${studentId}/profile`, { headers: authHeaders() });
+  const response = await fetch(
+    `${LEARNING_API_URL}${STUDENT_LIST_PATH}/${studentId}/profile`,
+    { headers: authHeaders() },
+  );
   if (!response.ok) throw await responseError(response);
   return parseTutorStudentProfile(await response.json());
 }
 
 /** Loads the profile belonging to the authenticated Student; no student id is client-controlled. */
 export async function fetchStudentSelfProfile(): Promise<StudentSelfProfile> {
-  const response = await fetch(`${LEARNING_API_URL}/api/learning/student/profile`, { headers: authHeaders() });
+  const response = await fetch(
+    `${LEARNING_API_URL}/api/learning/student/profile`,
+    { headers: authHeaders() },
+  );
   if (!response.ok) throw await responseError(response);
   return parseStudentSelfProfile(await response.json());
 }
 
 function notePath(studentId: number, noteId?: number) {
-  if (!Number.isSafeInteger(studentId) || studentId <= 0 || (noteId !== undefined && (!Number.isSafeInteger(noteId) || noteId <= 0))) {
+  if (
+    !Number.isSafeInteger(studentId) ||
+    studentId <= 0 ||
+    (noteId !== undefined && (!Number.isSafeInteger(noteId) || noteId <= 0))
+  ) {
     throw new StudentApiError("The student or note reference is invalid.", 400);
   }
   return `${STUDENT_LIST_PATH}/${studentId}/notes${noteId === undefined ? "" : `/${noteId}`}`;
 }
 
 export async function fetchTutorNotes(studentId: number): Promise<TutorNote[]> {
-  const response = await fetch(`${LEARNING_API_URL}${notePath(studentId)}`, { headers: authHeaders() });
+  const response = await fetch(`${LEARNING_API_URL}${notePath(studentId)}`, {
+    headers: authHeaders(),
+  });
   if (!response.ok) throw await responseError(response);
   return parseTutorNotes(await response.json());
 }
@@ -497,28 +626,44 @@ async function mutateTutorNote(
   method: "POST" | "PUT",
   request: TutorNoteMutationRequest,
 ): Promise<TutorNote> {
-  const response = await fetch(`${LEARNING_API_URL}${notePath(studentId, noteId)}`, {
-    method,
-    headers: authHeaders(true),
-    body: JSON.stringify(request),
-  });
+  const response = await fetch(
+    `${LEARNING_API_URL}${notePath(studentId, noteId)}`,
+    {
+      method,
+      headers: authHeaders(true),
+      body: JSON.stringify(request),
+    },
+  );
   if (!response.ok) throw await responseError(response);
   return parseTutorNote(await response.json());
 }
 
-export function createTutorNote(studentId: number, request: TutorNoteMutationRequest): Promise<TutorNote> {
+export function createTutorNote(
+  studentId: number,
+  request: TutorNoteMutationRequest,
+): Promise<TutorNote> {
   return mutateTutorNote(studentId, undefined, "POST", request);
 }
 
-export function updateTutorNote(studentId: number, noteId: number, request: TutorNoteMutationRequest): Promise<TutorNote> {
+export function updateTutorNote(
+  studentId: number,
+  noteId: number,
+  request: TutorNoteMutationRequest,
+): Promise<TutorNote> {
   return mutateTutorNote(studentId, noteId, "PUT", request);
 }
 
-export async function deleteTutorNote(studentId: number, noteId: number): Promise<void> {
-  const response = await fetch(`${LEARNING_API_URL}${notePath(studentId, noteId)}`, {
-    method: "DELETE",
-    headers: authHeaders(),
-  });
+export async function deleteTutorNote(
+  studentId: number,
+  noteId: number,
+): Promise<void> {
+  const response = await fetch(
+    `${LEARNING_API_URL}${notePath(studentId, noteId)}`,
+    {
+      method: "DELETE",
+      headers: authHeaders(),
+    },
+  );
   if (!response.ok) throw await responseError(response);
 }
 
@@ -536,19 +681,32 @@ async function mutateTutorStudent(
   return parseTutorStudent(await response.json());
 }
 
-export function createTutorStudent(request: StudentMutationRequest): Promise<TutorStudent> {
+export function createTutorStudent(
+  request: StudentMutationRequest,
+): Promise<TutorStudent> {
   return mutateTutorStudent(STUDENT_LIST_PATH, "POST", request);
 }
 
-export function updateTutorStudent(studentId: number, request: StudentMutationRequest): Promise<TutorStudent> {
+export function updateTutorStudent(
+  studentId: number,
+  request: StudentMutationRequest,
+): Promise<TutorStudent> {
   if (!Number.isSafeInteger(studentId) || studentId <= 0) {
-    return Promise.reject(new StudentApiError("The student reference is invalid.", 400));
+    return Promise.reject(
+      new StudentApiError("The student reference is invalid.", 400),
+    );
   }
-  return mutateTutorStudent(`${STUDENT_LIST_PATH}/${studentId}`, "PUT", request);
+  return mutateTutorStudent(
+    `${STUDENT_LIST_PATH}/${studentId}`,
+    "PUT",
+    request,
+  );
 }
 
 /** Convert a class response into the membership shape used by student responses. */
-export function classMembershipFor(tutorClass: TutorClass): StudentClassMembership {
+export function classMembershipFor(
+  tutorClass: TutorClass,
+): StudentClassMembership {
   return {
     id: tutorClass.id,
     className: tutorClass.className,

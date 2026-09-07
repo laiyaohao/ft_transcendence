@@ -22,7 +22,13 @@ export default function NewStudentPage() {
     >
       <Box sx={{ maxWidth: 1420, mx: "auto" }}>
         <Typography
-          sx={{ color: "#A09488", fontSize: 10.5, fontWeight: 600, letterSpacing: ".13em", mb: 0.75 }}
+          sx={{
+            color: "#A09488",
+            fontSize: 10.5,
+            fontWeight: 600,
+            letterSpacing: ".13em",
+            mb: 0.75,
+          }}
         >
           STUDENT MANAGEMENT
         </Typography>

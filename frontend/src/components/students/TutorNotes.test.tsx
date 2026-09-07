@@ -23,7 +23,16 @@ const newer: TutorNote = {
 describe("TutorNotes", () => {
   it("shows loading and an actionable empty state", async () => {
     let resolve!: (notes: TutorNote[]) => void;
-    render(<TutorNotes studentId={31} loadNotes={() => new Promise<TutorNote[]>((complete) => { resolve = complete; })} />);
+    render(
+      <TutorNotes
+        studentId={31}
+        loadNotes={() =>
+          new Promise<TutorNote[]>((complete) => {
+            resolve = complete;
+          })
+        }
+      />,
+    );
     expect(screen.getByLabelText("Loading private tutor notes")).toBeVisible();
     await waitFor(() => expect(resolve).toBeTypeOf("function"));
     resolve([]);
@@ -32,17 +41,49 @@ describe("TutorNotes", () => {
 
   it("orders notes by newest update and creates, edits, and deletes without duplicate submits", async () => {
     const user = userEvent.setup();
-    const createNote = vi.fn(async (_studentId: number, request: { content: string }): Promise<TutorNote> => ({ ...newer, id: 7, content: request.content, updatedAt: "2026-09-03T10:00:00" }));
-    const updateNote = vi.fn(async (_studentId: number, noteId: number, request: { content: string }): Promise<TutorNote> => ({ ...newer, id: noteId, content: request.content, updatedAt: "2026-09-04T10:00:00" }));
+    const createNote = vi.fn(
+      async (
+        _studentId: number,
+        request: { content: string },
+      ): Promise<TutorNote> => ({
+        ...newer,
+        id: 7,
+        content: request.content,
+        updatedAt: "2026-09-03T10:00:00",
+      }),
+    );
+    const updateNote = vi.fn(
+      async (
+        _studentId: number,
+        noteId: number,
+        request: { content: string },
+      ): Promise<TutorNote> => ({
+        ...newer,
+        id: noteId,
+        content: request.content,
+        updatedAt: "2026-09-04T10:00:00",
+      }),
+    );
     const removeNote = vi.fn(async () => undefined);
-    const { container } = render(<TutorNotes studentId={31} loadNotes={async () => [older, newer]} createNote={createNote} updateNote={updateNote} removeNote={removeNote} />);
+    const { container } = render(
+      <TutorNotes
+        studentId={31}
+        loadNotes={async () => [older, newer]}
+        createNote={createNote}
+        updateNote={updateNote}
+        removeNote={removeNote}
+      />,
+    );
 
     await screen.findByText("Latest observation");
     const rows = container.querySelectorAll("li");
     expect(rows[0]).toHaveTextContent("Latest observation");
     expect(rows[1]).toHaveTextContent("Earlier observation");
 
-    await user.type(screen.getByLabelText("Add a private note"), "Check home revision");
+    await user.type(
+      screen.getByLabelText("Add a private note"),
+      "Check home revision",
+    );
     await user.click(screen.getByRole("button", { name: "Add note" }));
     expect(await screen.findByText("Check home revision")).toBeVisible();
     expect(createNote).toHaveBeenCalledTimes(1);
@@ -60,19 +101,34 @@ describe("TutorNotes", () => {
   });
 
   it("renders hostile note text literally instead of executing or parsing markup", async () => {
-    const payload = '<img src=x onerror="window.__noteXss = true"> <script>window.__noteXss = true</script>';
-    const { container } = render(<TutorNotes studentId={31} loadNotes={async () => [{ ...newer, content: payload }]} />);
+    const payload =
+      '<img src=x onerror="window.__noteXss = true"> <script>window.__noteXss = true</script>';
+    const { container } = render(
+      <TutorNotes
+        studentId={31}
+        loadNotes={async () => [{ ...newer, content: payload }]}
+      />,
+    );
     expect(await screen.findByText(payload)).toBeVisible();
     expect(container.querySelector("img")).toBeNull();
     expect(container.querySelector("script")).toBeNull();
-    expect((window as Window & { __noteXss?: boolean }).__noteXss).toBeUndefined();
+    expect(
+      (window as Window & { __noteXss?: boolean }).__noteXss,
+    ).toBeUndefined();
   });
 
   it("gives a retryable error for server failures", async () => {
     const user = userEvent.setup();
-    const loadNotes = vi.fn().mockRejectedValueOnce(new Error("Tutor notes are temporarily unavailable")).mockResolvedValueOnce([newer]);
+    const loadNotes = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new Error("Tutor notes are temporarily unavailable"),
+      )
+      .mockResolvedValueOnce([newer]);
     render(<TutorNotes studentId={31} loadNotes={loadNotes} />);
-    expect(await screen.findByRole("alert")).toHaveTextContent("temporarily unavailable");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "temporarily unavailable",
+    );
     await user.click(screen.getByRole("button", { name: "Retry" }));
     expect(await screen.findByText("Latest observation")).toBeVisible();
     expect(loadNotes).toHaveBeenCalledTimes(2);

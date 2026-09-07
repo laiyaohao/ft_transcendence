@@ -3,10 +3,7 @@ const LEARNING_API_URL =
 const ALERTS_PATH = "/api/learning/tutor/alerts";
 
 export type AlertType =
-  | "WEAK_TOPIC"
-  | "REPEATED_MISTAKE"
-  | "PENDING_REVIEW"
-  | "REPORT_READY";
+  "WEAK_TOPIC" | "REPEATED_MISTAKE" | "PENDING_REVIEW" | "REPORT_READY";
 export type AlertSeverity = "INFO" | "WARNING" | "CRITICAL";
 export type AlertStatus = "OPEN" | "ACKNOWLEDGED" | "RESOLVED" | "DISMISSED";
 
@@ -23,7 +20,10 @@ export interface TutorAlert {
 }
 
 export class AlertApiError extends Error {
-  constructor(message: string, readonly status: number) {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
     super(message);
     this.name = "AlertApiError";
   }
@@ -35,7 +35,11 @@ const ALERT_TYPES: readonly AlertType[] = [
   "PENDING_REVIEW",
   "REPORT_READY",
 ];
-const ALERT_SEVERITIES: readonly AlertSeverity[] = ["INFO", "WARNING", "CRITICAL"];
+const ALERT_SEVERITIES: readonly AlertSeverity[] = [
+  "INFO",
+  "WARNING",
+  "CRITICAL",
+];
 const ALERT_STATUSES: readonly AlertStatus[] = [
   "OPEN",
   "ACKNOWLEDGED",
@@ -88,7 +92,10 @@ function alertRequestHeaders(): HeadersInit {
   };
 }
 
-async function requestAlert(path: string, init?: RequestInit): Promise<unknown> {
+async function requestAlert(
+  path: string,
+  init?: RequestInit,
+): Promise<unknown> {
   const response = await fetch(`${LEARNING_API_URL}${ALERTS_PATH}${path}`, {
     ...init,
     headers: {

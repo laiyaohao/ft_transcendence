@@ -17,7 +17,9 @@ const savedClass: TutorClass = {
   schedules: [{ dayOfWeek: "MONDAY", startTime: "16:00", endTime: "17:30" }],
 };
 
-function renderForm(overrides: Partial<React.ComponentProps<typeof ClassForm>> = {}) {
+function renderForm(
+  overrides: Partial<React.ComponentProps<typeof ClassForm>> = {},
+) {
   const submitClass = vi.fn().mockResolvedValue(savedClass);
   const onComplete = vi.fn();
   render(
@@ -31,7 +33,9 @@ function renderForm(overrides: Partial<React.ComponentProps<typeof ClassForm>> =
   return { submitClass, onComplete };
 }
 
-async function completeRequiredFields(user: ReturnType<typeof userEvent.setup>) {
+async function completeRequiredFields(
+  user: ReturnType<typeof userEvent.setup>,
+) {
   await user.type(screen.getByLabelText("Class name"), " Primary 5 Science ");
   await user.type(screen.getByLabelText("Subject"), " Science ");
   await user.type(screen.getByLabelText("Level"), " Primary 5 ");
@@ -45,13 +49,15 @@ describe("ClassForm", () => {
     await completeRequiredFields(user);
     await user.click(screen.getByRole("button", { name: "Create class" }));
 
-    await waitFor(() => expect(submitClass).toHaveBeenCalledWith({
-      className: "Primary 5 Science",
-      subject: "Science",
-      level: "Primary 5",
-      status: "ACTIVE",
-      schedules: [],
-    }));
+    await waitFor(() =>
+      expect(submitClass).toHaveBeenCalledWith({
+        className: "Primary 5 Science",
+        subject: "Science",
+        level: "Primary 5",
+        status: "ACTIVE",
+        schedules: [],
+      }),
+    );
     expect(onComplete).toHaveBeenCalledWith(savedClass);
   });
 
@@ -73,48 +79,77 @@ describe("ClassForm", () => {
 
     await completeRequiredFields(user);
     await user.click(screen.getByRole("button", { name: "Add schedule time" }));
-    fireEvent.change(screen.getByLabelText("Schedule 1 start time"), { target: { value: "17:30" } });
-    fireEvent.change(screen.getByLabelText("Schedule 1 end time"), { target: { value: "16:00" } });
+    fireEvent.change(screen.getByLabelText("Schedule 1 start time"), {
+      target: { value: "17:30" },
+    });
+    fireEvent.change(screen.getByLabelText("Schedule 1 end time"), {
+      target: { value: "16:00" },
+    });
     await user.click(screen.getByRole("button", { name: "Create class" }));
-    expect(await screen.findByText("End time must be after the start time.")).toBeVisible();
+    expect(
+      await screen.findByText("End time must be after the start time."),
+    ).toBeVisible();
     expect(submitClass).not.toHaveBeenCalled();
 
-    fireEvent.change(screen.getByLabelText("Schedule 1 start time"), { target: { value: "16:00" } });
-    fireEvent.change(screen.getByLabelText("Schedule 1 end time"), { target: { value: "17:30" } });
+    fireEvent.change(screen.getByLabelText("Schedule 1 start time"), {
+      target: { value: "16:00" },
+    });
+    fireEvent.change(screen.getByLabelText("Schedule 1 end time"), {
+      target: { value: "17:30" },
+    });
     await user.click(screen.getByRole("button", { name: "Add schedule time" }));
-    fireEvent.change(screen.getByLabelText("Schedule 2 start time"), { target: { value: "16:00" } });
-    fireEvent.change(screen.getByLabelText("Schedule 2 end time"), { target: { value: "17:30" } });
+    fireEvent.change(screen.getByLabelText("Schedule 2 start time"), {
+      target: { value: "16:00" },
+    });
+    fireEvent.change(screen.getByLabelText("Schedule 2 end time"), {
+      target: { value: "17:30" },
+    });
     await user.click(screen.getByRole("button", { name: "Create class" }));
 
-    expect(await screen.findByText("This schedule time is already listed.")).toBeVisible();
+    expect(
+      await screen.findByText("This schedule time is already listed."),
+    ).toBeVisible();
     expect(submitClass).not.toHaveBeenCalled();
   });
 
   it("shows field and request errors returned by the server", async () => {
     const user = userEvent.setup();
-    const submitClass = vi.fn().mockRejectedValue(new ClassApiError(
-      "A class named 'Primary 5 Science' already exists for this tutor",
-      409,
-      { className: "Choose a different class name." },
-    ));
+    const submitClass = vi
+      .fn()
+      .mockRejectedValue(
+        new ClassApiError(
+          "A class named 'Primary 5 Science' already exists for this tutor",
+          409,
+          { className: "Choose a different class name." },
+        ),
+      );
     renderForm({ submitClass });
 
     await completeRequiredFields(user);
     await user.click(screen.getByRole("button", { name: "Create class" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("already exists");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "already exists",
+    );
     expect(screen.getByText("Choose a different class name.")).toBeVisible();
   });
 
   it("keeps only one mutation in flight and gives the submit button a loading state", async () => {
     const user = userEvent.setup();
     let resolve!: (value: TutorClass) => void;
-    const submitClass = vi.fn(() => new Promise<TutorClass>((complete) => { resolve = complete; }));
+    const submitClass = vi.fn(
+      () =>
+        new Promise<TutorClass>((complete) => {
+          resolve = complete;
+        }),
+    );
     const { onComplete } = renderForm({ submitClass });
 
     await completeRequiredFields(user);
     await user.click(screen.getByRole("button", { name: "Create class" }));
-    const pendingButton = screen.getByRole("button", { name: "Creating class…" });
+    const pendingButton = screen.getByRole("button", {
+      name: "Creating class…",
+    });
     expect(pendingButton).toBeDisabled();
     fireEvent.click(pendingButton);
     expect(submitClass).toHaveBeenCalledOnce();
@@ -125,15 +160,18 @@ describe("ClassForm", () => {
 
   it("shows a recoverable wrong-owner error returned while editing", async () => {
     const user = userEvent.setup();
-    const submitClass = vi.fn().mockRejectedValue(new ClassApiError(
-      "Class 12 was not found for this tutor",
-      404,
-    ));
+    const submitClass = vi
+      .fn()
+      .mockRejectedValue(
+        new ClassApiError("Class 12 was not found for this tutor", 404),
+      );
     renderForm({ mode: "edit", initialClass: savedClass, submitClass });
 
     await user.click(screen.getByRole("button", { name: "Save changes" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("not found for this tutor");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "not found for this tutor",
+    );
     expect(screen.getByRole("button", { name: "Save changes" })).toBeEnabled();
   });
 });

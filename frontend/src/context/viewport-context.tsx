@@ -1,5 +1,5 @@
-import * as React from 'react';
-import type { Theme } from '@mui/material/styles';
+import * as React from "react";
+import type { Theme } from "@mui/material/styles";
 
 export interface ViewportContextValue {
   theme: Theme;

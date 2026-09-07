@@ -4,7 +4,11 @@ import { describe, expect, it } from "vitest";
 import { proxy } from "./proxy";
 
 function token(role: "TUTOR" | "STUDENT") {
-  const encode = (value: object) => btoa(JSON.stringify(value)).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+  const encode = (value: object) =>
+    btoa(JSON.stringify(value))
+      .replace(/=/g, "")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_");
   return `${encode({ alg: "HS256" })}.${encode({ sub: "user@example.com", role, exp: Math.floor(Date.now() / 1000) + 3600 })}.signature`;
 }
 
@@ -20,42 +24,60 @@ describe("route proxy", () => {
     const response = proxy(request("/tutor/dashboard", "STUDENT"));
 
     expect(response.status).toBe(307);
-    expect(response.headers.get("location")).toBe("http://localhost:3000/student/dashboard");
+    expect(response.headers.get("location")).toBe(
+      "http://localhost:3000/student/dashboard",
+    );
   });
 
   it("protects the Question Bank and prevents Students from reaching its nested editor", () => {
     expect(proxy(request("/questions/7/edit", "TUTOR")).status).toBe(200);
     const response = proxy(request("/questions/7/edit", "STUDENT"));
     expect(response.status).toBe(307);
-    expect(response.headers.get("location")).toBe("http://localhost:3000/student/dashboard");
+    expect(response.headers.get("location")).toBe(
+      "http://localhost:3000/student/dashboard",
+    );
   });
 
   it("allows the Tutor worksheet builder but keeps the Student worksheet area separate", () => {
     expect(proxy(request("/tutor/worksheets/new", "TUTOR")).status).toBe(200);
-    expect(proxy(request("/tutor/worksheets/new", "STUDENT")).headers.get("location")).toBe("http://localhost:3000/student/dashboard");
+    expect(
+      proxy(request("/tutor/worksheets/new", "STUDENT")).headers.get(
+        "location",
+      ),
+    ).toBe("http://localhost:3000/student/dashboard");
   });
 
   it("allows Tutors to open marking reviews but redirects Students to their dashboard", () => {
     expect(proxy(request("/tutor/reviews/91", "TUTOR")).status).toBe(200);
-    expect(proxy(request("/tutor/reviews/91", "STUDENT")).headers.get("location")).toBe("http://localhost:3000/student/dashboard");
+    expect(
+      proxy(request("/tutor/reviews/91", "STUDENT")).headers.get("location"),
+    ).toBe("http://localhost:3000/student/dashboard");
   });
 
   it("allows both roles to use the protected answer-capture routes", () => {
     expect(proxy(request("/ocr?submissionId=10", "TUTOR")).status).toBe(200);
     expect(proxy(request("/ocr?submissionId=10", "STUDENT")).status).toBe(200);
-    expect(proxy(request("/manual-answers?worksheetId=10", "TUTOR")).status).toBe(200);
-    expect(proxy(request("/manual-answers?worksheetId=10", "STUDENT")).status).toBe(200);
+    expect(
+      proxy(request("/manual-answers?worksheetId=10", "TUTOR")).status,
+    ).toBe(200);
+    expect(
+      proxy(request("/manual-answers?worksheetId=10", "STUDENT")).status,
+    ).toBe(200);
   });
 
   it("allows the Student dashboard while preventing Tutor access", () => {
     expect(proxy(request("/student/dashboard", "STUDENT")).status).toBe(200);
-    expect(proxy(request("/student/dashboard", "TUTOR")).headers.get("location")).toBe("http://localhost:3000/tutor/dashboard");
+    expect(
+      proxy(request("/student/dashboard", "TUTOR")).headers.get("location"),
+    ).toBe("http://localhost:3000/tutor/dashboard");
   });
 
   it("sends a signed-in Tutor away from login to the Tutor dashboard", () => {
     const response = proxy(request("/login", "TUTOR"));
 
     expect(response.status).toBe(307);
-    expect(response.headers.get("location")).toBe("http://localhost:3000/tutor/dashboard");
+    expect(response.headers.get("location")).toBe(
+      "http://localhost:3000/tutor/dashboard",
+    );
   });
 });

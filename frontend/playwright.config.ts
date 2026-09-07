@@ -21,5 +21,10 @@ export default defineConfig({
   },
   // Use the locally installed stable Chrome channel, not Playwright's bundled
   // Chromium, because Chrome is the supported browser for this product.
-  projects: [{ name: "chrome", use: { ...devices["Desktop Chrome"], channel: "chrome" } }],
+  projects: [
+    {
+      name: "chrome",
+      use: { ...devices["Desktop Chrome"], channel: "chrome" },
+    },
+  ],
 });

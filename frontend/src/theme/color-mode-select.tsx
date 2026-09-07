@@ -1,4 +1,4 @@
-import type { SelectProps } from '@mui/material/Select';
+import type { SelectProps } from "@mui/material/Select";
 
 /**
  * Kept as a compatibility boundary for public auth screens while Lumina uses

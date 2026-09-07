@@ -17,16 +17,23 @@ export default function Page() {
   const params = useSearchParams();
   const router = useRouter();
   const classId = positiveQueryId(params.get("classId"));
-  const onApproved = React.useCallback((worksheet: TutorWorksheet) => {
-    router.replace(tutorWorksheetsHref({
-      classId: worksheetClassId(worksheet, classId),
-      approved: true,
-    }));
-  }, [classId, router]);
+  const onApproved = React.useCallback(
+    (worksheet: TutorWorksheet) => {
+      router.replace(
+        tutorWorksheetsHref({
+          classId: worksheetClassId(worksheet, classId),
+          approved: true,
+        }),
+      );
+    },
+    [classId, router],
+  );
 
-  return <WorksheetBuilder
-    classId={classId ?? 0}
-    initialStudentId={positiveQueryId(params.get("studentId"))}
-    onApproved={onApproved}
-  />;
+  return (
+    <WorksheetBuilder
+      classId={classId ?? 0}
+      initialStudentId={positiveQueryId(params.get("studentId"))}
+      onApproved={onApproved}
+    />
+  );
 }

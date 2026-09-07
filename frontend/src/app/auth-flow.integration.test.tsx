@@ -15,7 +15,10 @@ vi.mock("next/navigation", () => ({
 
 function authToken(role: "TUTOR" | "STUDENT", email: string) {
   const encode = (value: object) =>
-    btoa(JSON.stringify(value)).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+    btoa(JSON.stringify(value))
+      .replace(/=/g, "")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_");
   return `${encode({ alg: "HS256" })}.${encode({
     sub: email,
     role,
@@ -93,9 +96,10 @@ describe("authentication form integration", () => {
   it("renders a recoverable network error and prevents duplicate login requests", async () => {
     let rejectRequest!: (reason: Error) => void;
     const fetchMock = vi.fn().mockImplementation(
-      () => new Promise<Response>((_resolve, reject) => {
-        rejectRequest = reject;
-      }),
+      () =>
+        new Promise<Response>((_resolve, reject) => {
+          rejectRequest = reject;
+        }),
     );
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
@@ -111,9 +115,11 @@ describe("authentication form integration", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
 
     rejectRequest(new TypeError("Failed to fetch"));
-    expect(await screen.findByText(
-      "Unable to reach the authentication service. Please try again.",
-    )).toBeVisible();
+    expect(
+      await screen.findByText(
+        "Unable to reach the authentication service. Please try again.",
+      ),
+    ).toBeVisible();
     expect(screen.getByRole("button", { name: "Sign In" })).toBeEnabled();
   });
 
@@ -154,7 +160,9 @@ describe("authentication form integration", () => {
     );
     expect(localStorage.getItem("jwt_token")).toBe(token);
     expect(navigation.replace).toHaveBeenCalledWith("/student/dashboard");
-    expect(screen.queryByRole("button", { name: "Tutor" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Tutor" }),
+    ).not.toBeInTheDocument();
   });
 
   it("blocks an empty registration form before it reaches the API", async () => {
@@ -165,13 +173,22 @@ describe("authentication form integration", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sign Up" }));
 
     expect(await screen.findByText("Please enter a valid name")).toBeVisible();
-    expect(screen.getByText("Please enter a valid email address")).toBeVisible();
-    expect(screen.getByText("Use at least 12 characters with uppercase, lowercase, a number and a symbol")).toBeVisible();
+    expect(
+      screen.getByText("Please enter a valid email address"),
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        "Use at least 12 characters with uppercase, lowercase, a number and a symbol",
+      ),
+    ).toBeVisible();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("handles a registration network failure without an unhandled rejection", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new TypeError("Failed to fetch")),
+    );
     const user = userEvent.setup();
 
     render(<Signup />);
@@ -180,8 +197,10 @@ describe("authentication form integration", () => {
     await user.type(screen.getByLabelText("Password"), "StrongPassword1!");
     await user.click(screen.getByRole("button", { name: "Sign Up" }));
 
-    expect(await screen.findByText(
-      "Unable to reach the authentication service. Please try again.",
-    )).toBeVisible();
+    expect(
+      await screen.findByText(
+        "Unable to reach the authentication service. Please try again.",
+      ),
+    ).toBeVisible();
   });
 });

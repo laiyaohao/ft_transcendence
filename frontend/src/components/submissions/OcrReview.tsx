@@ -42,10 +42,12 @@ function isReadyForTutorReview(
   pages: OcrPage[],
   questionIds: Record<number, number | "">,
 ) {
-  return pages.length > 0
-    && pages.every(
+  return (
+    pages.length > 0 &&
+    pages.every(
       (page) => page.status === "READY" && questionIds[page.extractionId],
-    );
+    )
+  );
 }
 
 export default function OcrReview({
@@ -54,18 +56,21 @@ export default function OcrReview({
   onCorrect,
   onSubmitForReview,
 }: OcrReviewProps) {
-  const [textByExtractionId, setTextByExtractionId] = React.useState(
-    () => initialTextByExtractionId(pages),
+  const [textByExtractionId, setTextByExtractionId] = React.useState(() =>
+    initialTextByExtractionId(pages),
   );
   const [questionByExtractionId, setQuestionByExtractionId] = React.useState(
     () => initialQuestionByExtractionId(pages, questions),
   );
-  const [savingExtractionId, setSavingExtractionId] = React.useState<number | null>(null);
+  const [savingExtractionId, setSavingExtractionId] = React.useState<
+    number | null
+  >(null);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [submitError, setSubmitError] = React.useState<string | null>(null);
 
-  const canSubmit = Boolean(onSubmitForReview)
-    && isReadyForTutorReview(pages, questionByExtractionId);
+  const canSubmit =
+    Boolean(onSubmitForReview) &&
+    isReadyForTutorReview(pages, questionByExtractionId);
 
   const updateExtractedText = (extractionId: number, text: string) => {
     setTextByExtractionId((currentText) => ({
@@ -85,7 +90,10 @@ export default function OcrReview({
     setSavingExtractionId(page.extractionId);
 
     try {
-      await onCorrect(page.extractionId, textByExtractionId[page.extractionId] || "");
+      await onCorrect(
+        page.extractionId,
+        textByExtractionId[page.extractionId] || "",
+      );
     } finally {
       setSavingExtractionId(null);
     }
@@ -135,7 +143,8 @@ export default function OcrReview({
             }}
           >
             <Typography sx={{ fontWeight: 700 }}>
-              Page {pageNumber} · {Math.round(page.confidence * 100)}% confidence
+              Page {pageNumber} · {Math.round(page.confidence * 100)}%
+              confidence
             </Typography>
             <TextField
               label={`Page ${pageNumber} text`}
@@ -184,8 +193,9 @@ export default function OcrReview({
       {onSubmitForReview && (
         <Box sx={{ mt: 3 }}>
           <Typography sx={{ color: "#6F675E", mb: 1 }}>
-            Confirming creates the worksheet answer records and sends them to your
-            Tutor for review. AI suggestions remain private until Tutor approval.
+            Confirming creates the worksheet answer records and sends them to
+            your Tutor for review. AI suggestions remain private until Tutor
+            approval.
           </Typography>
           {submitError && (
             <Typography role="alert" sx={{ color: "#9E3A24", mb: 1 }}>
@@ -205,8 +215,8 @@ export default function OcrReview({
           </Button>
           {!canSubmit && (
             <Typography sx={{ color: "#7A6238", fontSize: 13, mt: 1 }}>
-              Correct every flagged page and choose its worksheet question before
-              submitting.
+              Correct every flagged page and choose its worksheet question
+              before submitting.
             </Typography>
           )}
         </Box>

@@ -19,11 +19,19 @@ vi.mock("@/services/classes", () => ({
 }));
 
 vi.mock("@/components/classes/ClassForm", () => ({
-  default: ({ onComplete }: { onComplete: () => void }) => <button type="button" onClick={onComplete}>Save changes</button>,
+  default: ({ onComplete }: { onComplete: () => void }) => (
+    <button type="button" onClick={onComplete}>
+      Save changes
+    </button>
+  ),
 }));
 
 vi.mock("@/components/classes/ClassStudentSelector", () => ({
-  default: ({ onStudentAdded }: { onStudentAdded?: () => void }) => <button type="button" onClick={onStudentAdded}>Add existing Student</button>,
+  default: ({ onStudentAdded }: { onStudentAdded?: () => void }) => (
+    <button type="button" onClick={onStudentAdded}>
+      Add existing Student
+    </button>
+  ),
 }));
 
 import EditClassPage from "./page";
@@ -45,7 +53,9 @@ describe("EditClassPage", () => {
     render(<EditClassPage />);
 
     await screen.findByRole("button", { name: "Add existing Student" });
-    await user.click(screen.getByRole("button", { name: "Add existing Student" }));
+    await user.click(
+      screen.getByRole("button", { name: "Add existing Student" }),
+    );
 
     await waitFor(() => expect(mocks.push).toHaveBeenCalledWith("/classes/12"));
   });

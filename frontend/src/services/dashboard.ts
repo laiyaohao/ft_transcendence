@@ -15,7 +15,8 @@ export interface TutorDashboardScheduleItem {
   endTime: string;
 }
 
-export type TutorDashboardActivityType = "WORKSHEET_ASSIGNED" | "REVIEW_REQUESTED" | "ALERT_CREATED";
+export type TutorDashboardActivityType =
+  "WORKSHEET_ASSIGNED" | "REVIEW_REQUESTED" | "ALERT_CREATED";
 export type TutorDashboardActivitySeverity = "INFO" | "WARNING" | "CRITICAL";
 
 export interface TutorDashboardActivity {
@@ -38,15 +39,27 @@ export interface TutorDashboard {
 }
 
 export class DashboardApiError extends Error {
-  constructor(message: string, readonly status: number) {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
     super(message);
     this.name = "DashboardApiError";
   }
 }
 
-const LEARNING_API_URL = process.env.NEXT_PUBLIC_LEARNING_API_URL || "http://localhost:8083";
-const ACTIVITY_TYPES: readonly TutorDashboardActivityType[] = ["WORKSHEET_ASSIGNED", "REVIEW_REQUESTED", "ALERT_CREATED"];
-const SEVERITIES: readonly TutorDashboardActivitySeverity[] = ["INFO", "WARNING", "CRITICAL"];
+const LEARNING_API_URL =
+  process.env.NEXT_PUBLIC_LEARNING_API_URL || "http://localhost:8083";
+const ACTIVITY_TYPES: readonly TutorDashboardActivityType[] = [
+  "WORKSHEET_ASSIGNED",
+  "REVIEW_REQUESTED",
+  "ALERT_CREATED",
+];
+const SEVERITIES: readonly TutorDashboardActivitySeverity[] = [
+  "INFO",
+  "WARNING",
+  "CRITICAL",
+];
 
 function nonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
@@ -69,16 +82,28 @@ function time(value: unknown): value is string {
 }
 
 function date(value: unknown): value is string {
-  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value))
+    return false;
   const parsed = new Date(`${value}T00:00:00.000Z`);
-  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+  return (
+    !Number.isNaN(parsed.getTime()) &&
+    parsed.toISOString().slice(0, 10) === value
+  );
 }
 
 function localDateTime(value: unknown): value is string {
-  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$/.test(value)) return false;
+  if (
+    typeof value !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$/.test(value)
+  )
+    return false;
   const [day, timeValue] = value.split("T");
   const normalizedTime = timeValue.split(".")[0];
-  return date(day) && time(normalizedTime) && !Number.isNaN(new Date(`${value}Z`).getTime());
+  return (
+    date(day) &&
+    time(normalizedTime) &&
+    !Number.isNaN(new Date(`${value}Z`).getTime())
+  );
 }
 
 function laterTime(endTime: string, startTime: string): boolean {
@@ -88,36 +113,43 @@ function laterTime(endTime: string, startTime: string): boolean {
 function isMetrics(value: unknown): value is TutorDashboardMetrics {
   if (!value || typeof value !== "object") return false;
   const metrics = value as Record<string, unknown>;
-  return nonNegativeInteger(metrics.activeClassCount)
-    && nonNegativeInteger(metrics.studentCount)
-    && nonNegativeInteger(metrics.pendingReviewCount)
-    && nonNegativeInteger(metrics.needsAttentionStudentCount)
-    && nonNegativeInteger(metrics.reportsReadyCount);
+  return (
+    nonNegativeInteger(metrics.activeClassCount) &&
+    nonNegativeInteger(metrics.studentCount) &&
+    nonNegativeInteger(metrics.pendingReviewCount) &&
+    nonNegativeInteger(metrics.needsAttentionStudentCount) &&
+    nonNegativeInteger(metrics.reportsReadyCount)
+  );
 }
 
 function isScheduleItem(value: unknown): value is TutorDashboardScheduleItem {
   if (!value || typeof value !== "object") return false;
   const item = value as Record<string, unknown>;
-  return positiveInteger(item.classId)
-    && nonEmptyString(item.className)
-    && nonEmptyString(item.subject)
-    && nonEmptyString(item.level)
-    && time(item.startTime)
-    && time(item.endTime)
-    && laterTime(item.endTime, item.startTime);
+  return (
+    positiveInteger(item.classId) &&
+    nonEmptyString(item.className) &&
+    nonEmptyString(item.subject) &&
+    nonEmptyString(item.level) &&
+    time(item.startTime) &&
+    time(item.endTime) &&
+    laterTime(item.endTime, item.startTime)
+  );
 }
 
 function isActivity(value: unknown): value is TutorDashboardActivity {
   if (!value || typeof value !== "object") return false;
   const activity = value as Record<string, unknown>;
-  return ACTIVITY_TYPES.includes(activity.type as TutorDashboardActivityType)
-    && positiveInteger(activity.sourceId)
-    && (activity.studentId === null || positiveInteger(activity.studentId))
-    && (activity.studentName === null || nonEmptyString(activity.studentName))
-    && nonEmptyString(activity.title)
-    && nonEmptyString(activity.detail)
-    && localDateTime(activity.occurredAt)
-    && (activity.severity === null || SEVERITIES.includes(activity.severity as TutorDashboardActivitySeverity));
+  return (
+    ACTIVITY_TYPES.includes(activity.type as TutorDashboardActivityType) &&
+    positiveInteger(activity.sourceId) &&
+    (activity.studentId === null || positiveInteger(activity.studentId)) &&
+    (activity.studentName === null || nonEmptyString(activity.studentName)) &&
+    nonEmptyString(activity.title) &&
+    nonEmptyString(activity.detail) &&
+    localDateTime(activity.occurredAt) &&
+    (activity.severity === null ||
+      SEVERITIES.includes(activity.severity as TutorDashboardActivitySeverity))
+  );
 }
 
 export function parseTutorDashboard(value: unknown): TutorDashboard {
@@ -125,30 +157,48 @@ export function parseTutorDashboard(value: unknown): TutorDashboard {
     throw new Error("The dashboard response is invalid. Please try again.");
   }
   const dashboard = value as Record<string, unknown>;
-  if (!nonEmptyString(dashboard.timeZone) || !date(dashboard.today) || !isMetrics(dashboard.metrics)
-    || !Array.isArray(dashboard.todaySchedule) || !dashboard.todaySchedule.every(isScheduleItem)
-    || !Array.isArray(dashboard.recentActivity) || !dashboard.recentActivity.every(isActivity)) {
+  if (
+    !nonEmptyString(dashboard.timeZone) ||
+    !date(dashboard.today) ||
+    !isMetrics(dashboard.metrics) ||
+    !Array.isArray(dashboard.todaySchedule) ||
+    !dashboard.todaySchedule.every(isScheduleItem) ||
+    !Array.isArray(dashboard.recentActivity) ||
+    !dashboard.recentActivity.every(isActivity)
+  ) {
     throw new Error("The dashboard response is invalid. Please try again.");
   }
   return dashboard as unknown as TutorDashboard;
 }
 
 function headers(): HeadersInit {
-  const token = typeof window === "undefined" ? null : window.localStorage.getItem("jwt_token");
-  return { Accept: "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+  const token =
+    typeof window === "undefined"
+      ? null
+      : window.localStorage.getItem("jwt_token");
+  return {
+    Accept: "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
 }
 
 async function responseError(response: Response): Promise<DashboardApiError> {
   try {
-    const payload = await response.json() as { message?: unknown };
-    if (nonEmptyString(payload.message)) return new DashboardApiError(payload.message, response.status);
+    const payload = (await response.json()) as { message?: unknown };
+    if (nonEmptyString(payload.message))
+      return new DashboardApiError(payload.message, response.status);
   } catch {
     // A structured server message is optional; retain a useful safe fallback.
   }
-  return new DashboardApiError("Dashboard data could not be loaded. Please try again.", response.status);
+  return new DashboardApiError(
+    "Dashboard data could not be loaded. Please try again.",
+    response.status,
+  );
 }
 
-export async function fetchTutorDashboard(timeZone = "UTC"): Promise<TutorDashboard> {
+export async function fetchTutorDashboard(
+  timeZone = "UTC",
+): Promise<TutorDashboard> {
   const requestedTimeZone = nonEmptyString(timeZone) ? timeZone : "UTC";
   const response = await fetch(
     `${LEARNING_API_URL}/api/learning/tutor/dashboard?timeZone=${encodeURIComponent(requestedTimeZone)}`,

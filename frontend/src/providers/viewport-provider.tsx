@@ -1,10 +1,10 @@
-'use client';
-import React from 'react';
-import { useTheme } from '@mui/material/styles';
-import useMediaQuery from '@mui/material/useMediaQuery';
+"use client";
+import React from "react";
+import { useTheme } from "@mui/material/styles";
+import useMediaQuery from "@mui/material/useMediaQuery";
 import ViewportContext, {
   type ViewportContextValue,
-} from '@/context/viewport-context';
+} from "@/context/viewport-context";
 
 interface ViewportProviderProps {
   children?: React.ReactNode;
@@ -18,8 +18,8 @@ const ViewportProvider = ({ children }: ViewportProviderProps) => {
   const [isMobileNavigationExpanded, setIsMobileNavigationExpanded] =
     React.useState(false);
 
-  const isOverSmViewport = useMediaQuery(theme.breakpoints.up('sm'));
-  const isOverMdViewport = useMediaQuery(theme.breakpoints.up('md'));
+  const isOverSmViewport = useMediaQuery(theme.breakpoints.up("sm"));
+  const isOverMdViewport = useMediaQuery(theme.breakpoints.up("md"));
 
   const isNavigationExpanded = isOverMdViewport
     ? isDesktopNavigationExpanded

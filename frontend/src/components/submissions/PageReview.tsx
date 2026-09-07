@@ -40,7 +40,9 @@ function PagePreview({ page, pageNumber }: PagePreviewProps) {
     return (
       <Box sx={previewContainerSx}>
         <Typography sx={{ fontSize: 11, textAlign: "center", px: 0.5 }}>
-          PDF<br />document
+          PDF
+          <br />
+          document
         </Typography>
       </Box>
     );
@@ -160,7 +162,9 @@ export default function PageReview({
               </Typography>
               {page.warning && (
                 <Stack direction="row" gap={0.5} sx={{ mt: 0.5 }}>
-                  <WarningAmberOutlinedIcon sx={{ fontSize: 14, color: "#7A6238" }} />
+                  <WarningAmberOutlinedIcon
+                    sx={{ fontSize: 14, color: "#7A6238" }}
+                  />
                   <Typography sx={{ fontSize: 11.5, color: "#7A6238" }}>
                     {page.warning}
                   </Typography>

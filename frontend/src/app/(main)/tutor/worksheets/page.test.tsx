@@ -10,7 +10,12 @@ const worksheets = vi.hoisted(() => ({ fetchTutorWorksheets: vi.fn() }));
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => ({
-    get: (key: string) => key === "classId" ? navigation.classId : key === "approved" ? navigation.approved : null,
+    get: (key: string) =>
+      key === "classId"
+        ? navigation.classId
+        : key === "approved"
+          ? navigation.approved
+          : null,
   }),
   useRouter: () => ({ replace: navigation.replace }),
 }));
@@ -31,18 +36,38 @@ describe("TutorWorksheetsPage", () => {
 
   it("opens the in-generator target selector instead of redirecting to My Classes", async () => {
     render(<TutorWorksheetsPage />);
-    expect(screen.getByRole("link", { name: "Generate Worksheet" })).toHaveAttribute("href", "/tutor/worksheets/new");
+    expect(
+      screen.getByRole("link", { name: "Generate Worksheet" }),
+    ).toHaveAttribute("href", "/tutor/worksheets/new");
   });
 
   it("loads a fresh approved worksheet list, shows its assigned state, then clears the one-time flash query", async () => {
     navigation.classId = "12";
     navigation.approved = "1";
-    worksheets.fetchTutorWorksheets.mockResolvedValue([{ id: 9, code: "WS-9", title: "Water review", instructions: null, targetMode: "CLASS", status: "APPROVED", generationRequestId: 1, sourceClassId: 12, dueAt: null, questions: [], assignments: [] }]);
+    worksheets.fetchTutorWorksheets.mockResolvedValue([
+      {
+        id: 9,
+        code: "WS-9",
+        title: "Water review",
+        instructions: null,
+        targetMode: "CLASS",
+        status: "APPROVED",
+        generationRequestId: 1,
+        sourceClassId: 12,
+        dueAt: null,
+        questions: [],
+        assignments: [],
+      },
+    ]);
     render(<TutorWorksheetsPage />);
 
     expect(await screen.findByText("ASSIGNED")).toBeVisible();
-    expect(screen.getByRole("status")).toHaveTextContent("Worksheet Sent to Students");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Worksheet Sent to Students",
+    );
     expect(worksheets.fetchTutorWorksheets).toHaveBeenCalledWith(12);
-    expect(navigation.replace).toHaveBeenCalledWith("/tutor/worksheets?classId=12");
+    expect(navigation.replace).toHaveBeenCalledWith(
+      "/tutor/worksheets?classId=12",
+    );
   });
 });

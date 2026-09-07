@@ -1,28 +1,36 @@
-'use client';
-import * as React from 'react';
-import Stack from '@mui/material/Stack';
-import AuthCard from '@/components/auth-card';
-import ColorModeSelect from '../../theme/color-mode-select';
-import SignInContainer from "../../components/styled-stack"
+"use client";
+import * as React from "react";
+import Stack from "@mui/material/Stack";
+import AuthCard from "@/components/auth-card";
+import ColorModeSelect from "../../theme/color-mode-select";
+import SignInContainer from "../../components/styled-stack";
 import strings from "../../locales/en.json";
-import Content from '@/components/content';
-import { apiRequest, getErrorMessage } from '@/lib/api';
-import { useRouter } from 'next/navigation';
-import { getRoleHome, saveAuthSession, type AuthResponsePayload } from '@/lib/auth';
-import { isValidEmail, isValidFullName, isValidRegistrationPassword } from '@/lib/validation';
+import Content from "@/components/content";
+import { apiRequest, getErrorMessage } from "@/lib/api";
+import { useRouter } from "next/navigation";
+import {
+  getRoleHome,
+  saveAuthSession,
+  type AuthResponsePayload,
+} from "@/lib/auth";
+import {
+  isValidEmail,
+  isValidFullName,
+  isValidRegistrationPassword,
+} from "@/lib/validation";
 
 export default function Signup() {
   const router = useRouter();
   const nameRef = React.useRef<HTMLInputElement>(null);
   const [nameError, setNameError] = React.useState(false);
-  const [nameErrorMessage, setNameErrorMessage] = React.useState('');
+  const [nameErrorMessage, setNameErrorMessage] = React.useState("");
   const emailRef = React.useRef<HTMLInputElement>(null);
   const [emailError, setEmailError] = React.useState(false);
-  const [emailErrorMessage, setEmailErrorMessage] = React.useState('');
+  const [emailErrorMessage, setEmailErrorMessage] = React.useState("");
   const passwordRef = React.useRef<HTMLInputElement>(null);
   const [passwordError, setPasswordError] = React.useState(false);
-  const [passwordErrorMessage, setPasswordErrorMessage] = React.useState('');
-  const [submitErrorMessage, setSubmitErrorMessage] = React.useState('');
+  const [passwordErrorMessage, setPasswordErrorMessage] = React.useState("");
+  const [submitErrorMessage, setSubmitErrorMessage] = React.useState("");
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const submitInFlightRef = React.useRef(false);
 
@@ -33,29 +41,33 @@ export default function Signup() {
     }
     submitInFlightRef.current = true;
     setIsSubmitting(true);
-    setSubmitErrorMessage('');
+    setSubmitErrorMessage("");
     const data = new FormData(event.currentTarget);
-    const email = data.get('email');
-    const password = data.get('password');
-    const fullName = data.get('fullName');
+    const email = data.get("email");
+    const password = data.get("password");
+    const fullName = data.get("fullName");
     try {
-      const response = await apiRequest('/api/auth/register', {
-        method: 'POST',
-        body: JSON.stringify({ email, password, fullName, role: 'STUDENT' }),
+      const response = await apiRequest("/api/auth/register", {
+        method: "POST",
+        body: JSON.stringify({ email, password, fullName, role: "STUDENT" }),
       });
       if (!response.ok) {
         setSubmitErrorMessage(await getErrorMessage(response));
         return;
       }
       try {
-        const jsonResponse = await response.json() as AuthResponsePayload;
+        const jsonResponse = (await response.json()) as AuthResponsePayload;
         const session = saveAuthSession(jsonResponse);
         router.replace(getRoleHome(session.role));
       } catch {
-        setSubmitErrorMessage('Unable to establish a secure session. Please try again.');
+        setSubmitErrorMessage(
+          "Unable to establish a secure session. Please try again.",
+        );
       }
     } catch {
-      setSubmitErrorMessage('Unable to reach the authentication service. Please try again.');
+      setSubmitErrorMessage(
+        "Unable to reach the authentication service. Please try again.",
+      );
     } finally {
       submitInFlightRef.current = false;
       setIsSubmitting(false);
@@ -75,7 +87,7 @@ export default function Signup() {
       isValid = false;
     } else {
       setNameError(false);
-      setNameErrorMessage('');
+      setNameErrorMessage("");
     }
 
     if (!email || !isValidEmail(email.value)) {
@@ -84,7 +96,7 @@ export default function Signup() {
       isValid = false;
     } else {
       setEmailError(false);
-      setEmailErrorMessage('');
+      setEmailErrorMessage("");
     }
 
     if (!password || !isValidRegistrationPassword(password.value)) {
@@ -93,32 +105,36 @@ export default function Signup() {
       isValid = false;
     } else {
       setPasswordError(false);
-      setPasswordErrorMessage('');
+      setPasswordErrorMessage("");
     }
 
     return isValid;
   };
 
   return (
-    <SignInContainer direction="column" sx={{ justifyContent: 'space-between' }} data-testid="sign-in-container">
-      <ColorModeSelect sx={{ position: 'fixed', top: '1rem', right: '1rem' }} />
+    <SignInContainer
+      direction="column"
+      sx={{ justifyContent: "space-between" }}
+      data-testid="sign-in-container"
+    >
+      <ColorModeSelect sx={{ position: "fixed", top: "1rem", right: "1rem" }} />
       <Stack
-        direction={{ xs: 'column-reverse', md: 'row' }}
+        direction={{ xs: "column-reverse", md: "row" }}
         sx={{
-          justifyContent: 'center',
+          justifyContent: "center",
           gap: { xs: 6, sm: 12 },
           p: 2,
-          mx: 'auto',
+          mx: "auto",
         }}
         data-testid="outer-stack"
       >
         <Stack
-          direction={{ xs: 'column-reverse', md: 'row' }}
+          direction={{ xs: "column-reverse", md: "row" }}
           sx={{
-            justifyContent: 'center',
+            justifyContent: "center",
             gap: { xs: 6, sm: 12 },
             p: { xs: 2, sm: 4 },
-            m: 'auto',
+            m: "auto",
           }}
         >
           <Content />
@@ -137,7 +153,7 @@ export default function Signup() {
             fromSignup={true}
             submitErrorMessage={submitErrorMessage}
             isSubmitting={isSubmitting}
-            />
+          />
         </Stack>
       </Stack>
     </SignInContainer>

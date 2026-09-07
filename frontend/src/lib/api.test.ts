@@ -33,7 +33,9 @@ describe("apiRequest", () => {
     expect(fetch).toHaveBeenCalledWith(
       "http://localhost:8081/api/auth/login",
       expect.objectContaining({
-        headers: expect.not.objectContaining({ Authorization: expect.anything() }),
+        headers: expect.not.objectContaining({
+          Authorization: expect.anything(),
+        }),
       }),
     );
   });
@@ -56,10 +58,13 @@ describe("apiRequest", () => {
 
 describe("getErrorMessage", () => {
   it("returns a JSON message when supplied", async () => {
-    const response = new Response(JSON.stringify({ message: "Invalid request" }), {
-      status: 400,
-      headers: { "content-type": "application/json" },
-    });
+    const response = new Response(
+      JSON.stringify({ message: "Invalid request" }),
+      {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      },
+    );
 
     await expect(getErrorMessage(response)).resolves.toBe("Invalid request");
   });
@@ -76,7 +81,9 @@ describe("getErrorMessage", () => {
   it("falls back to plain text", async () => {
     const response = new Response("Service unavailable", { status: 503 });
 
-    await expect(getErrorMessage(response)).resolves.toBe("Service unavailable");
+    await expect(getErrorMessage(response)).resolves.toBe(
+      "Service unavailable",
+    );
   });
 
   it("falls back to the HTTP status for an empty body", async () => {
@@ -100,18 +107,27 @@ describe("getErrorMessage", () => {
 describe("register", () => {
   it("stores the token returned by the registration endpoint", async () => {
     const expires = Math.floor(Date.now() / 1000) + 3600;
-    const token = `${btoa(JSON.stringify({ alg: "HS256" }))}.${btoa(JSON.stringify({
-      sub: "student@example.com",
-      role: "STUDENT",
-      exp: expires,
-    }))}.signature`;
+    const token = `${btoa(JSON.stringify({ alg: "HS256" }))}.${btoa(
+      JSON.stringify({
+        sub: "student@example.com",
+        role: "STUDENT",
+        exp: expires,
+      }),
+    )}.signature`;
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ token, email: "student@example.com", role: "STUDENT" }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        }),
+        new Response(
+          JSON.stringify({
+            token,
+            email: "student@example.com",
+            role: "STUDENT",
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        ),
       ),
     );
 

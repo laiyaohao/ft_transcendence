@@ -1,5 +1,5 @@
-import Login from './login';
-import StyledBox from '@/components/styled-box';
+import Login from "./login";
+import StyledBox from "@/components/styled-box";
 
 export default function Page() {
   return (

@@ -9,10 +9,7 @@ export type LearningFindingType =
   | "REGRESSED"
   | "MASTERY_GAP";
 export type LearningDimensionCategory =
-  | "CONCEPT"
-  | "KEYWORD"
-  | "EXPRESSION"
-  | "APPLICATION";
+  "CONCEPT" | "KEYWORD" | "EXPRESSION" | "APPLICATION";
 
 export interface LearningTopicSummary {
   topicId: number;
@@ -86,7 +83,12 @@ function isCount(value: unknown): value is number {
 }
 
 function isPercentage(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100;
+  return (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= 0 &&
+    value <= 100
+  );
 }
 
 function isNonEmptyString(value: unknown): value is string {
@@ -98,7 +100,10 @@ function isOptionalDate(value: unknown): value is string | null {
 }
 
 function isMasteryStatus(value: unknown): value is MasteryStatus {
-  return typeof value === "string" && MASTERY_STATUSES.includes(value as MasteryStatus);
+  return (
+    typeof value === "string" &&
+    MASTERY_STATUSES.includes(value as MasteryStatus)
+  );
 }
 
 function invalidLearningProfile(): Error {
@@ -108,9 +113,13 @@ function invalidLearningProfile(): Error {
 function parseTopicSummary(value: unknown): LearningTopicSummary {
   if (!value || typeof value !== "object") throw invalidLearningProfile();
   const item = value as Record<string, unknown>;
-  if (!isPositiveIdentifier(item.topicId) || !isNonEmptyString(item.topicName)
-    || !isPercentage(item.score) || !isMasteryStatus(item.status)
-    || !isCount(item.attemptCount)) {
+  if (
+    !isPositiveIdentifier(item.topicId) ||
+    !isNonEmptyString(item.topicName) ||
+    !isPercentage(item.score) ||
+    !isMasteryStatus(item.status) ||
+    !isCount(item.attemptCount)
+  ) {
     throw invalidLearningProfile();
   }
   return item as unknown as LearningTopicSummary;
@@ -119,8 +128,10 @@ function parseTopicSummary(value: unknown): LearningTopicSummary {
 function parseLearningEvidence(value: unknown): LearningEvidence {
   const item = parseTopicSummary(value) as LearningEvidence;
   const raw = value as Record<string, unknown>;
-  if (!(raw.sourceReason === null || isNonEmptyString(raw.sourceReason))
-    || !isOptionalDate(raw.occurredAt)) {
+  if (
+    !(raw.sourceReason === null || isNonEmptyString(raw.sourceReason)) ||
+    !isOptionalDate(raw.occurredAt)
+  ) {
     throw invalidLearningProfile();
   }
   return item;
@@ -129,9 +140,14 @@ function parseLearningEvidence(value: unknown): LearningEvidence {
 function parseLearningDimension(value: unknown): LearningDimension {
   if (!value || typeof value !== "object") throw invalidLearningProfile();
   const item = value as Record<string, unknown>;
-  if (typeof item.category !== "string"
-    || !DIMENSION_CATEGORIES.includes(item.category as LearningDimensionCategory)
-    || !isCount(item.evidenceCount) || !Array.isArray(item.evidence)) {
+  if (
+    typeof item.category !== "string" ||
+    !DIMENSION_CATEGORIES.includes(
+      item.category as LearningDimensionCategory,
+    ) ||
+    !isCount(item.evidenceCount) ||
+    !Array.isArray(item.evidence)
+  ) {
     throw invalidLearningProfile();
   }
 
@@ -148,11 +164,15 @@ function parseLearningDimension(value: unknown): LearningDimension {
 function parseLearningFinding(value: unknown): LearningFinding {
   if (!value || typeof value !== "object") throw invalidLearningProfile();
   const item = value as Record<string, unknown>;
-  if (typeof item.type !== "string"
-    || !FINDING_TYPES.includes(item.type as LearningFindingType)
-    || !isNonEmptyString(item.title) || !isNonEmptyString(item.summary)
-    || !isNonEmptyString(item.suggestedAction) || !Array.isArray(item.evidence)
-    || item.evidence.length === 0) {
+  if (
+    typeof item.type !== "string" ||
+    !FINDING_TYPES.includes(item.type as LearningFindingType) ||
+    !isNonEmptyString(item.title) ||
+    !isNonEmptyString(item.summary) ||
+    !isNonEmptyString(item.suggestedAction) ||
+    !Array.isArray(item.evidence) ||
+    item.evidence.length === 0
+  ) {
     throw invalidLearningProfile();
   }
 
@@ -168,17 +188,25 @@ function parseLearningFinding(value: unknown): LearningFinding {
 export function parseLearningProfile(value: unknown): LearningProfile {
   if (!value || typeof value !== "object") throw invalidLearningProfile();
   const profile = value as Record<string, unknown>;
-  if (!isPositiveIdentifier(profile.studentId) || !Array.isArray(profile.strengths)
-    || !Array.isArray(profile.growthAreas) || !Array.isArray(profile.improvements)
-    || !Array.isArray(profile.dimensions) || !Array.isArray(profile.findings)
-    || !isOptionalDate(profile.dataAsOf) || profile.source !== "DETERMINISTIC") {
+  if (
+    !isPositiveIdentifier(profile.studentId) ||
+    !Array.isArray(profile.strengths) ||
+    !Array.isArray(profile.growthAreas) ||
+    !Array.isArray(profile.improvements) ||
+    !Array.isArray(profile.dimensions) ||
+    !Array.isArray(profile.findings) ||
+    !isOptionalDate(profile.dataAsOf) ||
+    profile.source !== "DETERMINISTIC"
+  ) {
     throw invalidLearningProfile();
   }
 
   const dimensions = profile.dimensions.map(parseLearningDimension);
   const hasExpectedDimensionOrder =
-    dimensions.length === DIMENSION_CATEGORIES.length
-    && dimensions.every((item, index) => item.category === DIMENSION_CATEGORIES[index]);
+    dimensions.length === DIMENSION_CATEGORIES.length &&
+    dimensions.every(
+      (item, index) => item.category === DIMENSION_CATEGORIES[index],
+    );
   if (!hasExpectedDimensionOrder) throw invalidLearningProfile();
 
   return {
@@ -194,8 +222,12 @@ export function parseLearningProfile(value: unknown): LearningProfile {
 }
 
 function learningProfileRequestHeaders(): HeadersInit {
-  const token = typeof window === "undefined" ? null : localStorage.getItem("jwt_token");
-  return { Accept: "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+  const token =
+    typeof window === "undefined" ? null : localStorage.getItem("jwt_token");
+  return {
+    Accept: "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
 }
 
 async function loadLearningProfile(path: string): Promise<LearningProfile> {
@@ -215,13 +247,16 @@ async function loadLearningProfile(path: string): Promise<LearningProfile> {
   return parseLearningProfile(await response.json());
 }
 
-export async function fetchLearningProfile(studentId?: number): Promise<LearningProfile> {
+export async function fetchLearningProfile(
+  studentId?: number,
+): Promise<LearningProfile> {
   if (studentId !== undefined && !isPositiveIdentifier(studentId)) {
     throw new Error("Student reference is invalid.");
   }
 
-  const path = studentId === undefined
-    ? "/api/learning/student/learning-profile"
-    : `/api/learning/tutor/students/${studentId}/learning-profile`;
+  const path =
+    studentId === undefined
+      ? "/api/learning/student/learning-profile"
+      : `/api/learning/tutor/students/${studentId}/learning-profile`;
   return loadLearningProfile(path);
 }

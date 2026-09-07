@@ -1,12 +1,13 @@
-import { type Theme } from '@mui/material/styles';
+import { type Theme } from "@mui/material/styles";
 
 function getReducedMotionStyles(theme: Theme, transition: string) {
   return {
-    transition: theme.motion.reducedMotion === 'always' ? 'none' : transition,
-    '@media (prefers-reduced-motion: reduce)': {
+    transition: theme.motion.reducedMotion === "always" ? "none" : transition,
+    "@media (prefers-reduced-motion: reduce)": {
       transition:
-        theme.motion.reducedMotion === 'always' || theme.motion.reducedMotion === 'system'
-          ? 'none'
+        theme.motion.reducedMotion === "always" ||
+        theme.motion.reducedMotion === "system"
+          ? "none"
           : transition,
     },
   };

@@ -18,14 +18,16 @@ const dashboard: TutorDashboardData = {
     needsAttentionStudentCount: 2,
     reportsReadyCount: 1,
   },
-  todaySchedule: [{
-    classId: 8,
-    className: "Primary 5 Science",
-    subject: "Science",
-    level: "Primary 5",
-    startTime: "16:00:00",
-    endTime: "17:30:00",
-  }],
+  todaySchedule: [
+    {
+      classId: 8,
+      className: "Primary 5 Science",
+      subject: "Science",
+      level: "Primary 5",
+      startTime: "16:00:00",
+      endTime: "17:30:00",
+    },
+  ],
   recentActivity: [
     {
       type: "ALERT_CREATED",
@@ -63,27 +65,47 @@ const dashboard: TutorDashboardData = {
 describe("TutorDashboard", () => {
   it("shows a skeleton while the owner-scoped dashboard is loading", async () => {
     let resolve!: (value: TutorDashboardData) => void;
-    const loadDashboard = vi.fn(() => new Promise<TutorDashboardData>((complete) => { resolve = complete; }));
+    const loadDashboard = vi.fn(
+      () =>
+        new Promise<TutorDashboardData>((complete) => {
+          resolve = complete;
+        }),
+    );
 
     render(<TutorDashboard loadDashboard={loadDashboard} timeZone="UTC" />);
 
     expect(screen.getByTestId("tutor-dashboard-skeleton")).toBeVisible();
     await waitFor(() => expect(loadDashboard).toHaveBeenCalledWith("UTC"));
     resolve(dashboard);
-    expect(await screen.findByRole("heading", { name: "Your teaching day, clearly organised." })).toBeVisible();
+    expect(
+      await screen.findByRole("heading", {
+        name: "Your teaching day, clearly organised.",
+      }),
+    ).toBeVisible();
   });
 
   it("renders every live metric, schedule, and supplied activity order in a responsive grid", async () => {
-    render(<TutorDashboard loadDashboard={async () => dashboard} timeZone="Asia/Singapore" />);
+    render(
+      <TutorDashboard
+        loadDashboard={async () => dashboard}
+        timeZone="Asia/Singapore"
+      />,
+    );
 
     expect(await screen.findByText("Active classes")).toBeVisible();
     expect(screen.getByText("12")).toBeVisible();
     expect(screen.getByText("Primary 5 Science")).toBeVisible();
     expect(screen.getByText("16:00–17:30")).toBeVisible();
-    expect(screen.getByTestId("dashboard-metric-grid")).toHaveStyle({ gridTemplateColumns: "repeat(auto-fit, minmax(168px, 1fr))" });
+    expect(screen.getByTestId("dashboard-metric-grid")).toHaveStyle({
+      gridTemplateColumns: "repeat(auto-fit, minmax(168px, 1fr))",
+    });
 
     const activity = screen.getByTestId("dashboard-activity-list");
-    expect(within(activity).getAllByRole("button").map((item) => item.textContent)).toEqual([
+    expect(
+      within(activity)
+        .getAllByRole("button")
+        .map((item) => item.textContent),
+    ).toEqual([
       expect.stringContaining("Adaptation needs attention"),
       expect.stringContaining("Marking review requested"),
       expect.stringContaining("Energy forms revision"),
@@ -94,35 +116,70 @@ describe("TutorDashboard", () => {
     const go = vi.fn();
     const empty: TutorDashboardData = {
       ...dashboard,
-      metrics: { activeClassCount: 0, studentCount: 0, pendingReviewCount: 0, needsAttentionStudentCount: 0, reportsReadyCount: 0 },
+      metrics: {
+        activeClassCount: 0,
+        studentCount: 0,
+        pendingReviewCount: 0,
+        needsAttentionStudentCount: 0,
+        reportsReadyCount: 0,
+      },
       todaySchedule: [],
       recentActivity: [],
     };
     const user = userEvent.setup();
-    render(<TutorDashboard loadDashboard={async () => empty} timeZone="UTC" navigate={go} />);
+    render(
+      <TutorDashboard
+        loadDashboard={async () => empty}
+        timeZone="UTC"
+        navigate={go}
+      />,
+    );
 
-    expect(await screen.findByRole("heading", { name: "Your dashboard is ready" })).toBeVisible();
-    expect(screen.getByRole("heading", { name: "No classes scheduled today" })).toBeVisible();
+    expect(
+      await screen.findByRole("heading", { name: "Your dashboard is ready" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: "No classes scheduled today" }),
+    ).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Create class" }));
     expect(go).toHaveBeenCalledWith("/classes/new");
   });
 
   it("keeps partial data useful when no schedule is available", async () => {
-    const partial: TutorDashboardData = { ...dashboard, todaySchedule: [], recentActivity: [dashboard.recentActivity[1]] };
-    render(<TutorDashboard loadDashboard={async () => partial} timeZone="UTC" />);
+    const partial: TutorDashboardData = {
+      ...dashboard,
+      todaySchedule: [],
+      recentActivity: [dashboard.recentActivity[1]],
+    };
+    render(
+      <TutorDashboard loadDashboard={async () => partial} timeZone="UTC" />,
+    );
 
-    expect(await screen.findByRole("heading", { name: "No classes scheduled today" })).toBeVisible();
+    expect(
+      await screen.findByRole("heading", {
+        name: "No classes scheduled today",
+      }),
+    ).toBeVisible();
     expect(screen.getByText("Marking review requested")).toBeVisible();
     expect(screen.queryByText("Energy forms revision")).not.toBeInTheDocument();
   });
 
   it("provides a retryable error when dashboard data is unavailable", async () => {
-    const loadDashboard = vi.fn().mockRejectedValueOnce(new Error("Dashboard data is temporarily unavailable.")).mockResolvedValueOnce(dashboard);
+    const loadDashboard = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new Error("Dashboard data is temporarily unavailable."),
+      )
+      .mockResolvedValueOnce(dashboard);
     const user = userEvent.setup();
     render(<TutorDashboard loadDashboard={loadDashboard} timeZone="UTC" />);
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Dashboard data is temporarily unavailable.");
-    await user.click(screen.getByRole("button", { name: "Retry loading dashboard" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Dashboard data is temporarily unavailable.",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Retry loading dashboard" }),
+    );
     expect(await screen.findByText("Primary 5 Science")).toBeVisible();
     expect(loadDashboard).toHaveBeenCalledTimes(2);
   });
@@ -130,16 +187,36 @@ describe("TutorDashboard", () => {
   it("navigates quick actions, schedules, and activity types to valid application routes", async () => {
     const go = vi.fn();
     const user = userEvent.setup();
-    render(<TutorDashboard loadDashboard={async () => dashboard} timeZone="UTC" navigate={go} />);
+    render(
+      <TutorDashboard
+        loadDashboard={async () => dashboard}
+        timeZone="UTC"
+        navigate={go}
+      />,
+    );
 
     await screen.findByText("Primary 5 Science");
-    await user.click(screen.getAllByRole("button", { name: "Generate Worksheet" })[0]);
+    await user.click(
+      screen.getAllByRole("button", { name: "Generate Worksheet" })[0],
+    );
     await user.click(screen.getByRole("button", { name: "Upload worksheet" }));
     await user.click(screen.getByRole("button", { name: /Pending review/ }));
     await user.click(screen.getByRole("button", { name: /Primary 5 Science/ }));
-    await user.click(screen.getByRole("button", { name: "Open student: Adaptation needs attention" }));
-    await user.click(screen.getByRole("button", { name: "Open review: Marking review requested" }));
-    await user.click(screen.getByRole("button", { name: "View worksheets: Energy forms revision" }));
+    await user.click(
+      screen.getByRole("button", {
+        name: "Open student: Adaptation needs attention",
+      }),
+    );
+    await user.click(
+      screen.getByRole("button", {
+        name: "Open review: Marking review requested",
+      }),
+    );
+    await user.click(
+      screen.getByRole("button", {
+        name: "View worksheets: Energy forms revision",
+      }),
+    );
 
     expect(go).toHaveBeenCalledWith("/tutor/worksheets/new");
     expect(go).toHaveBeenCalledWith("/upload");

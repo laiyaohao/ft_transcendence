@@ -1,10 +1,10 @@
-'use client';
-import React from 'react';
-import useMediaQuery from '@mui/material/useMediaQuery';
-import ViewportContext from '@/context/viewport-context';
+"use client";
+import React from "react";
+import useMediaQuery from "@mui/material/useMediaQuery";
+import ViewportContext from "@/context/viewport-context";
 import SidebarContext, {
   type SidebarContextValue,
-} from '@/context/sidebar-context';
+} from "@/context/sidebar-context";
 
 interface SidebarProviderProps {
   children?: React.ReactNode;
@@ -14,7 +14,7 @@ const SidebarProvider = ({ children }: SidebarProviderProps) => {
   const viewportContext = React.useContext(ViewportContext);
 
   if (!viewportContext) {
-    throw new Error('Viewport context was used without a provider.');
+    throw new Error("Viewport context was used without a provider.");
   }
 
   const {
@@ -26,18 +26,22 @@ const SidebarProvider = ({ children }: SidebarProviderProps) => {
   } = viewportContext;
   const disableCollapsibleSidebar = false;
   const [expandedItemIds, setExpandedItemIds] = React.useState<string[]>([]);
-  const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
+  const prefersReducedMotion = useMediaQuery(
+    "(prefers-reduced-motion: reduce)",
+  );
   const shouldReduceDrawerMotion =
-    theme.motion.reducedMotion === 'always' ||
-    (theme.motion.reducedMotion === 'system' && prefersReducedMotion);
+    theme.motion.reducedMotion === "always" ||
+    (theme.motion.reducedMotion === "system" && prefersReducedMotion);
   const drawerEnteringDuration = shouldReduceDrawerMotion
     ? 0
     : theme.transitions.duration.enteringScreen;
   const drawerLeavingDuration = shouldReduceDrawerMotion
     ? 0
     : theme.transitions.duration.leavingScreen;
-  const [isFullyExpanded, setIsFullyExpanded] = React.useState(isNavigationExpanded);
-  const [isFullyCollapsed, setIsFullyCollapsed] = React.useState(!isNavigationExpanded);
+  const [isFullyExpanded, setIsFullyExpanded] =
+    React.useState(isNavigationExpanded);
+  const [isFullyCollapsed, setIsFullyCollapsed] =
+    React.useState(!isNavigationExpanded);
 
   React.useEffect(() => {
     const drawerWidthTransitionTimeout = setTimeout(

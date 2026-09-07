@@ -10,8 +10,8 @@ export function worksheetClassId(
 ): number | undefined {
   if (positiveId(worksheet.sourceClassId)) return worksheet.sourceClassId;
 
-  const assignmentClassId = worksheet.assignments.find(
-    (assignment) => positiveId(assignment.classId),
+  const assignmentClassId = worksheet.assignments.find((assignment) =>
+    positiveId(assignment.classId),
   )?.classId;
 
   if (positiveId(assignmentClassId)) return assignmentClassId;

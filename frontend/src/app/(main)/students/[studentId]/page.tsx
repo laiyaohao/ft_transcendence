@@ -18,7 +18,9 @@ function isValidStudentId(studentId: number) {
 }
 
 function masteryMapErrorMessage(reason: unknown) {
-  return reason instanceof Error ? reason.message : "Mastery map could not be loaded.";
+  return reason instanceof Error
+    ? reason.message
+    : "Mastery map could not be loaded.";
 }
 
 function MasteryMapSkeleton() {
@@ -40,7 +42,13 @@ function MasteryMapSkeleton() {
   );
 }
 
-function MasteryMapLoadError({ error, retry }: { error: string; retry: () => void }) {
+function MasteryMapLoadError({
+  error,
+  retry,
+}: {
+  error: string;
+  retry: () => void;
+}) {
   return (
     <Card
       component="section"
@@ -56,11 +64,17 @@ function MasteryMapLoadError({ error, retry }: { error: string; retry: () => voi
     >
       <Typography
         component="h2"
-        sx={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 21, mb: 0.75 }}
+        sx={{
+          fontFamily: "'Playfair Display', Georgia, serif",
+          fontSize: 21,
+          mb: 0.75,
+        }}
       >
         Mastery map could not be loaded
       </Typography>
-      <Typography sx={{ color: "#6F675E", fontSize: 13, mb: 1.25 }}>{error}</Typography>
+      <Typography sx={{ color: "#6F675E", fontSize: 13, mb: 1.25 }}>
+        {error}
+      </Typography>
       <Button
         onClick={retry}
         variant="outlined"
@@ -136,7 +150,11 @@ function StudentMasteryMap({ studentId }: { studentId: number }) {
 
   return (
     <Box sx={{ mt: 2.5 }}>
-      <MasteryMap data={data} studentId={studentId} heading="Canonical mastery map" />
+      <MasteryMap
+        data={data}
+        studentId={studentId}
+        heading="Canonical mastery map"
+      />
     </Box>
   );
 }
@@ -155,9 +173,17 @@ export default function StudentProfilePage() {
         color: "#2A2622",
       }}
     >
-      <Box sx={{ maxWidth: 1420, mx: "auto", animation: "fadeUp .35s ease both" }}>
+      <Box
+        sx={{ maxWidth: 1420, mx: "auto", animation: "fadeUp .35s ease both" }}
+      >
         <Typography
-          sx={{ color: "#A09488", fontSize: 10.5, fontWeight: 600, letterSpacing: ".13em", mb: 0.75 }}
+          sx={{
+            color: "#A09488",
+            fontSize: 10.5,
+            fontWeight: 600,
+            letterSpacing: ".13em",
+            mb: 0.75,
+          }}
         >
           STUDENT MANAGEMENT
         </Typography>
