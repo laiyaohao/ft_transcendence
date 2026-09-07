@@ -395,7 +395,9 @@ class WorksheetRepositoryTest {
             BigDecimal.ONE
         );
         entityManager.clear();
-        return questionRepository.findByCode(code).orElseThrow();
+        Question persistedQuestion = questionRepository.findByCode(code).orElseThrow();
+        persistedQuestion.getImages();
+        return persistedQuestion;
     }
 
     private TutorClass persistClass(long tutorId, String name) {

@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
@@ -64,16 +65,16 @@ class OpenAiQuestionVisionAnalyzer implements QuestionVisionAnalyzer {
     private final ObjectMapper objectMapper;
     private final Deque<Long> recentRequestTimes = new ArrayDeque<>();
 
+    @Autowired
     OpenAiQuestionVisionAnalyzer(
         @Value("${ai.vision.url}") String endpoint,
         @Value("${ai.vision.model}") String model,
         @Value("${ai.vision.api-key}") String apiKey,
         @Value("${ai.vision.timeout-ms:30000}") int timeoutMillis,
-        @Value("${ai.vision.max-requests-per-minute:20}") int maximumRequestsPerMinute,
-        ObjectMapper objectMapper
+        @Value("${ai.vision.max-requests-per-minute:20}") int maximumRequestsPerMinute
     ) {
         this(endpoint, model, apiKey, timeoutMillis, maximumRequestsPerMinute,
-            new JdkVisionHttpTransport(), objectMapper);
+            new JdkVisionHttpTransport(), new ObjectMapper());
     }
 
     OpenAiQuestionVisionAnalyzer(

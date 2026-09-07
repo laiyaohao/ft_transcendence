@@ -3,7 +3,7 @@ WORKDIR /app
 COPY pom.xml .
 RUN mvn --batch-mode dependency:go-offline
 COPY src ./src
-RUN mvn --batch-mode package -DskipTests
+RUN mvn --batch-mode package -DskipUnitTests=true
 
 FROM eclipse-temurin:17-jre-jammy
 WORKDIR /app
