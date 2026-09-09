@@ -1,5 +1,8 @@
 package com.fttranscendence.grading.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
@@ -16,11 +19,17 @@ public class AiOcrService {
 
     private static final String JPEG_MEDIA_TYPE = "image/jpeg";
     private static final String PNG_MEDIA_TYPE = "image/png";
+    private static final double LEGACY_TRANSCRIPTION_CONFIDENCE = .85;
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final String OCR_PROMPT =
         "You are a precise mathematical OCR engine. "
             + "Extract all printed text and handwritten calculations exactly as written. "
             + "Preserve all mathematical operators (+, -, *, /, =) and numbers accurately "
             + "without skipping symbols. "
+            + "Assess the visual legibility and recognition certainty of the transcription, not its "
+            + "length. Return only a JSON object with text and confidence fields. text must be the "
+            + "literal transcription. confidence must be a number from 0 to 1, where 1 means every "
+            + "visible character is clear and confidently recognized, and 0 means unreadable. "
             + "Do not include explanation, preamble, or commentary.";
 
     @Value("${ai.engine.url}")
@@ -97,7 +106,8 @@ public class AiOcrService {
 
             if (providerResponse != null && providerResponse.containsKey("choices")) {
                 String rawContent = extractFirstChoiceContent(providerResponse);
-                String extractedText = cleanModelOutput(rawContent);
+                ParsedOcrOutput ocrOutput = parseModelOutput(rawContent);
+                String extractedText = ocrOutput.text();
 
                 if (extractedText.isBlank()) {
                     return new OcrResult("", 0, true);
@@ -105,7 +115,7 @@ public class AiOcrService {
 
                 return new OcrResult(
                     extractedText,
-                    calculateConfidence(extractedText),
+                    ocrOutput.confidence(),
                     false
                 );
             }
@@ -167,6 +177,40 @@ public class AiOcrService {
         return (String) firstMessage.get("content");
     }
 
+    private ParsedOcrOutput parseModelOutput(String rawContent) {
+        String cleanedContent = cleanModelOutput(rawContent);
+        if (cleanedContent.isBlank()) {
+            return new ParsedOcrOutput("", 0);
+        }
+
+        try {
+            JsonNode output = OBJECT_MAPPER.readTree(cleanedContent);
+            if (output.isObject() && output.path("text").isTextual()) {
+                String text = cleanModelOutput(output.path("text").textValue());
+                return new ParsedOcrOutput(text, parseModelConfidence(output.path("confidence")));
+            }
+        } catch (JsonProcessingException ignored) {
+            // Older providers return the literal transcription rather than JSON.
+        }
+
+        // A valid legacy transcription has no model confidence. Keep it usable
+        // without treating a short answer as uncertain solely because it is short.
+        return new ParsedOcrOutput(cleanedContent, LEGACY_TRANSCRIPTION_CONFIDENCE);
+    }
+
+    private double parseModelConfidence(JsonNode confidenceNode) {
+        if (!confidenceNode.isNumber()) {
+            return LEGACY_TRANSCRIPTION_CONFIDENCE;
+        }
+
+        double confidence = confidenceNode.doubleValue();
+        if (!Double.isFinite(confidence) || confidence < 0 || confidence > 1) {
+            return LEGACY_TRANSCRIPTION_CONFIDENCE;
+        }
+
+        return confidence;
+    }
+
     /**
      * Strips internal reasoning tags and cleans whitespace.
      */
@@ -179,20 +223,13 @@ public class AiOcrService {
         return rawText.replaceAll("(?s)<think>.*?</think>", "").trim();
     }
 
-    private double calculateConfidence(String text) {
-        boolean containsRecognizedCharacters = text.matches(".*[A-Za-z0-9].*");
-        if (!containsRecognizedCharacters) {
-            return .4;
-        }
-
-        boolean isShortExtraction = text.length() < 8;
-        return isShortExtraction ? .65 : .94;
-    }
-
     private boolean isSupportedImage(String mediaType) {
         return JPEG_MEDIA_TYPE.equals(mediaType) || PNG_MEDIA_TYPE.equals(mediaType);
     }
 
     public record OcrResult(String text, double confidence, boolean unreadable) {
+    }
+
+    private record ParsedOcrOutput(String text, double confidence) {
     }
 }

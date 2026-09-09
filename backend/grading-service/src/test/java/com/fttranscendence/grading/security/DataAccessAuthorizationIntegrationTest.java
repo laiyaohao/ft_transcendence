@@ -283,7 +283,7 @@ class DataAccessAuthorizationIntegrationTest {
             .andExpect(jsonPath("$.pages[0].id").isNumber())
             .andExpect(jsonPath("$.pages[0].extractionId").isNumber())
             .andExpect(jsonPath("$.pages[0].text").value("answer"))
-            .andExpect(jsonPath("$.pages[0].status").value("REQUIRES_REVIEW"))
+            .andExpect(jsonPath("$.pages[0].status").value("READY"))
             .andReturn();
         learningServer.verify();
 

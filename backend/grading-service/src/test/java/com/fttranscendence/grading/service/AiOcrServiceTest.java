@@ -76,6 +76,113 @@ class AiOcrServiceTest {
     }
 
     @Test
+    void usesTheModelVisualConfidenceForAccurateShortHandwriting() {
+        Map<String, Object> response = Map.of(
+            "choices",
+            List.of(Map.of(
+                "message",
+                Map.of("content", "{\"text\":\"7\",\"confidence\":0.98}")
+            ))
+        );
+        when(restTemplate.postForObject(
+            eq("http://localhost/ocr-test"),
+            any(HttpEntity.class),
+            eq(Map.class)
+        )).thenReturn(response);
+
+        AiOcrService.OcrResult result = service.extract(
+            new byte[] {1, 2, 3},
+            "image/jpeg"
+        );
+
+        assertEquals("7", result.text());
+        assertEquals(.98, result.confidence());
+        assertTrue(!result.unreadable());
+    }
+
+    @Test
+    void preservesLowModelConfidenceForUncertainRecognition() {
+        Map<String, Object> response = Map.of(
+            "choices",
+            List.of(Map.of(
+                "message",
+                Map.of("content", "{\"text\":\"x = ?\",\"confidence\":0.31}")
+            ))
+        );
+        when(restTemplate.postForObject(
+            eq("http://localhost/ocr-test"),
+            any(HttpEntity.class),
+            eq(Map.class)
+        )).thenReturn(response);
+
+        AiOcrService.OcrResult result = service.extract(
+            new byte[] {1, 2, 3},
+            "image/jpeg"
+        );
+
+        assertEquals("x = ?", result.text());
+        assertEquals(.31, result.confidence());
+        assertTrue(!result.unreadable());
+    }
+
+    @Test
+    void fallsBackForMissingOrInvalidModelConfidenceWithoutPenalizingTranscription() {
+        Map<String, Object> missingConfidence = Map.of(
+            "choices",
+            List.of(Map.of(
+                "message",
+                Map.of("content", "{\"text\":\"5\"}")
+            ))
+        );
+        Map<String, Object> outOfRangeConfidence = Map.of(
+            "choices",
+            List.of(Map.of(
+                "message",
+                Map.of("content", "{\"text\":\"6\",\"confidence\":1.2}")
+            ))
+        );
+        when(restTemplate.postForObject(
+            eq("http://localhost/ocr-test"),
+            any(HttpEntity.class),
+            eq(Map.class)
+        )).thenReturn(missingConfidence, outOfRangeConfidence);
+
+        AiOcrService.OcrResult missingResult = service.extract(
+            new byte[] {1, 2, 3},
+            "image/jpeg"
+        );
+        AiOcrService.OcrResult invalidResult = service.extract(
+            new byte[] {1, 2, 3},
+            "image/jpeg"
+        );
+
+        assertEquals("5", missingResult.text());
+        assertEquals(.85, missingResult.confidence());
+        assertEquals("6", invalidResult.text());
+        assertEquals(.85, invalidResult.confidence());
+    }
+
+    @Test
+    void supportsLegacyPlainTextProviderResponses() {
+        Map<String, Object> response = Map.of(
+            "choices", List.of(Map.of("message", Map.of("content", "8")))
+        );
+        when(restTemplate.postForObject(
+            eq("http://localhost/ocr-test"),
+            any(HttpEntity.class),
+            eq(Map.class)
+        )).thenReturn(response);
+
+        AiOcrService.OcrResult result = service.extract(
+            new byte[] {1, 2, 3},
+            "image/jpeg"
+        );
+
+        assertEquals("8", result.text());
+        assertEquals(.85, result.confidence());
+    }
+
+    @Test
     void preservesTheUploadedImageMediaTypeForVisionProviders() {
         Map<String, Object> response = Map.of(
             "choices", List.of(Map.of("message", Map.of("content", "recognised text")))
