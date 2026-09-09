@@ -4,6 +4,7 @@ TEMPLATE_ENV_FILE := ./.env.example
 
 COMPOSE := docker compose --env-file $(ENV_FILE) -f $(COMPOSE_FILE)
 TEMPLATE_COMPOSE := docker compose --env-file $(TEMPLATE_ENV_FILE) -f $(COMPOSE_FILE)
+COMPOSE_WAIT_TIMEOUT ?= 180
 
 E2E_ENV_FILE := ./compose.e2e.env
 E2E_COMPOSE_FILES := -f ./compose.yaml -f ./compose.e2e.yaml
@@ -21,11 +22,14 @@ all: compose-up
 compose-config:
 	$(COMPOSE) config --quiet
 
-compose-build: compose-config
-	$(COMPOSE) build
+compose-pull: compose-config
+	$(COMPOSE) pull postgres
 
-compose-up: compose-config
-	$(COMPOSE) up --build -d
+compose-build: compose-pull
+	$(COMPOSE) build --pull
+
+compose-up: compose-build
+	$(COMPOSE) up --wait --wait-timeout $(COMPOSE_WAIT_TIMEOUT)
 
 compose-ps:
 	$(COMPOSE) ps
@@ -188,8 +192,9 @@ help:
 	@echo ""
 	@echo "Development:"
 	@echo "  compose-config     Validate .env and development Compose configuration"
-	@echo "  compose-build      Build development application images"
-	@echo "  compose-up         Start the development stack in the background"
+	@echo "  compose-pull       Download the PostgreSQL image when it is missing"
+	@echo "  compose-build      Refresh build base images and install locked dependencies"
+	@echo "  compose-up         Build, start, and wait for every service health check"
 	@echo "  compose-ps         Show development service status"
 	@echo "  compose-logs       Follow development service logs"
 	@echo "  compose-down       Stop development containers, preserving volumes"
