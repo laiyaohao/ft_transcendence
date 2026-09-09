@@ -74,8 +74,47 @@ class AiOcrServiceTest {
             eq("http://localhost/ocr-test"), entityCaptor.capture(), eq(Map.class)
         );
         assertEquals("Bearer test-api-key", entityCaptor.getValue().getHeaders().getFirst("Authorization"));
-        assertTrue(entityCaptor.getValue().getBody().toString().contains("only content authored by the student"));
-        assertTrue(entityCaptor.getValue().getBody().toString().contains("Question 1: What is 2 + 2?"));
+        assertTrue(entityCaptor.getValue().getBody().toString().contains("student-authored"));
+        assertTrue(entityCaptor.getValue().getBody().toString().contains("diagram-aware"));
+        assertTrue(entityCaptor.getValue().getBody().toString().contains("student_answer"));
+    }
+
+    @Test
+    void filtersDiagramAndPrintedRegionsFromStudentAnswerOutput() {
+        whenProviderReturns(classifiedOutput(
+            "answers",
+            List.of(
+                region("diagram", "10 N, left"),
+                region("printed_content", "Figure 1: Forces"),
+                region("student_answer", "The forces are balanced."),
+                region("diagram", "right, 10 N")
+            ),
+            .96
+        ));
+
+        AiOcrService.OcrResult result = service.extract(new byte[] {1, 2, 3}, "image/jpeg");
+
+        assertEquals("The forces are balanced.", result.text());
+        assertEquals(.96, result.confidence());
+        assertFalse(result.unreadable());
+    }
+
+    @Test
+    void treatsDiagramOnlyOutputAsNoAnswer() {
+        whenProviderReturns(classifiedOutput(
+            "no_answers",
+            List.of(
+                region("diagram", "10 N, left"),
+                region("printed_content", "Figure 1: Forces")
+            ),
+            .99
+        ));
+
+        AiOcrService.OcrResult result = service.extract(new byte[] {1, 2, 3}, "image/jpeg");
+
+        assertEquals("", result.text());
+        assertEquals(0, result.confidence());
+        assertTrue(result.unreadable());
     }
 
     @Test
@@ -106,10 +145,10 @@ class AiOcrServiceTest {
             eq("http://localhost/ocr-test"), any(HttpEntity.class), eq(Map.class)
         )).thenReturn(
             providerResponse("answer"),
-            providerResponse("{\"status\":\"answers\",\"text\":\"4\"}"),
-            providerResponse("{\"status\":\"answers\",\"text\":\"4\",\"confidence\":1.2}"),
-            providerResponse("{\"status\":\"no_answers\",\"text\":\"printed title\",\"confidence\":.9}"),
-            providerResponse("{\"status\":\"uncertain\",\"text\":\"4\",\"confidence\":.8}")
+            providerResponse("{\"status\":\"answers\",\"regions\":[]}"),
+            providerResponse("{\"status\":\"answers\",\"regions\":[{\"type\":\"student_answer\",\"text\":\"4\"}],\"confidence\":1.2}"),
+            providerResponse("{\"status\":\"no_answers\",\"regions\":[{\"type\":\"student_answer\",\"text\":\"printed title\"}],\"confidence\":.9}"),
+            providerResponse("{\"status\":\"uncertain\",\"regions\":[{\"type\":\"student_answer\",\"text\":\"4\"}],\"confidence\":.8}")
         );
 
         for (int call = 0; call < 5; call++) {
@@ -142,15 +181,24 @@ class AiOcrServiceTest {
     }
 
     @Test
-    void rendersTypedWorksheetPdfAndReturnsOnlyTheModelSelectedAnswer() throws IOException {
-        whenProviderReturns(answers("x = 42", .96));
+    void rendersDiagramWorksheetPdfAndReturnsOnlyTheStudentAnswerRegion() throws IOException {
+        whenProviderReturns(classifiedOutput(
+            "answers",
+            List.of(
+                region("printed_content", "Figure 1: Forces"),
+                region("diagram", "10 N, left"),
+                region("student_answer", "The forces are balanced."),
+                region("diagram", "right, 10 N")
+            ),
+            .96
+        ));
 
         AiOcrService.OcrResult result = service.extract(
-            typedPdf(List.of("Worksheet title", "Question 1: solve x", "Instructions: show work", "x = 42")),
+            diagramWorksheetPdf(),
             "application/pdf"
         );
 
-        assertEquals("x = 42", result.text());
+        assertEquals("The forces are balanced.", result.text());
         assertEquals(.96, result.confidence());
         assertFalse(result.unreadable());
         verify(restTemplate).postForObject(
@@ -250,13 +298,24 @@ class AiOcrServiceTest {
     }
 
     private String answers(String text, double confidence) {
-        return "{\"status\":\"answers\",\"text\":\"" + text
-            + "\",\"confidence\":" + confidence + "}";
+        return classifiedOutput(
+            "answers",
+            List.of(region("student_answer", text)),
+            confidence
+        );
     }
 
     private String noAnswers(double confidence) {
-        return "{\"status\":\"no_answers\",\"text\":\"\",\"confidence\":"
-            + confidence + "}";
+        return classifiedOutput("no_answers", List.of(), confidence);
+    }
+
+    private String classifiedOutput(String status, List<String> regions, double confidence) {
+        return "{\"status\":\"" + status + "\",\"regions\":["
+            + String.join(",", regions) + "],\"confidence\":" + confidence + "}";
+    }
+
+    private String region(String type, String text) {
+        return "{\"type\":\"" + type + "\",\"text\":\"" + text + "\"}";
     }
 
     @SafeVarargs
@@ -293,6 +352,43 @@ class AiOcrServiceTest {
             document.protect(new StandardProtectionPolicy(
                 "owner-password", "", new AccessPermission()
             ));
+            document.save(output);
+            return output.toByteArray();
+        }
+    }
+
+    private byte[] diagramWorksheetPdf() throws IOException {
+        try (
+            PDDocument document = new PDDocument();
+            ByteArrayOutputStream output = new ByteArrayOutputStream()
+        ) {
+            PDPage page = new PDPage();
+            document.addPage(page);
+
+            try (PDPageContentStream content = new PDPageContentStream(document, page)) {
+                content.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 12);
+                content.beginText();
+                content.newLineAtOffset(72, 700);
+                content.showText("Worksheet title");
+                content.newLineAtOffset(0, -24);
+                content.showText("Question: Describe the forces in Figure 1.");
+                content.newLineAtOffset(0, -24);
+                content.showText("Figure 1: Forces");
+                content.endText();
+
+                content.moveTo(160, 600);
+                content.lineTo(360, 600);
+                content.stroke();
+                content.beginText();
+                content.newLineAtOffset(110, 610);
+                content.showText("10 N, left");
+                content.newLineAtOffset(250, 0);
+                content.showText("right, 10 N");
+                content.newLineAtOffset(-250, -90);
+                content.showText("Student response: The forces are balanced.");
+                content.endText();
+            }
+
             document.save(output);
             return output.toByteArray();
         }

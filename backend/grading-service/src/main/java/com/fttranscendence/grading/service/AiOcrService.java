@@ -36,19 +36,28 @@ public class AiOcrService {
     private static final long MAX_RENDERED_PDF_PIXELS = 20_000_000L;
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final String OCR_PROMPT =
-        "You are an answer-only OCR engine for submitted worksheets. "
-            + "Transcribe only content authored by the student: handwritten or typed answers, "
-            + "calculations, diagrams labels, and working. Exclude every printed or template "
-            + "element, including titles, questions, instructions, examples, answer labels, "
-            + "headers, and worksheet text. Do not solve, correct, infer, or paraphrase anything. "
-            + "For example, if a page says printed 'Question 1: What is 2 + 2?' and the student "
-            + "writes '4', return only '4'. "
-            + "Return exactly one JSON object with exactly these fields: status, text, confidence. "
-            + "status must be 'answers', 'no_answers', or 'uncertain'. For 'answers', text must be "
-            + "the literal student-authored transcription and confidence must be a number from 0 to 1. "
-            + "For 'no_answers', text must be empty and confidence must still be a number from 0 to 1. "
-            + "Use 'uncertain' if you cannot reliably separate student work from printed content or "
-            + "cannot read it. Do not include markdown, explanation, preamble, or commentary.";
+        "You are a diagram-aware, answer-only OCR engine for submitted worksheets. "
+            + "First distinguish student answer regions from printed/template regions and figures. "
+            + "A figure includes a diagram, drawing, graph, chart, map, table, axis, flowchart, "
+            + "caption, callout, legend, shape, arrow, value, or label placed in or on that figure. "
+            + "Figure content and printed content are never answers. Transcribe only literal, "
+            + "student-authored typed or handwritten answer text, calculations, or working that is "
+            + "clearly an answer to the figure question. An answer can be beside, below, or in a "
+            + "student-filled answer blank associated with a figure, but do not transcribe diagram "
+            + "content, printed labels, or describe what the figure shows. Do not solve, correct, "
+            + "infer, or paraphrase anything. If a mark cannot reliably be distinguished as student "
+            + "answer text rather than figure content, use 'uncertain'. For example, when a printed "
+            + "force diagram has labels '10 N' and 'left', while the student writes 'The forces are "
+            + "balanced.' in the response area, return only 'The forces are balanced.'. "
+            + "Return exactly one JSON object with exactly these fields: status, regions, confidence. "
+            + "status must be 'answers', 'no_answers', or 'uncertain'. regions must be an array of "
+            + "objects with exactly type and text. type must be 'student_answer', 'diagram', or "
+            + "'printed_content'. Use 'student_answer' only for literal student answer-region text; "
+            + "use 'diagram' for figure content and 'printed_content' for all template text. For "
+            + "'answers', include at least one nonblank student_answer region in reading order. For "
+            + "'no_answers', include no student_answer regions. confidence must be a number from 0 to 1 "
+            + "for the retained student answers and their attribution. Do not include markdown, "
+            + "explanation, preamble, or commentary.";
 
     @Value("${ai.engine.url}")
     private String apiUrl;
@@ -283,17 +292,21 @@ public class AiOcrService {
             }
 
             JsonNode statusNode = output.get("status");
-            JsonNode textNode = output.get("text");
+            JsonNode regionsNode = output.get("regions");
             JsonNode confidenceNode = output.get("confidence");
             if (statusNode == null
-                || textNode == null
+                || regionsNode == null
                 || !statusNode.isTextual()
-                || !textNode.isTextual()
                 || !isNormalizedConfidence(confidenceNode)) {
                 return ModelOcrOutput.invalid();
             }
 
-            String text = cleanModelOutput(textNode.textValue());
+            List<String> studentAnswerRegions = parseStudentAnswerRegions(regionsNode);
+            if (studentAnswerRegions == null) {
+                return ModelOcrOutput.invalid();
+            }
+
+            String text = String.join("\n", studentAnswerRegions);
             double confidence = confidenceNode.doubleValue();
             return switch (statusNode.textValue()) {
                 case "answers" -> text.isBlank()
@@ -302,12 +315,54 @@ public class AiOcrService {
                 case "no_answers" -> text.isBlank()
                     ? new ModelOcrOutput(OcrStatus.NO_ANSWERS, "", confidence)
                     : ModelOcrOutput.invalid();
-                case "uncertain" -> new ModelOcrOutput(OcrStatus.UNCERTAIN, "", 0);
+                case "uncertain" -> text.isBlank()
+                    ? new ModelOcrOutput(OcrStatus.UNCERTAIN, "", 0)
+                    : ModelOcrOutput.invalid();
                 default -> ModelOcrOutput.invalid();
             };
         } catch (JsonProcessingException exception) {
             return ModelOcrOutput.invalid();
         }
+    }
+
+    private List<String> parseStudentAnswerRegions(JsonNode regionsNode) {
+        if (!regionsNode.isArray()) {
+            return null;
+        }
+
+        List<String> studentAnswerRegions = new ArrayList<>();
+        for (JsonNode region : regionsNode) {
+            if (!region.isObject() || region.size() != 2) {
+                return null;
+            }
+
+            JsonNode typeNode = region.get("type");
+            JsonNode textNode = region.get("text");
+            if (typeNode == null
+                || textNode == null
+                || !typeNode.isTextual()
+                || !textNode.isTextual()) {
+                return null;
+            }
+
+            String text = cleanModelOutput(textNode.textValue());
+            switch (typeNode.textValue()) {
+                case "student_answer" -> {
+                    if (text.isBlank()) {
+                        return null;
+                    }
+                    studentAnswerRegions.add(text);
+                }
+                case "diagram", "printed_content" -> {
+                    // These regions are intentionally never persisted as answers.
+                }
+                default -> {
+                    return null;
+                }
+            }
+        }
+
+        return studentAnswerRegions;
     }
 
     private boolean isNormalizedConfidence(JsonNode confidenceNode) {

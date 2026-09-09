@@ -6,7 +6,12 @@ const JSON_HEADERS = { "content-type": "application/json" };
 
 const OCR_TRANSCRIPTION = JSON.stringify({
   status: "answers",
-  text: "water gains energy and evaporates.",
+  regions: [
+    {
+      type: "student_answer",
+      text: "water gains energy and evaporates.",
+    },
+  ],
   confidence: 0.97,
 });
 const MARKING_SUGGESTION = JSON.stringify({

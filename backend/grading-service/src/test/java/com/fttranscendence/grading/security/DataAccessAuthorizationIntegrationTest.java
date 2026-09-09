@@ -271,12 +271,12 @@ class DataAccessAuthorizationIntegrationTest {
     }
 
     @Test
-    void authorizedStudentUploadPersistsThePageBeforeItsOcrExtraction() throws Exception {
+    void authorizedStudentUploadPersistsOnlyStudentAnswerRegionsFromDiagramOcr() throws Exception {
         learningServer.expect(once(), requestTo("http://localhost:8083/api/learning/internal/submission-authorization"))
             .andRespond(withStatus(HttpStatus.NO_CONTENT));
         learningServer.expect(once(), requestTo("http://localhost/ai-test"))
             .andRespond(withSuccess("""
-                {"choices":[{"message":{"content":"{\\"status\\":\\"answers\\",\\"text\\":\\"answer\\",\\"confidence\\":0.95}"}}]}
+                {"choices":[{"message":{"content":"{\\"status\\":\\"answers\\",\\"regions\\":[{\\"type\\":\\"diagram\\",\\"text\\":\\"10 N, left\\"},{\\"type\\":\\"printed_content\\",\\"text\\":\\"Figure 1: Forces\\"},{\\"type\\":\\"student_answer\\",\\"text\\":\\"answer\\"}],\\"confidence\\":0.95}"}}]}
                 """, MediaType.APPLICATION_JSON));
 
         MvcResult result = mockMvc.perform(multipart("/api/grading/submission-documents")
@@ -302,6 +302,10 @@ class DataAccessAuthorizationIntegrationTest {
         createdExtractionId = extractionIdValue.longValue();
         org.junit.jupiter.api.Assertions.assertTrue(documents.existsById(documentId));
         org.junit.jupiter.api.Assertions.assertTrue(extractions.existsById(createdExtractionId));
+        org.junit.jupiter.api.Assertions.assertEquals(
+            "answer",
+            extractions.findById(createdExtractionId).orElseThrow().getExtractedText()
+        );
 
         // The Student can reopen only the document they just saved, which is
         // the durable context required by the OCR review screen.
@@ -327,7 +331,7 @@ class DataAccessAuthorizationIntegrationTest {
             .andRespond(withStatus(HttpStatus.NO_CONTENT));
         learningServer.expect(once(), requestTo("http://localhost/ai-test"))
             .andRespond(withSuccess("""
-                {"choices":[{"message":{"content":"{\\"status\\":\\"answers\\",\\"text\\":\\"x = 42\\",\\"confidence\\":0.94}"}}]}
+                {"choices":[{"message":{"content":"{\\"status\\":\\"answers\\",\\"regions\\":[{\\"type\\":\\"student_answer\\",\\"text\\":\\"x = 42\\"}],\\"confidence\\":0.94}"}}]}
                 """, MediaType.APPLICATION_JSON));
 
         MvcResult result = mockMvc.perform(multipart("/api/grading/submission-documents")
@@ -366,7 +370,7 @@ class DataAccessAuthorizationIntegrationTest {
             .andRespond(withStatus(HttpStatus.NO_CONTENT));
         learningServer.expect(once(), requestTo("http://localhost/ai-test"))
             .andRespond(withSuccess("""
-                {"choices":[{"message":{"content":"{\\"status\\":\\"no_answers\\",\\"text\\":\\"\\",\\"confidence\\":0.99}"}}]}
+                {"choices":[{"message":{"content":"{\\"status\\":\\"no_answers\\",\\"regions\\":[{\\"type\\":\\"printed_content\\",\\"text\\":\\"Worksheet title\\"}],\\"confidence\\":0.99}"}}]}
                 """, MediaType.APPLICATION_JSON));
 
         MvcResult result = mockMvc.perform(multipart("/api/grading/submission-documents")
@@ -402,7 +406,7 @@ class DataAccessAuthorizationIntegrationTest {
             .andRespond(withStatus(HttpStatus.NO_CONTENT));
         learningServer.expect(once(), requestTo("http://localhost/ai-test"))
             .andRespond(withSuccess("""
-                {"choices":[{"message":{"content":"{\\"status\\":\\"uncertain\\",\\"text\\":\\"Worksheet title: solve 2 + 2\\",\\"confidence\\":0.5}"}}]}
+                {"choices":[{"message":{"content":"{\\"status\\":\\"uncertain\\",\\"regions\\":[],\\"confidence\\":0.5}"}}]}
                 """, MediaType.APPLICATION_JSON));
 
         MvcResult result = mockMvc.perform(multipart("/api/grading/submission-documents")
@@ -435,7 +439,7 @@ class DataAccessAuthorizationIntegrationTest {
             .andRespond(withStatus(HttpStatus.NO_CONTENT));
         learningServer.expect(once(), requestTo("http://localhost/ai-test"))
             .andRespond(withSuccess("""
-                {"choices":[{"message":{"content":"{\\"status\\":\\"answers\\",\\"text\\":\\"faint student work\\",\\"confidence\\":0.3}"}}]}
+                {"choices":[{"message":{"content":"{\\"status\\":\\"answers\\",\\"regions\\":[{\\"type\\":\\"student_answer\\",\\"text\\":\\"faint student work\\"}],\\"confidence\\":0.3}"}}]}
                 """, MediaType.APPLICATION_JSON));
 
         MvcResult result = mockMvc.perform(multipart("/api/grading/submission-documents")
@@ -462,7 +466,7 @@ class DataAccessAuthorizationIntegrationTest {
             .andRespond(withStatus(HttpStatus.NO_CONTENT));
         learningServer.expect(once(), requestTo("http://localhost/ai-test"))
             .andRespond(withSuccess("""
-                {"choices":[{"message":{"content":"{\\"status\\":\\"answers\\",\\"text\\":\\"water evaporates\\",\\"confidence\\":0.93}"}}]}
+                {"choices":[{"message":{"content":"{\\"status\\":\\"answers\\",\\"regions\\":[{\\"type\\":\\"student_answer\\",\\"text\\":\\"water evaporates\\"}],\\"confidence\\":0.93}"}}]}
                 """, MediaType.APPLICATION_JSON));
 
         MvcResult result = mockMvc.perform(multipart("/api/grading/submission-documents")
