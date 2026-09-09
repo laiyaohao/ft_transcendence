@@ -1,5 +1,6 @@
 package com.fttranscendence.learning.question.imports;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicReference;
@@ -11,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class OpenAiQuestionVisionAnalyzerTest {
     @Test
-    void sendsStrictStructuredOutputRequestAndAcceptsBoundedProviderResult() {
+    void sendsStrictStructuredOutputRequestAndAcceptsBoundedProviderResult() throws Exception {
         AtomicReference<String> requestBody = new AtomicReference<>();
         OpenAiQuestionVisionAnalyzer analyzer = analyzer((endpoint, authorization, body, timeout) -> {
             requestBody.set(body);
@@ -34,6 +35,8 @@ class OpenAiQuestionVisionAnalyzerTest {
         assertTrue(requestBody.get().contains("question_page_analysis"));
         assertTrue(requestBody.get().contains("json_schema"));
         assertTrue(requestBody.get().contains("data:image/png;base64"));
+        JsonNode request = new ObjectMapper().readTree(requestBody.get());
+        assertFalse(request.has("temperature"));
     }
 
     @Test

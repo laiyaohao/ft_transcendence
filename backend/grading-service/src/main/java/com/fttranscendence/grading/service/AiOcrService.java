@@ -530,9 +530,7 @@ public class AiOcrService {
             "model",
             visionModel,
             "messages",
-            List.of(userMessage),
-            "temperature",
-            0.0
+            List.of(userMessage)
         );
     }
 

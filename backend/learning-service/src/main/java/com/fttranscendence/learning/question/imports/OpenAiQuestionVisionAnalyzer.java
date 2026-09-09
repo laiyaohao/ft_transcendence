@@ -175,7 +175,6 @@ class OpenAiQuestionVisionAnalyzer implements QuestionVisionAnalyzer {
         Map<String, Object> request = new LinkedHashMap<>();
         request.put("model", model.trim());
         request.put("messages", List.of(message));
-        request.put("temperature", 0);
         request.put("response_format", Map.of("type", "json_schema", "json_schema", responseSchema()));
         return objectMapper.writeValueAsString(request);
     }

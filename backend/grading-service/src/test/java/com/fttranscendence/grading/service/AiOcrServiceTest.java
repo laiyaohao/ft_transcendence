@@ -242,6 +242,9 @@ class AiOcrServiceTest {
         assertTrue(entityCaptor.getValue().getBody().toString().contains("student-authored"));
         assertTrue(entityCaptor.getValue().getBody().toString().contains("diagram-aware"));
         assertTrue(entityCaptor.getValue().getBody().toString().contains("student_answer"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = (Map<String, Object>) entityCaptor.getValue().getBody();
+        assertFalse(payload.containsKey("temperature"));
     }
 
     @Test
