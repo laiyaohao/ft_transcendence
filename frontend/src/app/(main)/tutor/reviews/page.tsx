@@ -24,6 +24,22 @@ export default function TutorReviewsPage() {
   const [error, setError] = React.useState<string | null>(null);
   const [reloadAttempt, setReloadAttempt] = React.useState(0);
 
+  const loadReviews = React.useCallback(() => {
+    void fetchPendingMarkingReviews().then(
+      (pendingReviews) => {
+        setReviews(pendingReviews);
+        setError(null);
+      },
+      (reason: unknown) => {
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : "Pending reviews could not be loaded. Please try again.",
+        );
+      },
+    );
+  }, []);
+
   React.useEffect(() => {
     let current = true;
     void fetchPendingMarkingReviews().then(
@@ -45,6 +61,12 @@ export default function TutorReviewsPage() {
       current = false;
     };
   }, [reloadAttempt]);
+
+  React.useEffect(() => {
+    const refreshWhenTutorReturns = () => loadReviews();
+    window.addEventListener("focus", refreshWhenTutorReturns);
+    return () => window.removeEventListener("focus", refreshWhenTutorReturns);
+  }, [loadReviews]);
 
   const retry = () => {
     setReviews(null);
@@ -183,15 +205,30 @@ export default function TutorReviewsPage() {
                 />
                 <Button
                   component={Link}
-                  href={`/tutor/reviews/${review.submissionId}`}
+                  href={`/tutor/reviews/${review.submissionId}/source`}
                   sx={{
                     minHeight: 34,
                     color: "#9E3A24",
                     textTransform: "none",
                     fontWeight: 600,
                   }}
+                  disabled={!review.sourceAvailable}
                 >
-                  Open review
+                  View submitted worksheet
+                </Button>
+                <Button
+                  component={Link}
+                  href={`/tutor/reviews/${review.submissionId}`}
+                  sx={{
+                    minHeight: 34,
+                    bgcolor: "#9E3A24",
+                    color: "#FFFDFA",
+                    textTransform: "none",
+                    fontWeight: 600,
+                    "&:hover": { bgcolor: "#8A3120" },
+                  }}
+                >
+                  Review answers
                 </Button>
               </Card>
             ))}

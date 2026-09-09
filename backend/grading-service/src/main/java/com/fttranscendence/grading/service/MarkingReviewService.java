@@ -6,12 +6,14 @@ import com.fttranscendence.grading.model.MasterySyncOutbox;
 import com.fttranscendence.grading.model.MistakeType;
 import com.fttranscendence.grading.model.Submission;
 import com.fttranscendence.grading.model.SubmissionDocument;
+import com.fttranscendence.grading.model.SubmissionPage;
 import com.fttranscendence.grading.ocr.OcrExtraction;
 import com.fttranscendence.grading.repository.OcrExtractionRepository;
 import com.fttranscendence.grading.repository.SubmissionDocumentRepository;
 import com.fttranscendence.grading.repository.SubmissionRepository;
 import com.fttranscendence.grading.repository.MasterySyncOutboxRepository;
 import com.fttranscendence.grading.security.AuthenticatedUser;
+import com.fttranscendence.grading.storage.DocumentStorage;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.transaction.Transactional;
@@ -38,6 +40,7 @@ public class MarkingReviewService {
     private final AiGradingService ai;
     private final MasterySyncOutboxRepository masteryOutbox;
     private final ObjectMapper objectMapper;
+    private final DocumentStorage storage;
 
     public MarkingReviewService(
         SubmissionRepository submissions,
@@ -46,7 +49,8 @@ public class MarkingReviewService {
         LearningAuthorizationClient learning,
         AiGradingService ai,
         MasterySyncOutboxRepository masteryOutbox,
-        ObjectMapper objectMapper
+        ObjectMapper objectMapper,
+        DocumentStorage storage
     ) {
         this.submissions = submissions;
         this.documents = documents;
@@ -55,6 +59,71 @@ public class MarkingReviewService {
         this.ai = ai;
         this.masteryOutbox = masteryOutbox;
         this.objectMapper = objectMapper;
+        this.storage = storage;
+    }
+
+    /**
+     * Lists only canonical, submitted answers that still need a decision.
+     * Student-owned drafts never reach this query because they remain DRAFT
+     * or belong to a document that was never submitted.
+     */
+    @Transactional
+    public List<TutorReviewQueueItem> listPendingReviews(
+        AuthenticatedUser user,
+        String bearer
+    ) {
+        Map<Long, String> studentNameById = tutorStudentNames(user, bearer);
+        if (studentNameById.isEmpty()) {
+            return List.of();
+        }
+        return submissions
+            .findByReviewStatusAndStudentIdInAndSubmissionDocumentStatusOrderByCreatedAtAsc(
+                Submission.ReviewStatus.PENDING_REVIEW,
+                studentNameById.keySet(),
+                SubmissionDocument.Status.SUBMITTED_FOR_REVIEW
+            )
+            .stream()
+            .map(submission -> TutorReviewQueueItem.from(
+                submission,
+                studentNameById.get(submission.getStudentId())
+            ))
+            .toList();
+    }
+
+    /** Returns source metadata only after a Tutor directory-scope check. */
+    @Transactional
+    public SubmittedSource sourceForReview(
+        AuthenticatedUser user,
+        String bearer,
+        long submissionId
+    ) {
+        Submission submission = submittedSourceSubmission(user, bearer, submissionId);
+        return SubmittedSource.from(submission.getId(), submission.getSubmissionDocument());
+    }
+
+    /** Reads an original source page after verifying its parent review scope. */
+    @Transactional
+    public SourcePageContent sourcePageForReview(
+        AuthenticatedUser user,
+        String bearer,
+        long submissionId,
+        long pageId
+    ) {
+        if (pageId <= 0) {
+            throw new ReviewNotFound();
+        }
+        Submission submission = submittedSourceSubmission(user, bearer, submissionId);
+        SubmissionDocument document = submission.getSubmissionDocument();
+        SubmissionPage page = document.getPages().stream()
+            .filter(candidate -> candidate.getId().equals(pageId))
+            .findFirst()
+            .orElseThrow(ReviewNotFound::new);
+        byte[] content = storage.read(document.getOwnerUserId(), page.getStorageKey());
+        return new SourcePageContent(
+            page.getOriginalFilename(),
+            page.getMediaType(),
+            content
+        );
     }
 
     @Transactional
@@ -827,6 +896,40 @@ public class MarkingReviewService {
         return submission;
     }
 
+    private boolean hasSubmittedDocument(Submission submission) {
+        SubmissionDocument document = submission.getSubmissionDocument();
+        return document != null
+            && document.getStatus() == SubmissionDocument.Status.SUBMITTED_FOR_REVIEW;
+    }
+
+    private Submission submittedSourceSubmission(
+        AuthenticatedUser user,
+        String bearer,
+        long submissionId
+    ) {
+        requirePositive(submissionId, "Submission id");
+        Map<Long, String> studentNameById = tutorStudentNames(user, bearer);
+        Submission submission = submissions.findById(submissionId).orElseThrow(ReviewNotFound::new);
+        SubmissionDocument document = submission.getSubmissionDocument();
+        boolean isTutorStudent = studentNameById.containsKey(submission.getStudentId());
+        boolean hasSourcePages = document != null
+            && document.getSourceType() != SubmissionDocument.SourceType.MANUAL
+            && !document.getPages().isEmpty();
+        if (!isTutorStudent || !hasSubmittedDocument(submission) || !hasSourcePages) {
+            throw new ReviewNotFound();
+        }
+        return submission;
+    }
+
+    private Map<Long, String> tutorStudentNames(AuthenticatedUser user, String bearer) {
+        return learning.loadTutorStudentDirectory(user, bearer)
+            .stream()
+            .collect(Collectors.toMap(
+                LearningAuthorizationClient.TutorStudentDirectoryEntry::studentId,
+                LearningAuthorizationClient.TutorStudentDirectoryEntry::fullName
+            ));
+    }
+
     private SubmissionDocument manualDocument(
         long ownerUserId,
         SubmissionDocument.OwnerRole ownerRole,
@@ -1179,6 +1282,82 @@ public class MarkingReviewService {
             return new SubmissionForTutorReviewResponse(documentId, submissions.stream().map(Submission::getId).toList(), "PENDING_REVIEW");
         }
     }
+    /** Tutor queue data, deliberately limited to submitted canonical answers. */
+    public record TutorReviewQueueItem(
+        Long submissionId,
+        Long submissionDocumentId,
+        Long studentId,
+        String studentName,
+        Long worksheetId,
+        Long worksheetQuestionId,
+        Long questionBankId,
+        String extractedAnswer,
+        BigDecimal maxMarks,
+        Submission.ReviewStatus reviewStatus,
+        boolean sourceAvailable,
+        String sourceType,
+        java.time.LocalDateTime requestedAt
+    ) {
+        static TutorReviewQueueItem from(Submission submission, String studentName) {
+            SubmissionDocument document = submission.getSubmissionDocument();
+            boolean sourceAvailable = document.getSourceType() != SubmissionDocument.SourceType.MANUAL
+                && !document.getPages().isEmpty();
+            return new TutorReviewQueueItem(
+                submission.getId(),
+                document.getId(),
+                submission.getStudentId(),
+                studentName,
+                submission.getWorksheetId(),
+                submission.getWorksheetQuestionId(),
+                submission.getQuestionBankId(),
+                submission.getExtractedAnswer(),
+                submission.getMaxMarks(),
+                submission.getReviewStatus(),
+                sourceAvailable,
+                document.getSourceType().name(),
+                submission.getCreatedAt()
+            );
+        }
+    }
+    public record SubmittedSource(
+        Long submissionId,
+        Long submissionDocumentId,
+        Long studentId,
+        Long worksheetId,
+        String sourceType,
+        String status,
+        List<SourcePageMetadata> pages
+    ) {
+        static SubmittedSource from(Long submissionId, SubmissionDocument document) {
+            return new SubmittedSource(
+                submissionId,
+                document.getId(),
+                document.getStudentId(),
+                document.getWorksheetId(),
+                document.getSourceType().name(),
+                document.getStatus().name(),
+                document.getPages().stream().map(SourcePageMetadata::from).toList()
+            );
+        }
+    }
+    public record SourcePageMetadata(
+        Long id,
+        int pageNumber,
+        String originalFilename,
+        String mediaType,
+        long byteSize
+    ) {
+        static SourcePageMetadata from(SubmissionPage page) {
+            return new SourcePageMetadata(
+                page.getId(),
+                page.getPageNumber(),
+                page.getOriginalFilename(),
+                page.getMediaType(),
+                page.getByteSize()
+            );
+        }
+    }
+    public record SourcePageContent(String filename, String mediaType, byte[] content) { }
     public record ManualAnswerEntry(Long questionBankId, String answer) { }
     public record ManualAnswerRequest(
         Long studentId, Long worksheetId, Long classId, List<ManualAnswerEntry> answers, Boolean submit

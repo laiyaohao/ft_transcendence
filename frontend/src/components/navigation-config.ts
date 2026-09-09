@@ -6,6 +6,7 @@ import GroupsOutlinedIcon from "@mui/icons-material/GroupsOutlined";
 import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
 import PersonIcon from "@mui/icons-material/Person";
 import QuizOutlinedIcon from "@mui/icons-material/QuizOutlined";
+import RateReviewOutlinedIcon from "@mui/icons-material/RateReviewOutlined";
 import SchoolOutlinedIcon from "@mui/icons-material/SchoolOutlined";
 import SubjectOutlinedIcon from "@mui/icons-material/SubjectOutlined";
 import TopicOutlinedIcon from "@mui/icons-material/TopicOutlined";
@@ -45,6 +46,12 @@ const TUTOR_NAVIGATION: readonly NavigationItem[] = [
     title: "Worksheets",
     href: "/tutor/worksheets",
     icon: DescriptionOutlinedIcon,
+  },
+  {
+    id: "reviews",
+    title: "Reviews",
+    href: "/tutor/reviews",
+    icon: RateReviewOutlinedIcon,
   },
   {
     id: "questions",

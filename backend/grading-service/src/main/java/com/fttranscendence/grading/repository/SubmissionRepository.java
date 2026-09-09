@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -33,6 +34,18 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
     @EntityGraph(attributePaths = {"missingKeywords", "reviews"})
     List<Submission> findByReviewStatusOrderByCreatedAtAsc(
         Submission.ReviewStatus reviewStatus
+    );
+
+    /**
+     * The Tutor queue is constrained in SQL by Learning's current student
+     * directory, so other Tutors' pending answers are never loaded first.
+     */
+    @EntityGraph(attributePaths = {"submissionDocument", "submissionDocument.pages"})
+    List<Submission>
+        findByReviewStatusAndStudentIdInAndSubmissionDocumentStatusOrderByCreatedAtAsc(
+        Submission.ReviewStatus reviewStatus,
+        Collection<Long> studentIds,
+        SubmissionDocument.Status submissionDocumentStatus
     );
 
     @EntityGraph(attributePaths = {"missingKeywords", "reviews"})

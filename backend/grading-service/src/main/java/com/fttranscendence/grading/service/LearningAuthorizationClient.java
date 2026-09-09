@@ -166,6 +166,50 @@ public class LearningAuthorizationClient {
     }
 
     /**
+     * Returns the authenticated Tutor's complete student directory.  Review
+     * queues use this one authoritative scope rather than trusting a student
+     * identifier that originated in Grading's database.
+     */
+    public List<TutorStudentDirectoryEntry> loadTutorStudentDirectory(
+        AuthenticatedUser user,
+        String bearer
+    ) {
+        if (!isTutor(user)) {
+            throw new Forbidden();
+        }
+
+        try {
+            List<?> directory = getList(bearer, "/api/learning/tutor/students").getBody();
+            if (directory == null) {
+                throw new TutorStudentDirectoryUnavailable();
+            }
+
+            List<TutorStudentDirectoryEntry> students = new ArrayList<>();
+            Set<Long> studentIds = new HashSet<>();
+            for (Object entry : directory) {
+                if (!(entry instanceof Map<?, ?> student)
+                    || !(student.get("id") instanceof Number id)
+                    || id.longValue() <= 0
+                    || !studentIds.add(id.longValue())) {
+                    throw new TutorStudentDirectoryUnavailable();
+                }
+                String fullName = text(student.get("fullName"));
+                if (fullName == null) {
+                    throw new TutorStudentDirectoryUnavailable();
+                }
+                students.add(new TutorStudentDirectoryEntry(id.longValue(), fullName));
+            }
+            return List.copyOf(students);
+        } catch (HttpClientErrorException.Forbidden exception) {
+            throw new Forbidden();
+        } catch (Forbidden | TutorStudentDirectoryUnavailable exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new TutorStudentDirectoryUnavailable();
+        }
+    }
+
+    /**
      * Resolves an actor's mistake-history scope without exposing whether a
      * foreign student identifier exists. Tutors may read owned students only;
      * Students have only a `/me` route resolved from their own login identity.
@@ -852,6 +896,7 @@ public class LearningAuthorizationClient {
         String syllabusTopicCode
     ) { }
     public record SubmissionMarkingContext(long tutorUserId, Map<Long, QuestionContext> questionsByQuestionBankId) { }
+    public record TutorStudentDirectoryEntry(long studentId, String fullName) { }
 
     public record MarkingComponentContext(int position, String description, BigDecimal marks, List<String> keywords) {
         public RuleBasedAnswerChecker.WeightedMarkingComponent toRuleComponent() {
@@ -876,6 +921,7 @@ public class LearningAuthorizationClient {
     public static class MistakeHistoryNotFound extends RuntimeException { }
     public static class StudentWorksheetNotFound extends RuntimeException { }
     public static class SyllabusUnavailable extends RuntimeException { }
+    public static class TutorStudentDirectoryUnavailable extends RuntimeException { }
     public static class LearningSyncUnavailable extends RuntimeException {
         public LearningSyncUnavailable(String message) { super(message); }
     }

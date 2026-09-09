@@ -4,6 +4,9 @@ import com.fttranscendence.grading.service.LearningAuthorizationClient;
 import com.fttranscendence.grading.service.MarkingReviewService;
 import com.fttranscendence.grading.security.AuthenticatedUser;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -16,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 @RestController
@@ -25,6 +29,48 @@ public class MarkingReviewController {
 
     public MarkingReviewController(MarkingReviewService reviews) {
         this.reviews = reviews;
+    }
+
+    /** The Tutor's authoritative queue, filtered by Learning's current directory. */
+    @GetMapping("/tutor/reviews")
+    public java.util.List<MarkingReviewService.TutorReviewQueueItem> listPending(
+        @AuthenticationPrincipal AuthenticatedUser user,
+        @RequestHeader("Authorization") String bearer
+    ) {
+        return reviews.listPendingReviews(user, bearer);
+    }
+
+    /** Opens source metadata for a canonical submitted answer without exposing drafts. */
+    @GetMapping("/tutor/reviews/{submissionId}/source")
+    public MarkingReviewService.SubmittedSource source(
+        @AuthenticationPrincipal AuthenticatedUser user,
+        @RequestHeader("Authorization") String bearer,
+        @PathVariable long submissionId
+    ) {
+        return reviews.sourceForReview(user, bearer, submissionId);
+    }
+
+    /** Streams an original student image or PDF page after review-scope authorization. */
+    @GetMapping("/tutor/reviews/{submissionId}/source/pages/{pageId}")
+    public ResponseEntity<byte[]> sourcePage(
+        @AuthenticationPrincipal AuthenticatedUser user,
+        @RequestHeader("Authorization") String bearer,
+        @PathVariable long submissionId,
+        @PathVariable long pageId
+    ) {
+        MarkingReviewService.SourcePageContent source = reviews.sourcePageForReview(
+            user,
+            bearer,
+            submissionId,
+            pageId
+        );
+        ContentDisposition disposition = ContentDisposition.inline()
+            .filename(source.filename(), StandardCharsets.UTF_8)
+            .build();
+        return ResponseEntity.ok()
+            .contentType(MediaType.parseMediaType(source.mediaType()))
+            .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
+            .body(source.content());
     }
 
     @PostMapping("/tutor/reviews")
@@ -136,6 +182,15 @@ public class MarkingReviewController {
             HttpStatus.SERVICE_UNAVAILABLE,
             "QUESTION_CONTEXT_UNAVAILABLE",
             "Question context is temporarily unavailable."
+        );
+    }
+
+    @ExceptionHandler(LearningAuthorizationClient.TutorStudentDirectoryUnavailable.class)
+    ResponseEntity<Map<String, String>> tutorDirectoryUnavailable() {
+        return error(
+            HttpStatus.SERVICE_UNAVAILABLE,
+            "TUTOR_STUDENT_DIRECTORY_UNAVAILABLE",
+            "The Tutor student directory is temporarily unavailable."
         );
     }
 
