@@ -19,6 +19,7 @@ import PageReview from "@/components/submissions/PageReview";
 import { getBrowserSession } from "@/lib/auth";
 import {
   createOcrDocument,
+  preflightUploadImage,
   releasePagePreview,
   validateUploadFiles,
   type UploadPage,
@@ -58,6 +59,133 @@ function positiveId(value: string | null): number | null {
   return Number.isSafeInteger(id) && id > 0 ? id : null;
 }
 
+const checkingPhotoQuality = "Checking photo quality…";
+const pdfQualityUnavailable =
+  "Local photo quality check is unavailable for PDF pages. You can still upload it.";
+const qualityCheckUnavailable =
+  "We could not check this photo locally. You can still upload it.";
+
+function qualityGuidance(
+  preflight: Awaited<ReturnType<typeof preflightUploadImage>>,
+) {
+  if (preflight.mediaType === "application/pdf") return pdfQualityUnavailable;
+  if (preflight.assessmentStatus === "ready") return null;
+
+  return preflight.guidance.join(" ") || qualityCheckUnavailable;
+}
+
+/**
+ * Runs the local-only preflight independently of the upload. A late result is
+ * ignored after a page is removed or replaced, so it cannot label another file.
+ */
+function useUploadPages() {
+  const [pages, setPages] = React.useState<UploadPage[]>([]);
+  const [errors, setErrors] = React.useState<string[]>([]);
+  const preflightRuns = React.useRef(new Map<string, number>());
+  const nextPreflightRun = React.useRef(0);
+
+  const checkQuality = React.useCallback((page: UploadPage) => {
+    const run = ++nextPreflightRun.current;
+    preflightRuns.current.set(page.id, run);
+
+    void preflightUploadImage(page.file)
+      .then((result) => {
+        if (preflightRuns.current.get(page.id) !== run) return;
+
+        const warning = qualityGuidance(result);
+        setPages((current) =>
+          current.map((item) =>
+            item.id === page.id && item.file === page.file
+              ? { ...item, warning }
+              : item,
+          ),
+        );
+      })
+      .catch(() => {
+        if (preflightRuns.current.get(page.id) !== run) return;
+
+        setPages((current) =>
+          current.map((item) =>
+            item.id === page.id && item.file === page.file
+              ? { ...item, warning: qualityCheckUnavailable }
+              : item,
+          ),
+        );
+      });
+  }, []);
+
+  const preparePages = React.useCallback((newPages: UploadPage[]) => {
+    return newPages.map((page) => ({
+      ...page,
+      warning:
+        page.file.type === "application/pdf"
+          ? pdfQualityUnavailable
+          : checkingPhotoQuality,
+    }));
+  }, []);
+
+  const add = React.useCallback(
+    (files: File[]) => {
+      const result = validateUploadFiles(files, pages);
+      const newPages = preparePages(result.pages);
+      setPages((current) => [...current, ...newPages]);
+      setErrors(result.errors);
+      newPages.forEach(checkQuality);
+    },
+    [checkQuality, pages, preparePages],
+  );
+
+  const move = React.useCallback((id: string, direction: -1 | 1) => {
+    setPages((current) => {
+      const index = current.findIndex((page) => page.id === id);
+      const next = index + direction;
+      if (index < 0 || next < 0 || next >= current.length) return current;
+      const copy = [...current];
+      [copy[index], copy[next]] = [copy[next], copy[index]];
+      return copy;
+    });
+  }, []);
+
+  const remove = React.useCallback((id: string) => {
+    preflightRuns.current.delete(id);
+    setPages((current) => {
+      const page = current.find((item) => item.id === id);
+      if (page) releasePagePreview(page);
+      return current.filter((item) => item.id !== id);
+    });
+  }, []);
+
+  const replace = React.useCallback(
+    (id: string, file: File) => {
+      const old = pages.find((page) => page.id === id);
+      if (!old) return;
+
+      const result = validateUploadFiles(
+        [file],
+        pages.filter((page) => page.id !== id),
+      );
+      if (result.errors.length > 0) {
+        setErrors(result.errors);
+        return;
+      }
+
+      const replacement = preparePages(result.pages)[0];
+      if (!replacement) return;
+
+      preflightRuns.current.delete(id);
+      releasePagePreview(old);
+      setPages((current) =>
+        current.map((page) => (page.id === id ? replacement : page)),
+      );
+      setErrors([]);
+      checkQuality(replacement);
+    },
+    [checkQuality, pages, preparePages],
+  );
+
+  return { pages, setPages, errors, setErrors, add, move, remove, replace };
+}
+
 function TutorUploadWizard() {
   const router = useRouter();
   const params = useSearchParams();
@@ -86,8 +214,8 @@ function TutorUploadWizard() {
     null,
   );
   const [retryCount, setRetryCount] = React.useState(0);
-  const [pages, setPages] = React.useState<UploadPage[]>([]);
-  const [errors, setErrors] = React.useState<string[]>([]);
+  const { pages, setPages, errors, setErrors, add, move, remove, replace } =
+    useUploadPages();
   const [dragOver, setDragOver] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
   const [progress, setProgress] = React.useState(0);
@@ -244,42 +372,6 @@ function TutorUploadWizard() {
     setSelectionError(null);
     setSelectedStudentId(value);
     setSelectedWorksheetId(null);
-  };
-  const add = (files: File[]) => {
-    const result = validateUploadFiles(files, pages);
-    setPages((current) => [...current, ...result.pages]);
-    setErrors(result.errors);
-  };
-  const move = (id: string, direction: -1 | 1) =>
-    setPages((current) => {
-      const index = current.findIndex((page) => page.id === id);
-      const next = index + direction;
-      if (index < 0 || next < 0 || next >= current.length) return current;
-      const copy = [...current];
-      [copy[index], copy[next]] = [copy[next], copy[index]];
-      return copy;
-    });
-  const remove = (id: string) =>
-    setPages((current) => {
-      const page = current.find((item) => item.id === id);
-      if (page) releasePagePreview(page);
-      return current.filter((item) => item.id !== id);
-    });
-  const replace = (id: string, file: File) => {
-    const old = pages.find((page) => page.id === id);
-    if (!old) return;
-    const result = validateUploadFiles(
-      [file],
-      pages.filter((page) => page.id !== id),
-    );
-    if (result.errors.length) {
-      setErrors(result.errors);
-      return;
-    }
-    releasePagePreview(old);
-    setPages((current) =>
-      current.map((page) => (page.id === id ? result.pages[0] : page)),
-    );
   };
   const submit = async () => {
     if (
@@ -727,8 +819,8 @@ function StudentUploadWizard() {
       : null,
   );
   const [retryCount, setRetryCount] = React.useState(0);
-  const [pages, setPages] = React.useState<UploadPage[]>([]);
-  const [errors, setErrors] = React.useState<string[]>([]);
+  const { pages, setPages, errors, setErrors, add, move, remove, replace } =
+    useUploadPages();
   const [dragOver, setDragOver] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
 
@@ -776,42 +868,6 @@ function StudentUploadWizard() {
     };
   }, [requestedWorksheetId, retryCount]);
 
-  const add = (files: File[]) => {
-    const result = validateUploadFiles(files, pages);
-    setPages((current) => [...current, ...result.pages]);
-    setErrors(result.errors);
-  };
-  const move = (id: string, direction: -1 | 1) =>
-    setPages((current) => {
-      const index = current.findIndex((page) => page.id === id);
-      const next = index + direction;
-      if (index < 0 || next < 0 || next >= current.length) return current;
-      const copy = [...current];
-      [copy[index], copy[next]] = [copy[next], copy[index]];
-      return copy;
-    });
-  const remove = (id: string) =>
-    setPages((current) => {
-      const page = current.find((item) => item.id === id);
-      if (page) releasePagePreview(page);
-      return current.filter((item) => item.id !== id);
-    });
-  const replace = (id: string, file: File) => {
-    const old = pages.find((page) => page.id === id);
-    if (!old) return;
-    const result = validateUploadFiles(
-      [file],
-      pages.filter((page) => page.id !== id),
-    );
-    if (result.errors.length > 0) {
-      setErrors(result.errors);
-      return;
-    }
-    releasePagePreview(old);
-    setPages((current) =>
-      current.map((page) => (page.id === id ? result.pages[0] : page)),
-    );
-  };
   const submit = async () => {
     if (profile === null || worksheet === null || pages.length === 0) {
       setErrors([

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   MAX_UPLOAD_BYTES,
+  analyzeImagePixels,
   approveMarkingReview,
   createManualResult,
   createManualResults,
@@ -17,11 +18,52 @@ import {
   parseStudentWorksheetResultsResponse,
   saveManualAnswers,
   submitOcrForTutorReview,
+  preflightUploadImage,
   validateUploadFiles,
 } from "./submissions";
 
 const file = (name: string, type = "image/jpeg", size = 4) =>
   new File([new Uint8Array(size)], name, { type, lastModified: 1 });
+
+function createSyntheticImage(
+  width: number,
+  height: number,
+  background = 255,
+): { width: number; height: number; data: Uint8ClampedArray } {
+  const data = new Uint8ClampedArray(width * height * 4);
+
+  for (let pixelIndex = 0; pixelIndex < width * height; pixelIndex += 1) {
+    const dataIndex = pixelIndex * 4;
+    data[dataIndex] = background;
+    data[dataIndex + 1] = background;
+    data[dataIndex + 2] = background;
+    data[dataIndex + 3] = 255;
+  }
+
+  return { width, height, data };
+}
+
+function drawWriting(
+  image: { width: number; height: number; data: Uint8ClampedArray },
+  left: number,
+  top: number,
+  writingWidth: number,
+  writingHeight: number,
+  color = 20,
+): void {
+  const lineSpacing = 20;
+
+  for (let y = top; y < top + writingHeight; y += lineSpacing) {
+    for (let strokeY = y; strokeY < y + 3; strokeY += 1) {
+      for (let x = left; x < left + writingWidth; x += 1) {
+        const dataIndex = (strokeY * image.width + x) * 4;
+        image.data[dataIndex] = color;
+        image.data[dataIndex + 1] = color;
+        image.data[dataIndex + 2] = color;
+      }
+    }
+  }
+}
 
 function stubBrowserApis(): void {
   vi.stubGlobal("URL", {
@@ -182,6 +224,72 @@ describe("submissions service", () => {
       expect.objectContaining({ method: "POST" }),
     );
     expect(() => parseMarkingReview({ id: 1 })).toThrow(/invalid/i);
+  });
+});
+
+describe("image quality preflight", () => {
+  it("passes a sufficiently large, sharp worksheet photo", () => {
+    const image = createSyntheticImage(1536, 2048);
+    drawWriting(image, 180, 300, 1_000, 280);
+
+    const quality = analyzeImagePixels(image);
+
+    expect(quality.warnings).toEqual([]);
+    expect(quality.estimatedWritingSize.widthFraction).toBeGreaterThan(0.5);
+    expect(quality.estimatedWritingSize.heightFraction).toBeGreaterThan(0.1);
+  });
+
+  it("flags low resolution using native dimensions, not a bounded analysis canvas", () => {
+    const image = createSyntheticImage(1_600, 800);
+    drawWriting(image, 160, 180, 1_000, 260);
+
+    const quality = analyzeImagePixels(image, { width: 2_000, height: 1_000 });
+
+    expect(quality.warnings).not.toContain("LOW_RESOLUTION");
+
+    const lowResolutionQuality = analyzeImagePixels(image, {
+      width: 640,
+      height: 480,
+    });
+
+    expect(lowResolutionQuality.warnings).toContain("LOW_RESOLUTION");
+  });
+
+  it("recommends a retake for low contrast, blurred, or tiny visible writing", () => {
+    const lowContrast = createSyntheticImage(1_200, 1_400, 235);
+    drawWriting(lowContrast, 100, 300, 900, 250, 210);
+    const blurred = createSyntheticImage(1_200, 1_400, 200);
+    const tinyWriting = createSyntheticImage(1_200, 1_400);
+    drawWriting(tinyWriting, 580, 680, 20, 12);
+
+    const lowContrastQuality = analyzeImagePixels(lowContrast);
+    const blurredQuality = analyzeImagePixels(blurred);
+    const tinyWritingQuality = analyzeImagePixels(tinyWriting);
+
+    expect(lowContrastQuality.warnings).toContain("LOW_CONTRAST");
+    expect(blurredQuality.warnings).toContain("BLURRY");
+    expect(tinyWritingQuality.warnings).toContain("WRITING_TOO_SMALL");
+  });
+
+  it("leaves PDFs available for the existing upload workflow without pixel analysis", async () => {
+    await expect(
+      preflightUploadImage(file("worksheet.pdf", "application/pdf")),
+    ).resolves.toEqual({
+      assessmentStatus: "unavailable",
+      mediaType: "application/pdf",
+      width: null,
+      height: null,
+      quality: null,
+      guidance: ["Photo quality is not assessed for this PDF."],
+    });
+  });
+
+  it("does not mistake an unavailable browser image decoder for bad handwriting", async () => {
+    await expect(preflightUploadImage(file("worksheet.jpg"))).resolves.toMatchObject({
+      assessmentStatus: "unavailable",
+      quality: null,
+      guidance: [expect.stringMatching(/can still upload/i)],
+    });
   });
 });
 

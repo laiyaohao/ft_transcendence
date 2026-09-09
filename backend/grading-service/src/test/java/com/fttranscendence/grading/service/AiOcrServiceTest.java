@@ -15,7 +15,11 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
@@ -23,6 +27,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -35,6 +40,11 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.client.ExpectedCount.once;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 @ExtendWith(MockitoExtension.class)
 class AiOcrServiceTest {
@@ -61,6 +71,158 @@ class AiOcrServiceTest {
     }
 
     @Test
+    void diagnosticIsDisabledByDefaultAndDoesNotCallTheProvider() {
+        AiOcrService.OcrDiagnosticResult result = service.diagnose(
+            new byte[] {1, 2, 3},
+            "image/jpeg"
+        );
+
+        assertDoesNotThrow(() -> UUID.fromString(result.correlationId()));
+        assertEquals(AiOcrService.OcrDiagnosticStatus.DISABLED, result.status());
+        assertFalse(result.metadata().rawProviderResponseCaptured());
+        assertFalse(result.metadata().studentAnswerDetected());
+        assertEquals(0, result.metadata().confidence());
+        verifyNoInteractions(restTemplate);
+    }
+
+    @Test
+    void diagnosticCapturesTheRawProviderHttpBodyInBoundedMemoryAndExposesMetadataOnly() {
+        DiagnosticServiceFixture fixture = diagnosticService();
+        fixture.server().expect(once(), requestTo("http://localhost/ocr-test"))
+            .andExpect(method(HttpMethod.POST))
+            .andExpect(request -> assertTrue(
+                request.getHeaders().getFirst("X-Ocr-Diagnostic-Correlation-Id") != null
+                    && !request.getHeaders()
+                        .getFirst("X-Ocr-Diagnostic-Correlation-Id")
+                        .isBlank(),
+                "The diagnostic correlation header must be present."
+            ))
+            .andRespond(withSuccess(providerRawResponse(answers("student response", .82)),
+                MediaType.APPLICATION_JSON));
+
+        AiOcrService.OcrDiagnosticResult result = fixture.service().diagnose(
+            new byte[] {1, 2, 3},
+            "image/jpeg"
+        );
+
+        assertEquals(AiOcrService.OcrDiagnosticStatus.ANSWERS, result.status());
+        assertTrue(result.metadata().rawProviderResponseCaptured());
+        assertFalse(result.metadata().rawProviderResponseTruncated());
+        assertTrue(result.metadata().rawProviderResponseLength() > 0);
+        assertTrue(result.metadata().studentAnswerDetected());
+        assertEquals(.82, result.metadata().confidence());
+        assertTrue(result.rawProviderResponse().isPresent());
+        assertTrue(result.extractedAnswerText().isPresent());
+        assertFalse(result.sanitizedReport().contains("student response"));
+        assertTrue(result.sanitizedReport().startsWith("ocr_diagnostic correlation_id="));
+        fixture.server().verify();
+    }
+
+    @Test
+    void diagnosticDoesNotCallTheProviderForUnsupportedInput() {
+        ReflectionTestUtils.setField(service, "diagnosticEnabled", true);
+
+        AiOcrService.OcrDiagnosticResult result = service.diagnose(
+            new byte[] {1, 2, 3},
+            "application/pdf"
+        );
+
+        assertEquals(AiOcrService.OcrDiagnosticStatus.UNSUPPORTED_INPUT, result.status());
+        assertFalse(result.metadata().rawProviderResponseCaptured());
+        verifyNoInteractions(restTemplate);
+    }
+
+    @Test
+    void diagnosticClassifiesNoAnswerUncertainAndMalformedProviderBodiesWithoutLeakingContent() {
+        DiagnosticServiceFixture fixture = diagnosticService();
+        fixture.server().expect(once(), requestTo("http://localhost/ocr-test"))
+            .andRespond(withSuccess(providerRawResponse(noAnswers(.91)), MediaType.APPLICATION_JSON));
+        fixture.server().expect(once(), requestTo("http://localhost/ocr-test"))
+            .andRespond(withSuccess(
+                providerRawResponse(classifiedOutput("uncertain", List.of(), .4)),
+                MediaType.APPLICATION_JSON
+            ));
+        fixture.server().expect(once(), requestTo("http://localhost/ocr-test"))
+            .andRespond(withSuccess("not-json", MediaType.APPLICATION_JSON));
+
+        AiOcrService.OcrDiagnosticResult noAnswers = fixture.service().diagnose(
+            new byte[] {1, 2, 3}, "image/jpeg"
+        );
+        AiOcrService.OcrDiagnosticResult uncertain = fixture.service().diagnose(
+            new byte[] {1, 2, 3}, "image/jpeg"
+        );
+        AiOcrService.OcrDiagnosticResult malformed = fixture.service().diagnose(
+            new byte[] {1, 2, 3}, "image/jpeg"
+        );
+
+        assertEquals(AiOcrService.OcrDiagnosticStatus.NO_ANSWERS, noAnswers.status());
+        assertFalse(noAnswers.metadata().studentAnswerDetected());
+        assertEquals(AiOcrService.OcrDiagnosticStatus.UNCERTAIN, uncertain.status());
+        assertFalse(uncertain.metadata().studentAnswerDetected());
+        assertEquals(AiOcrService.OcrDiagnosticStatus.INVALID_PROVIDER_RESPONSE, malformed.status());
+        assertTrue(malformed.metadata().rawProviderResponseCaptured());
+        assertFalse(malformed.sanitizedReport().contains("not-json"));
+        fixture.server().verify();
+    }
+
+    @Test
+    void diagnosticCapturesAProviderRejectionBodyWithoutExposingItsContent() {
+        DiagnosticServiceFixture fixture = diagnosticService();
+        fixture.server().expect(once(), requestTo("http://localhost/ocr-test"))
+            .andRespond(withStatus(HttpStatus.UNPROCESSABLE_CONTENT)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body("{\"error\":\"provider rejected request\"}"));
+
+        AiOcrService.OcrDiagnosticResult result = fixture.service().diagnose(
+            new byte[] {1, 2, 3}, "image/jpeg"
+        );
+
+        assertEquals(AiOcrService.OcrDiagnosticStatus.HTTP_REJECTION, result.status());
+        assertTrue(result.metadata().rawProviderResponseCaptured());
+        assertEquals(422, result.metadata().providerHttpStatus());
+        assertFalse(result.sanitizedReport().contains("provider rejected request"));
+        fixture.server().verify();
+    }
+
+    @Test
+    void diagnosticDoesNotRetainTransportFailureDetails() {
+        DiagnosticServiceFixture fixture = diagnosticService();
+        fixture.server().expect(once(), requestTo("http://localhost/ocr-test"))
+            .andRespond(request -> {
+                throw new IOException("provider transport failure");
+            });
+
+        AiOcrService.OcrDiagnosticResult result = fixture.service().diagnose(
+            new byte[] {1, 2, 3}, "image/jpeg"
+        );
+
+        assertEquals(AiOcrService.OcrDiagnosticStatus.PROVIDER_UNAVAILABLE, result.status());
+        assertFalse(result.metadata().rawProviderResponseCaptured());
+        assertFalse(result.sanitizedReport().contains("provider transport failure"));
+        fixture.server().verify();
+    }
+
+    @Test
+    void diagnosticBoundsAProviderResponseKeptInMemory() {
+        DiagnosticServiceFixture fixture = diagnosticService();
+        fixture.server().expect(once(), requestTo("http://localhost/ocr-test"))
+            .andRespond(withSuccess(
+                providerRawResponseWithPadding(answers("student response", .82), 32_001),
+                MediaType.APPLICATION_JSON
+            ));
+
+        AiOcrService.OcrDiagnosticResult result = fixture.service().diagnose(
+            new byte[] {1, 2, 3}, "image/jpeg"
+        );
+
+        assertEquals(AiOcrService.OcrDiagnosticStatus.RESPONSE_TOO_LARGE, result.status());
+        assertTrue(result.metadata().rawProviderResponseTruncated());
+        assertEquals(32_000, result.metadata().rawProviderResponseLength());
+        assertEquals(32_000, result.rawProviderResponse().orElseThrow().length());
+        fixture.server().verify();
+    }
+
+    @Test
     void extractsOnlyStudentAnswersAndSendsAnswerOnlyPrompt() {
         whenProviderReturns(answers("4", .98));
 
@@ -74,6 +236,9 @@ class AiOcrServiceTest {
             eq("http://localhost/ocr-test"), entityCaptor.capture(), eq(Map.class)
         );
         assertEquals("Bearer test-api-key", entityCaptor.getValue().getHeaders().getFirst("Authorization"));
+        assertDoesNotThrow(() -> UUID.fromString(
+            entityCaptor.getValue().getHeaders().getFirst("X-Ocr-Correlation-Id")
+        ));
         assertTrue(entityCaptor.getValue().getBody().toString().contains("student-authored"));
         assertTrue(entityCaptor.getValue().getBody().toString().contains("diagram-aware"));
         assertTrue(entityCaptor.getValue().getBody().toString().contains("student_answer"));
@@ -126,6 +291,29 @@ class AiOcrServiceTest {
         assertEquals("x = ?", result.text());
         assertEquals(.31, result.confidence());
         assertFalse(result.unreadable());
+    }
+
+    @Test
+    void classifiesProviderAndRecognitionOutcomesWithoutChangingTheOcrResultContract() {
+        when(restTemplate.postForObject(
+            eq("http://localhost/ocr-test"), any(HttpEntity.class), eq(Map.class)
+        )).thenReturn(
+            providerResponse(answers("answer", .82)),
+            providerResponse(noAnswers(.9)),
+            providerResponse(classifiedOutput("uncertain", List.of(), 0)),
+            providerResponse("not-json")
+        ).thenThrow(new RestClientException("provider unavailable"));
+
+        assertEquals(AiOcrService.OcrOutcome.ANSWERS,
+            service.extractWithOutcome(new byte[] {1}, "image/jpeg", "correlation-one").outcome());
+        assertEquals(AiOcrService.OcrOutcome.NO_ANSWERS,
+            service.extractWithOutcome(new byte[] {2}, "image/jpeg", "correlation-two").outcome());
+        assertEquals(AiOcrService.OcrOutcome.UNCERTAIN,
+            service.extractWithOutcome(new byte[] {3}, "image/jpeg", "correlation-three").outcome());
+        assertEquals(AiOcrService.OcrOutcome.INVALID_PROVIDER_RESPONSE,
+            service.extractWithOutcome(new byte[] {4}, "image/jpeg", "correlation-four").outcome());
+        assertEquals(AiOcrService.OcrOutcome.PROVIDER_UNAVAILABLE,
+            service.extractWithOutcome(new byte[] {5}, "image/jpeg", "correlation-five").outcome());
     }
 
     @Test
@@ -295,6 +483,40 @@ class AiOcrServiceTest {
 
     private Map<String, Object> providerResponse(String content) {
         return Map.of("choices", List.of(Map.of("message", Map.of("content", content))));
+    }
+
+    private String providerRawResponse(String content) {
+        String escapedContent = content
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"");
+        return "{\"choices\":[{\"message\":{\"content\":\"" + escapedContent
+            + "\"}}]}";
+    }
+
+    private String providerRawResponseWithPadding(String content, int paddingLength) {
+        String rawProviderResponse = providerRawResponse(content);
+        String padding = "x".repeat(paddingLength);
+        return rawProviderResponse.substring(0, rawProviderResponse.length() - 1)
+            + ",\"padding\":\"" + padding + "\"}";
+    }
+
+    private DiagnosticServiceFixture diagnosticService() {
+        RestTemplate diagnosticRestTemplate = new RestTemplate();
+        AiOcrService diagnosticService = new AiOcrService(diagnosticRestTemplate);
+        ReflectionTestUtils.setField(diagnosticService, "apiUrl", "http://localhost/ocr-test");
+        ReflectionTestUtils.setField(diagnosticService, "visionModel", "test-vision-model");
+        ReflectionTestUtils.setField(diagnosticService, "apiKey", "test-api-key");
+        ReflectionTestUtils.setField(diagnosticService, "diagnosticEnabled", true);
+        return new DiagnosticServiceFixture(
+            diagnosticService,
+            MockRestServiceServer.bindTo(diagnosticRestTemplate).build()
+        );
+    }
+
+    private record DiagnosticServiceFixture(
+        AiOcrService service,
+        MockRestServiceServer server
+    ) {
     }
 
     private String answers(String text, double confidence) {

@@ -7,6 +7,8 @@ import com.fttranscendence.grading.service.AiOcrService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.UUID;
+
 @Service
 public class OcrReviewService {
 
@@ -14,13 +16,16 @@ public class OcrReviewService {
 
     private final OcrExtractionRepository extractionRepository;
     private final AiOcrService ocrService;
+    private final OcrObservabilityService observabilityService;
 
     public OcrReviewService(
         OcrExtractionRepository extractionRepository,
-        AiOcrService ocrService
+        AiOcrService ocrService,
+        OcrObservabilityService observabilityService
     ) {
         this.extractionRepository = extractionRepository;
         this.ocrService = ocrService;
+        this.observabilityService = observabilityService;
     }
 
     @Transactional
@@ -29,10 +34,13 @@ public class OcrReviewService {
         Long questionId,
         byte[] bytes
     ) {
-        AiOcrService.OcrResult ocrResult = ocrService.extract(
+        String correlationId = UUID.randomUUID().toString();
+        AiOcrService.OcrExtractionResult extractionResult = ocrService.extractWithOutcome(
             bytes,
-            page.getMediaType()
+            page.getMediaType(),
+            correlationId
         );
+        AiOcrService.OcrResult ocrResult = extractionResult.result();
         String storedText = ocrResult.unreadable() ? "" : ocrResult.text();
 
         OcrExtraction extraction = new OcrExtraction(
@@ -43,7 +51,9 @@ public class OcrReviewService {
             AI_VISION_PROVIDER
         );
 
-        return extractionRepository.save(extraction);
+        OcrExtraction savedExtraction = extractionRepository.save(extraction);
+        observabilityService.record(correlationId, extractionResult);
+        return savedExtraction;
     }
 
     @Transactional

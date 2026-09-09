@@ -12,18 +12,25 @@ import org.apache.pdfbox.rendering.PDFRenderer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.ResponseErrorHandler;
 import org.springframework.web.client.RestTemplate;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 
 @Service
 public class AiOcrService {
@@ -34,6 +41,8 @@ public class AiOcrService {
     private static final int MAX_PDF_PAGES = 100;
     private static final int PDF_RENDER_DPI = 144;
     private static final long MAX_RENDERED_PDF_PIXELS = 20_000_000L;
+    // The diagnostic copy is deliberately short-lived and bounded. It is never logged or stored.
+    private static final int MAX_DIAGNOSTIC_RAW_RESPONSE_BYTES = 32_000;
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final String OCR_PROMPT =
         "You are a diagram-aware, answer-only OCR engine for submitted worksheets. "
@@ -68,6 +77,12 @@ public class AiOcrService {
     @Value("${ai.engine.api-key}")
     private String apiKey;
 
+    /**
+     * Diagnostic provider calls are disabled unless explicitly enabled for a controlled run.
+     */
+    @Value("${ai.ocr.diagnostic.enabled:false}")
+    private boolean diagnosticEnabled;
+
     private final RestTemplate restTemplate;
 
     public AiOcrService(RestTemplate restTemplate) {
@@ -96,30 +111,103 @@ public class AiOcrService {
     }
 
     public String extractTextFromImage(String base64Image) {
-        return toOcrResult(extractBase64(base64Image, JPEG_MEDIA_TYPE)).text();
+        return toOcrResult(
+            callProvider(base64Image, JPEG_MEDIA_TYPE, UUID.randomUUID().toString()).modelOutput()
+        ).text();
     }
 
     public OcrResult extract(byte[] bytes, String mediaType) {
+        return extractWithOutcome(bytes, mediaType, UUID.randomUUID().toString()).result();
+    }
+
+    /**
+     * Performs one OCR extraction with a caller-supplied UUID correlation ID. Invalid IDs are
+     * replaced locally. The ID is only forwarded to the provider; it is never included in
+     * extracted text or persisted OCR records.
+     */
+    public OcrExtractionResult extractWithOutcome(
+        byte[] bytes,
+        String mediaType,
+        String correlationId
+    ) {
+        String safeCorrelationId = normalizeCorrelationId(correlationId);
+
         if (PDF_MEDIA_TYPE.equals(mediaType)) {
-            return extractPdfPages(bytes);
+            return extractPdfPages(bytes, safeCorrelationId);
         }
 
         if (!isSupportedImage(mediaType)) {
-            return unreadable();
+            return unreadable(OcrOutcome.INVALID_PROVIDER_RESPONSE);
         }
 
         String base64Image = Base64.getEncoder().encodeToString(bytes);
-        return toOcrResult(extractBase64(base64Image, mediaType));
+        ProviderOcrCall providerCall = callProvider(base64Image, mediaType, safeCorrelationId);
+        return toExtractionResult(providerCall);
     }
 
-    private OcrResult extractPdfPages(byte[] pdfBytes) {
+    private String normalizeCorrelationId(String correlationId) {
+        if (correlationId == null || correlationId.isBlank()) {
+            return UUID.randomUUID().toString();
+        }
+
+        try {
+            return UUID.fromString(correlationId).toString();
+        } catch (IllegalArgumentException exception) {
+            return UUID.randomUUID().toString();
+        }
+    }
+
+    /**
+     * Calls the vision provider only when the diagnostic switch is explicitly enabled.
+     *
+     * The returned value deliberately exposes only correlation and recognition metadata. The raw
+     * provider HTTP body remains in bounded process memory and is package-visible solely to the
+     * opt-in diagnostic harness. This prevents a controller, logger, or database mapper from
+     * accidentally persisting an uploaded answer.
+     */
+    public OcrDiagnosticResult diagnose(byte[] bytes, String mediaType) {
+        String correlationId = UUID.randomUUID().toString();
+
+        if (!diagnosticEnabled) {
+            return OcrDiagnosticResult.disabled(correlationId);
+        }
+
+        if (!isSupportedImage(mediaType) || bytes == null || bytes.length == 0) {
+            return OcrDiagnosticResult.unsupportedInput(correlationId);
+        }
+
+        String base64Image = Base64.getEncoder().encodeToString(bytes);
+        DiagnosticProviderCall providerCall = callProviderForDiagnostic(
+            base64Image,
+            mediaType,
+            correlationId
+        );
+        ModelOcrOutput modelOutput = providerCall.modelOutput();
+
+        return new OcrDiagnosticResult(
+            correlationId,
+            diagnosticStatus(providerCall, modelOutput),
+            new OcrDiagnosticMetadata(
+                providerCall.rawResponseCaptured(),
+                providerCall.rawResponseTruncated(),
+                providerCall.rawResponseLength(),
+                providerCall.httpStatus(),
+                modelOutput.status() == OcrStatus.ANSWERS,
+                modelOutput.confidence()
+            ),
+            providerCall.rawResponse(),
+            modelOutput.text()
+        );
+    }
+
+    private OcrExtractionResult extractPdfPages(byte[] pdfBytes, String correlationId) {
         if (pdfBytes == null || pdfBytes.length == 0) {
-            return unreadable();
+            return unreadable(OcrOutcome.INVALID_PROVIDER_RESPONSE);
         }
 
         try (PDDocument document = Loader.loadPDF(pdfBytes)) {
             if (document.isEncrypted() || !hasSupportedPageCount(document)) {
-                return unreadable();
+                return unreadable(OcrOutcome.INVALID_PROVIDER_RESPONSE);
             }
 
             PDFRenderer renderer = new PDFRenderer(document);
@@ -128,18 +216,27 @@ public class AiOcrService {
 
             for (int pageIndex = 0; pageIndex < document.getNumberOfPages(); pageIndex++) {
                 if (!canRenderWithinLimit(document.getPage(pageIndex))) {
-                    return unreadable();
+                    return unreadable(OcrOutcome.INVALID_PROVIDER_RESPONSE);
                 }
 
                 byte[] pageImage = renderPdfPage(renderer, pageIndex);
-                ModelOcrOutput pageOutput = extractBase64(
+                ProviderOcrCall providerCall = callProvider(
                     Base64.getEncoder().encodeToString(pageImage),
-                    JPEG_MEDIA_TYPE
+                    JPEG_MEDIA_TYPE,
+                    correlationId
                 );
+                if (!providerCall.providerAvailable()) {
+                    return unreadable(OcrOutcome.PROVIDER_UNAVAILABLE);
+                }
 
-                if (pageOutput.status() == OcrStatus.INVALID
-                    || pageOutput.status() == OcrStatus.UNCERTAIN) {
-                    return unreadable();
+                ModelOcrOutput pageOutput = providerCall.modelOutput();
+
+                if (pageOutput.status() == OcrStatus.INVALID) {
+                    return unreadable(OcrOutcome.INVALID_PROVIDER_RESPONSE);
+                }
+
+                if (pageOutput.status() == OcrStatus.UNCERTAIN) {
+                    return unreadable(OcrOutcome.UNCERTAIN);
                 }
 
                 if (pageOutput.status() == OcrStatus.ANSWERS) {
@@ -149,12 +246,15 @@ public class AiOcrService {
             }
 
             if (answerPages.isEmpty()) {
-                return unreadable();
+                return unreadable(OcrOutcome.NO_ANSWERS);
             }
 
-            return new OcrResult(String.join("\n", answerPages), lowestConfidence, false);
+            return new OcrExtractionResult(
+                new OcrResult(String.join("\n", answerPages), lowestConfidence, false),
+                OcrOutcome.ANSWERS
+            );
         } catch (Exception exception) {
-            return unreadable();
+            return unreadable(OcrOutcome.INVALID_PROVIDER_RESPONSE);
         }
     }
 
@@ -203,9 +303,14 @@ public class AiOcrService {
         }
     }
 
-    private ModelOcrOutput extractBase64(String base64Image, String mediaType) {
+    private ProviderOcrCall callProvider(
+        String base64Image,
+        String mediaType,
+        String correlationId
+    ) {
         Map<String, Object> requestPayload = buildOcrRequest(base64Image, mediaType);
         HttpHeaders headers = createProviderHeaders();
+        headers.set("X-Ocr-Correlation-Id", correlationId);
 
         try {
             Map<String, Object> providerResponse = restTemplate.postForObject(
@@ -215,13 +320,178 @@ public class AiOcrService {
             );
 
             if (providerResponse == null || !providerResponse.containsKey("choices")) {
+                return ProviderOcrCall.available(ModelOcrOutput.invalid());
+            }
+
+            return ProviderOcrCall.available(
+                parseModelOutput(extractFirstChoiceContent(providerResponse))
+            );
+        } catch (Exception exception) {
+            return ProviderOcrCall.unavailable();
+        }
+    }
+
+    private OcrExtractionResult toExtractionResult(ProviderOcrCall providerCall) {
+        if (!providerCall.providerAvailable()) {
+            return unreadable(OcrOutcome.PROVIDER_UNAVAILABLE);
+        }
+
+        ModelOcrOutput output = providerCall.modelOutput();
+        return switch (output.status()) {
+            case ANSWERS -> new OcrExtractionResult(toOcrResult(output), OcrOutcome.ANSWERS);
+            case NO_ANSWERS -> unreadable(OcrOutcome.NO_ANSWERS);
+            case UNCERTAIN -> unreadable(OcrOutcome.UNCERTAIN);
+            case INVALID -> unreadable(OcrOutcome.INVALID_PROVIDER_RESPONSE);
+        };
+    }
+
+    /**
+     * Streams and retains no more than 32 KiB of the provider HTTP body. Production extraction
+     * keeps its existing request path, so the diagnostic safety limit cannot change submissions.
+     */
+    private DiagnosticProviderCall callProviderForDiagnostic(
+        String base64Image,
+        String mediaType,
+        String correlationId
+    ) {
+        Map<String, Object> requestPayload = buildOcrRequest(base64Image, mediaType);
+        HttpHeaders headers = createProviderHeaders();
+        headers.set("X-Ocr-Diagnostic-Correlation-Id", correlationId);
+
+        try {
+            BoundedRawResponse rawProviderResponse = diagnosticRestTemplate().execute(
+                apiUrl,
+                HttpMethod.POST,
+                request -> {
+                    request.getHeaders().putAll(headers);
+                    OBJECT_MAPPER.writeValue(request.getBody(), requestPayload);
+                },
+                this::readBoundedProviderResponse
+            );
+
+            if (rawProviderResponse == null) {
+                return DiagnosticProviderCall.providerUnavailable();
+            }
+
+            if (rawProviderResponse.truncated()) {
+                return DiagnosticProviderCall.responseTooLarge(rawProviderResponse);
+            }
+
+            return new DiagnosticProviderCall(
+                parseRawProviderResponse(rawProviderResponse.value()),
+                rawProviderResponse.value(),
+                true,
+                false,
+                rawProviderResponse.length(),
+                rawProviderResponse.statusCode(),
+                false
+            );
+        } catch (Exception exception) {
+            // Provider exception details can include request or response content. Do not retain them.
+            return DiagnosticProviderCall.providerUnavailable();
+        }
+    }
+
+    private RestTemplate diagnosticRestTemplate() {
+        RestTemplate diagnosticRestTemplate = new RestTemplate(restTemplate.getRequestFactory());
+        diagnosticRestTemplate.setErrorHandler(new ResponseErrorHandler() {
+            @Override
+            public boolean hasError(ClientHttpResponse response) {
+                return false;
+            }
+        });
+        return diagnosticRestTemplate;
+    }
+
+    private BoundedRawResponse readBoundedProviderResponse(ClientHttpResponse response) throws IOException {
+        int statusCode = response.getStatusCode().value();
+        InputStream body = response.getBody();
+        if (body == null) {
+            return new BoundedRawResponse("", false, 0, statusCode);
+        }
+
+        byte[] buffer = new byte[4_096];
+        try (InputStream responseBody = body;
+            ByteArrayOutputStream capturedResponse = new ByteArrayOutputStream(
+                MAX_DIAGNOSTIC_RAW_RESPONSE_BYTES
+            )) {
+            int capturedBytes = 0;
+            while (capturedBytes < MAX_DIAGNOSTIC_RAW_RESPONSE_BYTES) {
+                int requestedBytes = Math.min(
+                    buffer.length,
+                    MAX_DIAGNOSTIC_RAW_RESPONSE_BYTES - capturedBytes
+                );
+                int bytesRead = responseBody.read(buffer, 0, requestedBytes);
+                if (bytesRead == -1) {
+                    return new BoundedRawResponse(
+                        capturedResponse.toString(StandardCharsets.UTF_8),
+                        false,
+                        capturedBytes,
+                        statusCode
+                    );
+                }
+
+                capturedResponse.write(buffer, 0, bytesRead);
+                capturedBytes += bytesRead;
+            }
+
+            boolean responseTooLarge = responseBody.read() != -1;
+            return new BoundedRawResponse(
+                capturedResponse.toString(StandardCharsets.UTF_8),
+                responseTooLarge,
+                capturedBytes,
+                statusCode
+            );
+        }
+    }
+
+    private ModelOcrOutput parseRawProviderResponse(String rawProviderResponse) {
+        try {
+            JsonNode response = OBJECT_MAPPER.readTree(rawProviderResponse);
+            if (response == null || !response.isObject()) {
                 return ModelOcrOutput.invalid();
             }
 
-            return parseModelOutput(extractFirstChoiceContent(providerResponse));
-        } catch (Exception exception) {
+            JsonNode choices = response.get("choices");
+            if (choices == null || !choices.isArray() || choices.isEmpty()) {
+                return ModelOcrOutput.invalid();
+            }
+
+            JsonNode firstChoice = choices.get(0);
+            JsonNode message = firstChoice == null ? null : firstChoice.get("message");
+            JsonNode content = message == null ? null : message.get("content");
+            if (content == null || !content.isTextual()) {
+                return ModelOcrOutput.invalid();
+            }
+
+            return parseModelOutput(content.textValue());
+        } catch (JsonProcessingException exception) {
             return ModelOcrOutput.invalid();
         }
+    }
+
+    private OcrDiagnosticStatus diagnosticStatus(
+        DiagnosticProviderCall providerCall,
+        ModelOcrOutput modelOutput
+    ) {
+        if (!providerCall.rawResponseCaptured()) {
+            return OcrDiagnosticStatus.PROVIDER_UNAVAILABLE;
+        }
+
+        if (providerCall.httpStatus() >= 400) {
+            return OcrDiagnosticStatus.HTTP_REJECTION;
+        }
+
+        if (providerCall.responseTooLarge()) {
+            return OcrDiagnosticStatus.RESPONSE_TOO_LARGE;
+        }
+
+        return switch (modelOutput.status()) {
+            case ANSWERS -> OcrDiagnosticStatus.ANSWERS;
+            case NO_ANSWERS -> OcrDiagnosticStatus.NO_ANSWERS;
+            case UNCERTAIN -> OcrDiagnosticStatus.UNCERTAIN;
+            case INVALID -> OcrDiagnosticStatus.INVALID_PROVIDER_RESPONSE;
+        };
     }
 
     private OcrResult toOcrResult(ModelOcrOutput output) {
@@ -234,6 +504,10 @@ public class AiOcrService {
 
     private OcrResult unreadable() {
         return new OcrResult("", 0, true);
+    }
+
+    private OcrExtractionResult unreadable(OcrOutcome outcome) {
+        return new OcrExtractionResult(unreadable(), outcome);
     }
 
     private Map<String, Object> buildOcrRequest(String base64Image, String mediaType) {
@@ -389,6 +663,128 @@ public class AiOcrService {
     public record OcrResult(String text, double confidence, boolean unreadable) {
     }
 
+    /**
+     * These values are metric labels, so the set must remain deliberately bounded.
+     */
+    public enum OcrOutcome {
+        ANSWERS,
+        NO_ANSWERS,
+        UNCERTAIN,
+        INVALID_PROVIDER_RESPONSE,
+        PROVIDER_UNAVAILABLE
+    }
+
+    public record OcrExtractionResult(OcrResult result, OcrOutcome outcome) {
+    }
+
+    public enum OcrDiagnosticStatus {
+        DISABLED,
+        UNSUPPORTED_INPUT,
+        PROVIDER_UNAVAILABLE,
+        HTTP_REJECTION,
+        RESPONSE_TOO_LARGE,
+        INVALID_PROVIDER_RESPONSE,
+        NO_ANSWERS,
+        UNCERTAIN,
+        ANSWERS
+    }
+
+    /**
+     * Safe to expose from a diagnostic endpoint or test report: it has no image, answer text,
+     * provider exception, credential, or raw provider response.
+     */
+    public record OcrDiagnosticMetadata(
+        boolean rawProviderResponseCaptured,
+        boolean rawProviderResponseTruncated,
+        int rawProviderResponseLength,
+        int providerHttpStatus,
+        boolean studentAnswerDetected,
+        double confidence
+    ) {
+    }
+
+    public static final class OcrDiagnosticResult {
+
+        private final String correlationId;
+        private final OcrDiagnosticStatus status;
+        private final OcrDiagnosticMetadata metadata;
+        private final String rawProviderResponse;
+        private final String extractedAnswerText;
+
+        private OcrDiagnosticResult(
+            String correlationId,
+            OcrDiagnosticStatus status,
+            OcrDiagnosticMetadata metadata,
+            String rawProviderResponse,
+            String extractedAnswerText
+        ) {
+            this.correlationId = correlationId;
+            this.status = status;
+            this.metadata = metadata;
+            this.rawProviderResponse = rawProviderResponse;
+            this.extractedAnswerText = extractedAnswerText;
+        }
+
+        private static OcrDiagnosticResult disabled(String correlationId) {
+            return new OcrDiagnosticResult(
+                correlationId,
+                OcrDiagnosticStatus.DISABLED,
+                emptyDiagnosticMetadata(),
+                null,
+                null
+            );
+        }
+
+        private static OcrDiagnosticResult unsupportedInput(String correlationId) {
+            return new OcrDiagnosticResult(
+                correlationId,
+                OcrDiagnosticStatus.UNSUPPORTED_INPUT,
+                emptyDiagnosticMetadata(),
+                null,
+                null
+            );
+        }
+
+        private static OcrDiagnosticMetadata emptyDiagnosticMetadata() {
+            return new OcrDiagnosticMetadata(false, false, 0, 0, false, 0);
+        }
+
+        public String correlationId() {
+            return correlationId;
+        }
+
+        public OcrDiagnosticStatus status() {
+            return status;
+        }
+
+        public OcrDiagnosticMetadata metadata() {
+            return metadata;
+        }
+
+        /**
+         * Safe diagnostic output. Keep this to one line so a test report cannot accidentally
+         * include provider content when a live reproduction is run.
+         */
+        public String sanitizedReport() {
+            return "ocr_diagnostic correlation_id=" + correlationId
+                + " status=" + status
+                + " raw_captured=" + metadata.rawProviderResponseCaptured()
+                + " raw_truncated=" + metadata.rawProviderResponseTruncated()
+                + " raw_length=" + metadata.rawProviderResponseLength()
+                + " provider_http_status=" + metadata.providerHttpStatus()
+                + " student_answer_detected=" + metadata.studentAnswerDetected()
+                + " confidence=" + metadata.confidence();
+        }
+
+        Optional<String> rawProviderResponse() {
+            return Optional.ofNullable(rawProviderResponse);
+        }
+
+        Optional<String> extractedAnswerText() {
+            return Optional.ofNullable(extractedAnswerText);
+        }
+    }
+
     private enum OcrStatus {
         ANSWERS,
         NO_ANSWERS,
@@ -400,6 +796,60 @@ public class AiOcrService {
 
         private static ModelOcrOutput invalid() {
             return new ModelOcrOutput(OcrStatus.INVALID, "", 0);
+        }
+    }
+
+    private record BoundedRawResponse(
+        String value,
+        boolean truncated,
+        int length,
+        int statusCode
+    ) {
+    }
+
+    private record DiagnosticProviderCall(
+        ModelOcrOutput modelOutput,
+        String rawResponse,
+        boolean rawResponseCaptured,
+        boolean rawResponseTruncated,
+        int rawResponseLength,
+        int httpStatus,
+        boolean responseTooLarge
+    ) {
+
+        private static DiagnosticProviderCall providerUnavailable() {
+            return new DiagnosticProviderCall(
+                ModelOcrOutput.invalid(),
+                null,
+                false,
+                false,
+                0,
+                0,
+                false
+            );
+        }
+
+        private static DiagnosticProviderCall responseTooLarge(BoundedRawResponse rawResponse) {
+            return new DiagnosticProviderCall(
+                ModelOcrOutput.invalid(),
+                rawResponse.value(),
+                true,
+                true,
+                rawResponse.length(),
+                rawResponse.statusCode(),
+                true
+            );
+        }
+    }
+
+    private record ProviderOcrCall(ModelOcrOutput modelOutput, boolean providerAvailable) {
+
+        private static ProviderOcrCall available(ModelOcrOutput modelOutput) {
+            return new ProviderOcrCall(modelOutput, true);
+        }
+
+        private static ProviderOcrCall unavailable() {
+            return new ProviderOcrCall(ModelOcrOutput.invalid(), false);
         }
     }
 }

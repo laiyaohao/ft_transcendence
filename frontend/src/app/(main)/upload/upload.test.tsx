@@ -9,7 +9,11 @@ import {
   fetchStudentSelfProfile,
   fetchTutorStudents,
 } from "@/services/students";
-import { createOcrDocument } from "@/services/submissions";
+import {
+  createOcrDocument,
+  preflightUploadImage,
+  type UploadImagePreflight,
+} from "@/services/submissions";
 import {
   fetchStudentWorksheets,
   fetchSubmissionWorksheets,
@@ -41,7 +45,11 @@ vi.mock("@/services/submissions", async () => {
   const actual = await vi.importActual<typeof import("@/services/submissions")>(
     "@/services/submissions",
   );
-  return { ...actual, createOcrDocument: vi.fn() };
+  return {
+    ...actual,
+    createOcrDocument: vi.fn(),
+    preflightUploadImage: vi.fn(),
+  };
 });
 
 const classes = [
@@ -174,6 +182,23 @@ describe("Tutor upload wizard", () => {
       createdAt: "2026-08-30T09:00:00",
       pages: [],
     });
+    vi.mocked(preflightUploadImage).mockResolvedValue({
+      assessmentStatus: "ready",
+      mediaType: "image/jpeg",
+      width: 1536,
+      height: 2048,
+      quality: {
+        contrast: 0.6,
+        sharpness: 0.6,
+        estimatedWritingSize: {
+          coverage: 0.04,
+          widthFraction: 0.2,
+          heightFraction: 0.2,
+        },
+        warnings: [],
+      },
+      guidance: [],
+    });
     vi.stubGlobal("URL", {
       createObjectURL: vi.fn(() => "blob:file"),
       revokeObjectURL: vi.fn(),
@@ -274,6 +299,120 @@ describe("Tutor upload wizard", () => {
     expect(createOcrDocument).not.toHaveBeenCalled();
   });
 
+  it("advises a Tutor when a photo needs a retake without blocking submission", async () => {
+    vi.mocked(preflightUploadImage).mockResolvedValue({
+      assessmentStatus: "retake_recommended",
+      mediaType: "image/jpeg",
+      width: 640,
+      height: 480,
+      quality: {
+        contrast: 0.12,
+        sharpness: 0.08,
+        estimatedWritingSize: {
+          coverage: 0.01,
+          widthFraction: 0.02,
+          heightFraction: 0.01,
+        },
+        warnings: ["LOW_CONTRAST", "BLURRY", "WRITING_TOO_SMALL"],
+      },
+      guidance: [
+        "Retake this photo in brighter light and keep the answer area closer.",
+      ],
+    });
+    const user = userEvent.setup();
+    render(<Page />);
+    await choose(user, "Class", "P6 Science A · Primary 6 Science");
+    await choose(user, "Student", "Bella Tan");
+    await choose(user, "Worksheet", "Water cycle practice");
+    await user.click(
+      screen.getByRole("button", { name: "Upload scan / photo" }),
+    );
+    const input = document.querySelector(
+      'input[type="file"][multiple]',
+    ) as HTMLInputElement;
+    await user.upload(
+      input,
+      new File(["page"], "blurry-page.jpg", { type: "image/jpeg" }),
+    );
+
+    expect(
+      await screen.findByText(
+        "Retake this photo in brighter light and keep the answer area closer.",
+      ),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Review submission" })).toBeEnabled();
+  });
+
+  it("explains that a Tutor PDF cannot be checked as a local photo", async () => {
+    vi.mocked(preflightUploadImage).mockResolvedValue({
+      assessmentStatus: "unavailable",
+      mediaType: "application/pdf",
+      width: null,
+      height: null,
+      quality: null,
+      guidance: [
+        "Local photo quality check is unavailable for PDF pages. You can still upload it.",
+      ],
+    });
+    const user = userEvent.setup();
+    render(<Page />);
+    await choose(user, "Class", "P6 Science A · Primary 6 Science");
+    await choose(user, "Student", "Bella Tan");
+    await choose(user, "Worksheet", "Water cycle practice");
+    await user.click(
+      screen.getByRole("button", { name: "Upload scan / photo" }),
+    );
+    const input = document.querySelector(
+      'input[type="file"][multiple]',
+    ) as HTMLInputElement;
+    await user.upload(
+      input,
+      new File(["pdf"], "worksheet.pdf", { type: "application/pdf" }),
+    );
+
+    expect(
+      await screen.findByText(
+        "Local photo quality check is unavailable for PDF pages. You can still upload it.",
+      ),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Review submission" })).toBeEnabled();
+  });
+
+  it("keeps a Tutor image upload available when local decoding is unavailable", async () => {
+    vi.mocked(preflightUploadImage).mockResolvedValue({
+      assessmentStatus: "unavailable",
+      mediaType: "image/jpeg",
+      width: null,
+      height: null,
+      quality: null,
+      guidance: [
+        "Photo quality could not be checked on this device. You can still upload it.",
+      ],
+    });
+    const user = userEvent.setup();
+    render(<Page />);
+    await choose(user, "Class", "P6 Science A · Primary 6 Science");
+    await choose(user, "Student", "Bella Tan");
+    await choose(user, "Worksheet", "Water cycle practice");
+    await user.click(
+      screen.getByRole("button", { name: "Upload scan / photo" }),
+    );
+    const input = document.querySelector(
+      'input[type="file"][multiple]',
+    ) as HTMLInputElement;
+    await user.upload(
+      input,
+      new File(["photo"], "device-limited.jpg", { type: "image/jpeg" }),
+    );
+
+    expect(
+      await screen.findByText(
+        "Photo quality could not be checked on this device. You can still upload it.",
+      ),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Review submission" })).toBeEnabled();
+  });
+
   it("carries the real Tutor class, student and worksheet selection into manual entry", async () => {
     const user = userEvent.setup();
     render(<Page />);
@@ -328,6 +467,23 @@ describe("Student assigned worksheet upload", () => {
       createdAt: "2026-08-30T09:00:00",
       pages: [],
     });
+    vi.mocked(preflightUploadImage).mockResolvedValue({
+      assessmentStatus: "ready",
+      mediaType: "image/jpeg",
+      width: 1536,
+      height: 2048,
+      quality: {
+        contrast: 0.6,
+        sharpness: 0.6,
+        estimatedWritingSize: {
+          coverage: 0.04,
+          widthFraction: 0.2,
+          heightFraction: 0.2,
+        },
+        warnings: [],
+      },
+      guidance: [],
+    });
     vi.stubGlobal("URL", {
       createObjectURL: vi.fn(() => "blob:file"),
       revokeObjectURL: vi.fn(),
@@ -380,6 +536,115 @@ describe("Student assigned worksheet upload", () => {
     expect(
       await screen.findByRole("link", { name: "Enter answers manually" }),
     ).toHaveAttribute("href", "/manual-answers?worksheetId=42");
+  });
+
+  it("shows Student retake guidance, but keeps OCR submission available", async () => {
+    vi.mocked(preflightUploadImage).mockResolvedValue({
+      assessmentStatus: "retake_recommended",
+      mediaType: "image/png",
+      width: 600,
+      height: 400,
+      quality: {
+        contrast: 0.15,
+        sharpness: 0.1,
+        estimatedWritingSize: {
+          coverage: 0.01,
+          widthFraction: 0.02,
+          heightFraction: 0.01,
+        },
+        warnings: ["LOW_RESOLUTION", "BLURRY"],
+      },
+      guidance: ["Retake this photo with the page in focus before uploading."],
+    });
+    const user = userEvent.setup();
+    render(<Page />);
+    await screen.findByText("Student: Bella Tan");
+    const input = document.querySelector(
+      'input[type="file"][multiple]',
+    ) as HTMLInputElement;
+    await user.upload(
+      input,
+      new File(["page"], "soft-page.png", { type: "image/png" }),
+    );
+
+    expect(
+      await screen.findByText("Retake this photo with the page in focus before uploading."),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Save and continue to OCR review" }),
+    ).toBeEnabled();
+  });
+
+  it("ignores a late preflight result after a Student replaces the same file", async () => {
+    let resolveFirstPreflight!: (result: UploadImagePreflight) => void;
+    const firstPreflight = new Promise<UploadImagePreflight>((resolve) => {
+      resolveFirstPreflight = resolve;
+    });
+    vi.mocked(preflightUploadImage)
+      .mockImplementationOnce(() => firstPreflight)
+      .mockResolvedValueOnce({
+        assessmentStatus: "retake_recommended",
+        mediaType: "image/jpeg",
+        width: 600,
+        height: 400,
+        quality: {
+          contrast: 0.15,
+          sharpness: 0.1,
+          estimatedWritingSize: {
+            coverage: 0.01,
+            widthFraction: 0.02,
+            heightFraction: 0.01,
+          },
+          warnings: ["LOW_RESOLUTION", "BLURRY"],
+        },
+        guidance: ["The replacement photo needs a retake."],
+      });
+    const user = userEvent.setup();
+    render(<Page />);
+    await screen.findByText("Student: Bella Tan");
+    const uploadInput = document.querySelector(
+      'input[type="file"][multiple]',
+    ) as HTMLInputElement;
+    const fileOptions = {
+      type: "image/jpeg",
+      lastModified: 1,
+    };
+    await user.upload(uploadInput, new File(["page"], "page.jpg", fileOptions));
+
+    const replaceInput = document.querySelectorAll<HTMLInputElement>(
+      'input[type="file"]',
+    )[2];
+    await user.upload(
+      replaceInput,
+      new File(["page"], "page.jpg", fileOptions),
+    );
+    expect(
+      await screen.findByText("The replacement photo needs a retake."),
+    ).toBeVisible();
+
+    resolveFirstPreflight({
+      assessmentStatus: "retake_recommended",
+      mediaType: "image/jpeg",
+      width: 600,
+      height: 400,
+      quality: {
+        contrast: 0.15,
+        sharpness: 0.1,
+        estimatedWritingSize: {
+          coverage: 0.01,
+          widthFraction: 0.02,
+          heightFraction: 0.01,
+        },
+        warnings: ["LOW_RESOLUTION", "BLURRY"],
+      },
+      guidance: ["The removed photo needs a retake."],
+    });
+
+    await waitFor(() =>
+      expect(
+        screen.queryByText("The removed photo needs a retake."),
+      ).not.toBeInTheDocument(),
+    );
   });
 
   it("rejects a worksheet not currently assigned to the Student without offering a generic upload", async () => {

@@ -11,6 +11,65 @@ export type UploadPage = {
   warning: string | null;
 };
 
+export type ImageQualityWarningCode =
+  | "LOW_RESOLUTION"
+  | "LOW_CONTRAST"
+  | "BLURRY"
+  | "WRITING_TOO_SMALL";
+
+export type EstimatedWritingSize = {
+  coverage: number;
+  widthFraction: number;
+  heightFraction: number;
+};
+
+export type ImageQualityMetrics = {
+  contrast: number;
+  sharpness: number;
+  estimatedWritingSize: EstimatedWritingSize;
+  warnings: ImageQualityWarningCode[];
+};
+
+export type UploadImagePreflight = {
+  assessmentStatus: "ready" | "retake_recommended" | "unavailable";
+  mediaType: string;
+  width: number | null;
+  height: number | null;
+  quality: ImageQualityMetrics | null;
+  guidance: string[];
+};
+
+export type ImagePixelData = {
+  width: number;
+  height: number;
+  data: Uint8ClampedArray;
+};
+
+export type ImageDimensions = {
+  width: number;
+  height: number;
+};
+
+const QUALITY_THRESHOLDS = {
+  minimumWidth: 900,
+  minimumHeight: 900,
+  minimumPixels: 1_000_000,
+  minimumContrast: 18,
+  minimumSharpness: 30,
+  minimumWritingCoverage: 0.001,
+  minimumWritingWidth: 0.08,
+  minimumWritingHeight: 0.025,
+} as const;
+
+const MAX_ANALYSIS_EDGE = 1_600;
+
+const QUALITY_GUIDANCE: Record<ImageQualityWarningCode, string> = {
+  LOW_RESOLUTION: "Move closer so the worksheet and writing are larger in the photo.",
+  LOW_CONTRAST: "Use brighter, even lighting and avoid shadows across the writing.",
+  BLURRY: "Hold the camera steady and tap the writing to focus before taking the photo.",
+  WRITING_TOO_SMALL: "Move closer or crop to the worksheet so the writing is easier to read.",
+};
+
 export type OcrPage = {
   pageId: number;
   extractionId: number;
@@ -67,10 +126,7 @@ export function validateUploadFiles(
         file,
         previewUrl: isImage ? URL.createObjectURL(file) : null,
         rotation: 0,
-        warning:
-          isImage && file.size < 12_000
-            ? "This image may be hard to read. Consider replacing it."
-            : null,
+        warning: null,
       });
     }
   });
@@ -81,6 +137,250 @@ export function validateUploadFiles(
 export function releasePagePreview(page: UploadPage) {
   if (page.previewUrl) {
     URL.revokeObjectURL(page.previewUrl);
+  }
+}
+
+function grayscaleAt(data: Uint8ClampedArray, pixelIndex: number): number {
+  const dataIndex = pixelIndex * 4;
+  return (
+    data[dataIndex] * 0.2126 +
+    data[dataIndex + 1] * 0.7152 +
+    data[dataIndex + 2] * 0.0722
+  );
+}
+
+function calculateSampleStep(width: number, height: number): number {
+  const totalPixels = width * height;
+  return Math.max(1, Math.ceil(Math.sqrt(totalPixels / 250_000)));
+}
+
+function createQualityGuidance(
+  warnings: ImageQualityWarningCode[],
+): string[] {
+  return warnings.map((warning) => QUALITY_GUIDANCE[warning]);
+}
+
+/**
+ * Measures pixel-level image quality only. It does not identify student answers
+ * and it never stores, uploads, or logs the supplied pixels.
+ */
+export function analyzeImagePixels(
+  image: ImagePixelData,
+  sourceDimensions: ImageDimensions = image,
+): ImageQualityMetrics {
+  const { data, width, height } = image;
+  const expectedLength = width * height * 4;
+
+  if (
+    !Number.isSafeInteger(width) ||
+    !Number.isSafeInteger(height) ||
+    width <= 0 ||
+    height <= 0 ||
+    !Number.isSafeInteger(sourceDimensions.width) ||
+    !Number.isSafeInteger(sourceDimensions.height) ||
+    sourceDimensions.width <= 0 ||
+    sourceDimensions.height <= 0 ||
+    data.length < expectedLength
+  ) {
+    throw new Error("Image pixel data is invalid.");
+  }
+
+  const sampleStep = calculateSampleStep(width, height);
+  let sampleCount = 0;
+  let grayscaleSum = 0;
+  let grayscaleSquaredSum = 0;
+  let darkPixelCount = 0;
+  let contentMinX = width;
+  let contentMinY = height;
+  let contentMaxX = -1;
+  let contentMaxY = -1;
+  let sharpnessCount = 0;
+  let laplacianSquaredSum = 0;
+
+  for (let y = 0; y < height; y += sampleStep) {
+    for (let x = 0; x < width; x += sampleStep) {
+      const pixelIndex = y * width + x;
+      const grayscale = grayscaleAt(data, pixelIndex);
+      sampleCount += 1;
+      grayscaleSum += grayscale;
+      grayscaleSquaredSum += grayscale * grayscale;
+
+      // This deliberately estimates visible ink/content, not the student's
+      // answer. Answer bounds require worksheet-aware OCR.
+      if (grayscale < 180) {
+        darkPixelCount += 1;
+        contentMinX = Math.min(contentMinX, x);
+        contentMinY = Math.min(contentMinY, y);
+        contentMaxX = Math.max(contentMaxX, x);
+        contentMaxY = Math.max(contentMaxY, y);
+      }
+
+      if (
+        x >= sampleStep &&
+        y >= sampleStep &&
+        x + sampleStep < width &&
+        y + sampleStep < height &&
+        grayscale < 220
+      ) {
+        const left = grayscaleAt(data, pixelIndex - sampleStep);
+        const right = grayscaleAt(data, pixelIndex + sampleStep);
+        const above = grayscaleAt(data, pixelIndex - sampleStep * width);
+        const below = grayscaleAt(data, pixelIndex + sampleStep * width);
+        const laplacian = 4 * grayscale - left - right - above - below;
+
+        // Ignore smooth shadows: they are dark but do not describe whether
+        // strokes are in focus. A focused pen stroke has a strong local edge.
+        if (Math.abs(laplacian) >= 10) {
+          sharpnessCount += 1;
+          laplacianSquaredSum += laplacian * laplacian;
+        }
+      }
+    }
+  }
+
+  const mean = grayscaleSum / sampleCount;
+  const contrast = Math.sqrt(
+    Math.max(0, grayscaleSquaredSum / sampleCount - mean * mean),
+  );
+  const sharpness = sharpnessCount
+    ? laplacianSquaredSum / sharpnessCount
+    : 0;
+  const hasContent = contentMaxX >= contentMinX && contentMaxY >= contentMinY;
+  const estimatedWritingSize = hasContent
+    ? {
+        coverage: darkPixelCount / sampleCount,
+        widthFraction: (contentMaxX - contentMinX + sampleStep) / width,
+        heightFraction: (contentMaxY - contentMinY + sampleStep) / height,
+      }
+    : { coverage: 0, widthFraction: 0, heightFraction: 0 };
+
+  const warnings: ImageQualityWarningCode[] = [];
+  if (
+    sourceDimensions.width < QUALITY_THRESHOLDS.minimumWidth ||
+    sourceDimensions.height < QUALITY_THRESHOLDS.minimumHeight ||
+    sourceDimensions.width * sourceDimensions.height <
+      QUALITY_THRESHOLDS.minimumPixels
+  ) {
+    warnings.push("LOW_RESOLUTION");
+  }
+  if (contrast < QUALITY_THRESHOLDS.minimumContrast) {
+    warnings.push("LOW_CONTRAST");
+  }
+  if (sharpness < QUALITY_THRESHOLDS.minimumSharpness) {
+    warnings.push("BLURRY");
+  }
+  if (
+    estimatedWritingSize.coverage < QUALITY_THRESHOLDS.minimumWritingCoverage ||
+    estimatedWritingSize.widthFraction < QUALITY_THRESHOLDS.minimumWritingWidth ||
+    estimatedWritingSize.heightFraction < QUALITY_THRESHOLDS.minimumWritingHeight
+  ) {
+    warnings.push("WRITING_TOO_SMALL");
+  }
+
+  return { contrast, sharpness, estimatedWritingSize, warnings };
+}
+
+function createCanvas(width: number, height: number): HTMLCanvasElement {
+  if (typeof document === "undefined") {
+    throw new Error("Image quality checks require a browser.");
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  return canvas;
+}
+
+async function decodeImagePixels(file: File): Promise<{
+  width: number;
+  height: number;
+  pixels: ImagePixelData;
+}> {
+  if (typeof createImageBitmap !== "function") {
+    throw new Error("Image quality checks are unavailable in this browser.");
+  }
+
+  const bitmap = await createImageBitmap(file);
+
+  try {
+    const scale = Math.min(
+      1,
+      MAX_ANALYSIS_EDGE / Math.max(bitmap.width, bitmap.height),
+    );
+    const analysisWidth = Math.max(1, Math.round(bitmap.width * scale));
+    const analysisHeight = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = createCanvas(analysisWidth, analysisHeight);
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+
+    if (!context) {
+      throw new Error("Image quality checks are unavailable in this browser.");
+    }
+
+    context.drawImage(bitmap, 0, 0, analysisWidth, analysisHeight);
+
+    return {
+      width: bitmap.width,
+      height: bitmap.height,
+      pixels: {
+        width: analysisWidth,
+        height: analysisHeight,
+        data: context.getImageData(0, 0, analysisWidth, analysisHeight).data,
+      },
+    };
+  } finally {
+    bitmap.close();
+  }
+}
+
+export async function preflightUploadImage(
+  file: File,
+): Promise<UploadImagePreflight> {
+  if (file.type === "application/pdf") {
+    return {
+      assessmentStatus: "unavailable",
+      mediaType: file.type,
+      width: null,
+      height: null,
+      quality: null,
+      guidance: ["Photo quality is not assessed for this PDF."],
+    };
+  }
+
+  if (file.type !== "image/jpeg" && file.type !== "image/png") {
+    return {
+      assessmentStatus: "unavailable",
+      mediaType: file.type,
+      width: null,
+      height: null,
+      quality: null,
+      guidance: ["This file type cannot be checked before upload."],
+    };
+  }
+
+  try {
+    const decoded = await decodeImagePixels(file);
+    const quality = analyzeImagePixels(decoded.pixels, decoded);
+
+    return {
+      assessmentStatus:
+        quality.warnings.length > 0 ? "retake_recommended" : "ready",
+      mediaType: file.type,
+      width: decoded.width,
+      height: decoded.height,
+      quality,
+      guidance: createQualityGuidance(quality.warnings),
+    };
+  } catch {
+    return {
+      assessmentStatus: "unavailable",
+      mediaType: file.type,
+      width: null,
+      height: null,
+      quality: null,
+      guidance: [
+        "Photo quality could not be checked on this device. You can still upload it.",
+      ],
+    };
   }
 }
 
