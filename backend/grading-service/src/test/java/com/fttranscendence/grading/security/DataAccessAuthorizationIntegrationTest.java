@@ -9,6 +9,11 @@ import com.jayway.jsonpath.JsonPath;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.PDPageContentStream;
+import org.apache.pdfbox.pdmodel.font.PDType1Font;
+import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -24,6 +29,8 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.web.client.RestTemplate;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
 
@@ -269,7 +276,7 @@ class DataAccessAuthorizationIntegrationTest {
             .andRespond(withStatus(HttpStatus.NO_CONTENT));
         learningServer.expect(once(), requestTo("http://localhost/ai-test"))
             .andRespond(withSuccess("""
-                {"choices":[{"message":{"content":"answer"}}]}
+                {"choices":[{"message":{"content":"{\\"status\\":\\"answers\\",\\"text\\":\\"answer\\",\\"confidence\\":0.95}"}}]}
                 """, MediaType.APPLICATION_JSON));
 
         MvcResult result = mockMvc.perform(multipart("/api/grading/submission-documents")
@@ -313,12 +320,149 @@ class DataAccessAuthorizationIntegrationTest {
     }
 
     @Test
+    void authorizedStudentUploadExtractsTypedTextFromAnEditedPdf() throws Exception {
+        learningServer.expect(once(), requestTo(
+                "http://localhost:8083/api/learning/internal/submission-authorization"
+            ))
+            .andRespond(withStatus(HttpStatus.NO_CONTENT));
+        learningServer.expect(once(), requestTo("http://localhost/ai-test"))
+            .andRespond(withSuccess("""
+                {"choices":[{"message":{"content":"{\\"status\\":\\"answers\\",\\"text\\":\\"x = 42\\",\\"confidence\\":0.94}"}}]}
+                """, MediaType.APPLICATION_JSON));
+
+        MvcResult result = mockMvc.perform(multipart("/api/grading/submission-documents")
+                .file(new MockMultipartFile(
+                    "files",
+                    "edited-answer.pdf",
+                    "application/pdf",
+                    typedPdf("Worksheet title", "Question 1: solve x", "Edited answer: x = 42")
+                ))
+                .header(HttpHeaders.AUTHORIZATION, bearer("STUDENT", OWNER_STUDENT_USER_ID))
+                .param("studentId", "501")
+                .param("worksheetId", "401")
+                .param("worksheetQuestionId", "601"))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.pages[0].mediaType").value("application/pdf"))
+            .andExpect(jsonPath("$.pages[0].text").value("x = 42"))
+            .andExpect(jsonPath("$.pages[0].confidence").value(0.94))
+            .andExpect(jsonPath("$.pages[0].status").value("READY"))
+            .andReturn();
+        learningServer.verify();
+
+        Number documentIdValue = JsonPath.read(result.getResponse().getContentAsString(), "$.id");
+        Number extractionIdValue = JsonPath.read(
+            result.getResponse().getContentAsString(),
+            "$.pages[0].extractionId"
+        );
+        createdDocumentId = documentIdValue.longValue();
+        createdExtractionId = extractionIdValue.longValue();
+    }
+
+    @Test
+    void printedOnlyPdfWithNoAnswersDoesNotPersistWorksheetText() throws Exception {
+        learningServer.expect(once(), requestTo(
+                "http://localhost:8083/api/learning/internal/submission-authorization"
+            ))
+            .andRespond(withStatus(HttpStatus.NO_CONTENT));
+        learningServer.expect(once(), requestTo("http://localhost/ai-test"))
+            .andRespond(withSuccess("""
+                {"choices":[{"message":{"content":"{\\"status\\":\\"no_answers\\",\\"text\\":\\"\\",\\"confidence\\":0.99}"}}]}
+                """, MediaType.APPLICATION_JSON));
+
+        MvcResult result = mockMvc.perform(multipart("/api/grading/submission-documents")
+                .file(new MockMultipartFile(
+                    "files",
+                    "printed-worksheet.pdf",
+                    "application/pdf",
+                    typedPdf("Worksheet title", "Question 1: Calculate 2 + 2", "Instructions: show work")
+                ))
+                .header(HttpHeaders.AUTHORIZATION, bearer("STUDENT", OWNER_STUDENT_USER_ID))
+                .param("studentId", "501")
+                .param("worksheetId", "401")
+                .param("worksheetQuestionId", "601"))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.pages[0].text").value(""))
+            .andExpect(jsonPath("$.pages[0].confidence").value(0.0))
+            .andExpect(jsonPath("$.pages[0].status").value("UNREADABLE"))
+            .andReturn();
+        learningServer.verify();
+
+        storeCreatedArtifacts(result);
+        org.junit.jupiter.api.Assertions.assertEquals(
+            "",
+            extractions.findById(createdExtractionId).orElseThrow().getExtractedText()
+        );
+    }
+
+    @Test
+    void uncertainImageDoesNotPersistClaimedWorksheetText() throws Exception {
+        learningServer.expect(once(), requestTo(
+                "http://localhost:8083/api/learning/internal/submission-authorization"
+            ))
+            .andRespond(withStatus(HttpStatus.NO_CONTENT));
+        learningServer.expect(once(), requestTo("http://localhost/ai-test"))
+            .andRespond(withSuccess("""
+                {"choices":[{"message":{"content":"{\\"status\\":\\"uncertain\\",\\"text\\":\\"Worksheet title: solve 2 + 2\\",\\"confidence\\":0.5}"}}]}
+                """, MediaType.APPLICATION_JSON));
+
+        MvcResult result = mockMvc.perform(multipart("/api/grading/submission-documents")
+                .file(new MockMultipartFile(
+                    "files", "uncertain.png", "image/png", pngBytes("printed worksheet")
+                ))
+                .header(HttpHeaders.AUTHORIZATION, bearer("STUDENT", OWNER_STUDENT_USER_ID))
+                .param("studentId", "501")
+                .param("worksheetId", "401")
+                .param("worksheetQuestionId", "601"))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.pages[0].text").value(""))
+            .andExpect(jsonPath("$.pages[0].confidence").value(0.0))
+            .andExpect(jsonPath("$.pages[0].status").value("UNREADABLE"))
+            .andReturn();
+        learningServer.verify();
+
+        storeCreatedArtifacts(result);
+        org.junit.jupiter.api.Assertions.assertEquals(
+            "",
+            extractions.findById(createdExtractionId).orElseThrow().getExtractedText()
+        );
+    }
+
+    @Test
+    void lowConfidenceAnswerRequiresTutorReview() throws Exception {
+        learningServer.expect(once(), requestTo(
+                "http://localhost:8083/api/learning/internal/submission-authorization"
+            ))
+            .andRespond(withStatus(HttpStatus.NO_CONTENT));
+        learningServer.expect(once(), requestTo("http://localhost/ai-test"))
+            .andRespond(withSuccess("""
+                {"choices":[{"message":{"content":"{\\"status\\":\\"answers\\",\\"text\\":\\"faint student work\\",\\"confidence\\":0.3}"}}]}
+                """, MediaType.APPLICATION_JSON));
+
+        MvcResult result = mockMvc.perform(multipart("/api/grading/submission-documents")
+                .file(new MockMultipartFile(
+                    "files", "faint-work.png", "image/png", pngBytes("faint student work")
+                ))
+                .header(HttpHeaders.AUTHORIZATION, bearer("STUDENT", OWNER_STUDENT_USER_ID))
+                .param("studentId", "501")
+                .param("worksheetId", "401")
+                .param("worksheetQuestionId", "601"))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.pages[0].text").value("faint student work"))
+            .andExpect(jsonPath("$.pages[0].confidence").value(0.3))
+            .andExpect(jsonPath("$.pages[0].status").value("REQUIRES_REVIEW"))
+            .andReturn();
+        learningServer.verify();
+
+        storeCreatedArtifacts(result);
+    }
+
+    @Test
     void tutorUploadPersistsItsClassStudentWorksheetAndOwnerAndCanBeReloadedForOcr() throws Exception {
         learningServer.expect(once(), requestTo("http://localhost:8083/api/learning/internal/submission-authorization"))
             .andRespond(withStatus(HttpStatus.NO_CONTENT));
         learningServer.expect(once(), requestTo("http://localhost/ai-test"))
             .andRespond(withSuccess("""
-                {"choices":[{"message":{"content":"water evaporates"}}]}
+                {"choices":[{"message":{"content":"{\\"status\\":\\"answers\\",\\"text\\":\\"water evaporates\\",\\"confidence\\":0.93}"}}]}
                 """, MediaType.APPLICATION_JSON));
 
         MvcResult result = mockMvc.perform(multipart("/api/grading/submission-documents")
@@ -427,6 +571,44 @@ class DataAccessAuthorizationIntegrationTest {
         System.arraycopy(signature, 0, bytes, 0, signature.length);
         System.arraycopy(body, 0, bytes, signature.length, body.length);
         return bytes;
+    }
+
+    private void storeCreatedArtifacts(MvcResult result) throws Exception {
+        Number documentIdValue = JsonPath.read(result.getResponse().getContentAsString(), "$.id");
+        Number extractionIdValue = JsonPath.read(
+            result.getResponse().getContentAsString(), "$.pages[0].extractionId"
+        );
+        createdDocumentId = documentIdValue.longValue();
+        createdExtractionId = extractionIdValue.longValue();
+    }
+
+    private static byte[] typedPdf(String... lines) throws IOException {
+        try (
+            PDDocument document = new PDDocument();
+            ByteArrayOutputStream output = new ByteArrayOutputStream()
+        ) {
+            document.addPage(new PDPage());
+
+            try (PDPageContentStream content = new PDPageContentStream(
+                document,
+                document.getPage(0)
+            )) {
+                content.beginText();
+                content.setFont(
+                    new PDType1Font(Standard14Fonts.FontName.HELVETICA),
+                    12
+                );
+                content.newLineAtOffset(72, 700);
+                for (String line : lines) {
+                    content.showText(line);
+                    content.newLineAtOffset(0, -18);
+                }
+                content.endText();
+            }
+
+            document.save(output);
+            return output.toByteArray();
+        }
     }
 
     private static String bearer(String role, long userId) {

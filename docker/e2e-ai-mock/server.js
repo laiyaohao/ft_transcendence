@@ -4,8 +4,11 @@ const HEALTH_PATH = "/health";
 const CHAT_COMPLETIONS_PATH = "/v1/chat/completions";
 const JSON_HEADERS = { "content-type": "application/json" };
 
-const OCR_TRANSCRIPTION =
-  "Fixture OCR transcription: water gains energy and evaporates.";
+const OCR_TRANSCRIPTION = JSON.stringify({
+  status: "answers",
+  text: "water gains energy and evaporates.",
+  confidence: 0.97,
+});
 const MARKING_SUGGESTION = JSON.stringify({
   suggested_marks: 1,
   correctness: "Partially correct",

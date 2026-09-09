@@ -4,6 +4,11 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.common.PDRectangle;
+import org.apache.pdfbox.rendering.ImageType;
+import org.apache.pdfbox.rendering.PDFRenderer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -11,6 +16,12 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 
@@ -19,18 +30,25 @@ public class AiOcrService {
 
     private static final String JPEG_MEDIA_TYPE = "image/jpeg";
     private static final String PNG_MEDIA_TYPE = "image/png";
-    private static final double LEGACY_TRANSCRIPTION_CONFIDENCE = .85;
+    private static final String PDF_MEDIA_TYPE = "application/pdf";
+    private static final int MAX_PDF_PAGES = 100;
+    private static final int PDF_RENDER_DPI = 144;
+    private static final long MAX_RENDERED_PDF_PIXELS = 20_000_000L;
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final String OCR_PROMPT =
-        "You are a precise mathematical OCR engine. "
-            + "Extract all printed text and handwritten calculations exactly as written. "
-            + "Preserve all mathematical operators (+, -, *, /, =) and numbers accurately "
-            + "without skipping symbols. "
-            + "Assess the visual legibility and recognition certainty of the transcription, not its "
-            + "length. Return only a JSON object with text and confidence fields. text must be the "
-            + "literal transcription. confidence must be a number from 0 to 1, where 1 means every "
-            + "visible character is clear and confidently recognized, and 0 means unreadable. "
-            + "Do not include explanation, preamble, or commentary.";
+        "You are an answer-only OCR engine for submitted worksheets. "
+            + "Transcribe only content authored by the student: handwritten or typed answers, "
+            + "calculations, diagrams labels, and working. Exclude every printed or template "
+            + "element, including titles, questions, instructions, examples, answer labels, "
+            + "headers, and worksheet text. Do not solve, correct, infer, or paraphrase anything. "
+            + "For example, if a page says printed 'Question 1: What is 2 + 2?' and the student "
+            + "writes '4', return only '4'. "
+            + "Return exactly one JSON object with exactly these fields: status, text, confidence. "
+            + "status must be 'answers', 'no_answers', or 'uncertain'. For 'answers', text must be "
+            + "the literal student-authored transcription and confidence must be a number from 0 to 1. "
+            + "For 'no_answers', text must be empty and confidence must still be a number from 0 to 1. "
+            + "Use 'uncertain' if you cannot reliably separate student work from printed content or "
+            + "cannot read it. Do not include markdown, explanation, preamble, or commentary.";
 
     @Value("${ai.engine.url}")
     private String apiUrl;
@@ -47,11 +65,6 @@ public class AiOcrService {
         this.restTemplate = restTemplate;
     }
 
-    /**
-     * OCR and marking share this provider credential. Reject generated-template
-     * values during startup so a deployment cannot appear healthy until its
-     * real server-side AI credential has been supplied.
-     */
     @PostConstruct
     void validateProviderCredential() {
         validateApiKey(apiKey);
@@ -66,11 +79,7 @@ public class AiOcrService {
         boolean usesReplacementPlaceholder = normalizedCredential
             .startsWith("REPLACE_WITH_");
 
-        if (
-            isBlankCredential
-                || containsTemplateValue
-                || usesReplacementPlaceholder
-        ) {
+        if (isBlankCredential || containsTemplateValue || usesReplacementPlaceholder) {
             throw new IllegalArgumentException(
                 "AI_ENGINE_API_KEY must be a real provider credential, not a placeholder"
             );
@@ -78,23 +87,115 @@ public class AiOcrService {
     }
 
     public String extractTextFromImage(String base64Image) {
-        return extractBase64(base64Image, JPEG_MEDIA_TYPE).text();
+        return toOcrResult(extractBase64(base64Image, JPEG_MEDIA_TYPE)).text();
     }
 
     public OcrResult extract(byte[] bytes, String mediaType) {
-        if (!isSupportedImage(mediaType)) {
-            return new OcrResult("Error: OCR accepts JPEG or PNG images only.", 0, true);
+        if (PDF_MEDIA_TYPE.equals(mediaType)) {
+            return extractPdfPages(bytes);
         }
 
-        String base64Image = java.util.Base64.getEncoder().encodeToString(bytes);
-        return extractBase64(base64Image, mediaType);
+        if (!isSupportedImage(mediaType)) {
+            return unreadable();
+        }
+
+        String base64Image = Base64.getEncoder().encodeToString(bytes);
+        return toOcrResult(extractBase64(base64Image, mediaType));
     }
 
-    private OcrResult extractBase64(String base64Image, String mediaType) {
-        Map<String, Object> requestPayload = buildOcrRequest(
-            base64Image,
-            mediaType
+    private OcrResult extractPdfPages(byte[] pdfBytes) {
+        if (pdfBytes == null || pdfBytes.length == 0) {
+            return unreadable();
+        }
+
+        try (PDDocument document = Loader.loadPDF(pdfBytes)) {
+            if (document.isEncrypted() || !hasSupportedPageCount(document)) {
+                return unreadable();
+            }
+
+            PDFRenderer renderer = new PDFRenderer(document);
+            List<String> answerPages = new ArrayList<>();
+            double lowestConfidence = 1;
+
+            for (int pageIndex = 0; pageIndex < document.getNumberOfPages(); pageIndex++) {
+                if (!canRenderWithinLimit(document.getPage(pageIndex))) {
+                    return unreadable();
+                }
+
+                byte[] pageImage = renderPdfPage(renderer, pageIndex);
+                ModelOcrOutput pageOutput = extractBase64(
+                    Base64.getEncoder().encodeToString(pageImage),
+                    JPEG_MEDIA_TYPE
+                );
+
+                if (pageOutput.status() == OcrStatus.INVALID
+                    || pageOutput.status() == OcrStatus.UNCERTAIN) {
+                    return unreadable();
+                }
+
+                if (pageOutput.status() == OcrStatus.ANSWERS) {
+                    answerPages.add(pageOutput.text());
+                    lowestConfidence = Math.min(lowestConfidence, pageOutput.confidence());
+                }
+            }
+
+            if (answerPages.isEmpty()) {
+                return unreadable();
+            }
+
+            return new OcrResult(String.join("\n", answerPages), lowestConfidence, false);
+        } catch (Exception exception) {
+            return unreadable();
+        }
+    }
+
+    private boolean hasSupportedPageCount(PDDocument document) {
+        int pageCount = document.getNumberOfPages();
+        return pageCount > 0 && pageCount <= MAX_PDF_PAGES;
+    }
+
+    private boolean canRenderWithinLimit(org.apache.pdfbox.pdmodel.PDPage page) {
+        PDRectangle cropBox = page.getCropBox();
+        double widthPoints = cropBox.getWidth();
+        double heightPoints = cropBox.getHeight();
+        int rotation = Math.floorMod(page.getRotation(), 360);
+
+        if (rotation == 90 || rotation == 270) {
+            double originalWidth = widthPoints;
+            widthPoints = heightPoints;
+            heightPoints = originalWidth;
+        }
+
+        long widthPixels = (long) Math.ceil(widthPoints * PDF_RENDER_DPI / 72);
+        long heightPixels = (long) Math.ceil(heightPoints * PDF_RENDER_DPI / 72);
+        return widthPixels > 0
+            && heightPixels > 0
+            && widthPixels <= Integer.MAX_VALUE
+            && heightPixels <= Integer.MAX_VALUE
+            && widthPixels <= MAX_RENDERED_PDF_PIXELS / heightPixels;
+    }
+
+    private byte[] renderPdfPage(PDFRenderer renderer, int pageIndex) throws IOException {
+        BufferedImage renderedPage = renderer.renderImageWithDPI(
+            pageIndex,
+            PDF_RENDER_DPI,
+            ImageType.RGB
         );
+
+        if ((long) renderedPage.getWidth() * renderedPage.getHeight() > MAX_RENDERED_PDF_PIXELS) {
+            throw new IOException("Rendered PDF page exceeds image size limit");
+        }
+
+        try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            if (!ImageIO.write(renderedPage, "jpeg", output)) {
+                throw new IOException("JPEG encoder is unavailable");
+            }
+            return output.toByteArray();
+        }
+    }
+
+    private ModelOcrOutput extractBase64(String base64Image, String mediaType) {
+        Map<String, Object> requestPayload = buildOcrRequest(base64Image, mediaType);
         HttpHeaders headers = createProviderHeaders();
 
         try {
@@ -104,36 +205,29 @@ public class AiOcrService {
                 Map.class
             );
 
-            if (providerResponse != null && providerResponse.containsKey("choices")) {
-                String rawContent = extractFirstChoiceContent(providerResponse);
-                ParsedOcrOutput ocrOutput = parseModelOutput(rawContent);
-                String extractedText = ocrOutput.text();
-
-                if (extractedText.isBlank()) {
-                    return new OcrResult("", 0, true);
-                }
-
-                return new OcrResult(
-                    extractedText,
-                    ocrOutput.confidence(),
-                    false
-                );
+            if (providerResponse == null || !providerResponse.containsKey("choices")) {
+                return ModelOcrOutput.invalid();
             }
-        } catch (Exception exception) {
-            return new OcrResult(
-                "Error: Could not extract text. " + exception.getMessage(),
-                0,
-                true
-            );
-        }
 
-        return new OcrResult("Error: Empty response from OCR engine.", 0, true);
+            return parseModelOutput(extractFirstChoiceContent(providerResponse));
+        } catch (Exception exception) {
+            return ModelOcrOutput.invalid();
+        }
     }
 
-    private Map<String, Object> buildOcrRequest(
-        String base64Image,
-        String mediaType
-    ) {
+    private OcrResult toOcrResult(ModelOcrOutput output) {
+        if (output.status() != OcrStatus.ANSWERS) {
+            return unreadable();
+        }
+
+        return new OcrResult(output.text(), output.confidence(), false);
+    }
+
+    private OcrResult unreadable() {
+        return new OcrResult("", 0, true);
+    }
+
+    private Map<String, Object> buildOcrRequest(String base64Image, String mediaType) {
         List<Map<String, Object>> messageContent = List.of(
             Map.of("type", "text", "text", OCR_PROMPT),
             Map.of(
@@ -149,7 +243,6 @@ public class AiOcrService {
             messageContent
         );
 
-        // Literal transcription must remain deterministic for tutor review.
         return Map.of(
             "model",
             visionModel,
@@ -177,50 +270,61 @@ public class AiOcrService {
         return (String) firstMessage.get("content");
     }
 
-    private ParsedOcrOutput parseModelOutput(String rawContent) {
+    private ModelOcrOutput parseModelOutput(String rawContent) {
         String cleanedContent = cleanModelOutput(rawContent);
         if (cleanedContent.isBlank()) {
-            return new ParsedOcrOutput("", 0);
+            return ModelOcrOutput.invalid();
         }
 
         try {
             JsonNode output = OBJECT_MAPPER.readTree(cleanedContent);
-            if (output.isObject() && output.path("text").isTextual()) {
-                String text = cleanModelOutput(output.path("text").textValue());
-                return new ParsedOcrOutput(text, parseModelConfidence(output.path("confidence")));
+            if (!output.isObject() || output.size() != 3) {
+                return ModelOcrOutput.invalid();
             }
-        } catch (JsonProcessingException ignored) {
-            // Older providers return the literal transcription rather than JSON.
-        }
 
-        // A valid legacy transcription has no model confidence. Keep it usable
-        // without treating a short answer as uncertain solely because it is short.
-        return new ParsedOcrOutput(cleanedContent, LEGACY_TRANSCRIPTION_CONFIDENCE);
+            JsonNode statusNode = output.get("status");
+            JsonNode textNode = output.get("text");
+            JsonNode confidenceNode = output.get("confidence");
+            if (statusNode == null
+                || textNode == null
+                || !statusNode.isTextual()
+                || !textNode.isTextual()
+                || !isNormalizedConfidence(confidenceNode)) {
+                return ModelOcrOutput.invalid();
+            }
+
+            String text = cleanModelOutput(textNode.textValue());
+            double confidence = confidenceNode.doubleValue();
+            return switch (statusNode.textValue()) {
+                case "answers" -> text.isBlank()
+                    ? ModelOcrOutput.invalid()
+                    : new ModelOcrOutput(OcrStatus.ANSWERS, text, confidence);
+                case "no_answers" -> text.isBlank()
+                    ? new ModelOcrOutput(OcrStatus.NO_ANSWERS, "", confidence)
+                    : ModelOcrOutput.invalid();
+                case "uncertain" -> new ModelOcrOutput(OcrStatus.UNCERTAIN, "", 0);
+                default -> ModelOcrOutput.invalid();
+            };
+        } catch (JsonProcessingException exception) {
+            return ModelOcrOutput.invalid();
+        }
     }
 
-    private double parseModelConfidence(JsonNode confidenceNode) {
-        if (!confidenceNode.isNumber()) {
-            return LEGACY_TRANSCRIPTION_CONFIDENCE;
+    private boolean isNormalizedConfidence(JsonNode confidenceNode) {
+        if (confidenceNode == null || !confidenceNode.isNumber()) {
+            return false;
         }
 
         double confidence = confidenceNode.doubleValue();
-        if (!Double.isFinite(confidence) || confidence < 0 || confidence > 1) {
-            return LEGACY_TRANSCRIPTION_CONFIDENCE;
-        }
-
-        return confidence;
+        return Double.isFinite(confidence) && confidence >= 0 && confidence <= 1;
     }
 
-    /**
-     * Strips internal reasoning tags and cleans whitespace.
-     */
     private String cleanModelOutput(String rawText) {
         if (rawText == null) {
             return "";
         }
 
-        // Dotall lets the expression remove reasoning blocks that span lines.
-        return rawText.replaceAll("(?s)<think>.*?</think>", "").trim();
+        return rawText.trim();
     }
 
     private boolean isSupportedImage(String mediaType) {
@@ -230,6 +334,17 @@ public class AiOcrService {
     public record OcrResult(String text, double confidence, boolean unreadable) {
     }
 
-    private record ParsedOcrOutput(String text, double confidence) {
+    private enum OcrStatus {
+        ANSWERS,
+        NO_ANSWERS,
+        UNCERTAIN,
+        INVALID
+    }
+
+    private record ModelOcrOutput(OcrStatus status, String text, double confidence) {
+
+        private static ModelOcrOutput invalid() {
+            return new ModelOcrOutput(OcrStatus.INVALID, "", 0);
+        }
     }
 }
