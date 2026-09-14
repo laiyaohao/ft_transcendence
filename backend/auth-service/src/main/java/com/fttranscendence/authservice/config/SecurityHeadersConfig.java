@@ -1,15 +1,15 @@
 package com.fttranscendence.authservice.config;
 
-import org.springframework.context.annotation.Configuration;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy;
 
 /**
- * Response hardening shared by every auth-service endpoint. HSTS is emitted
- * only for secure requests by Spring Security, which keeps local HTTP
- * development usable while allowing a TLS terminating proxy in production.
+ * Response hardening shared by every auth-service endpoint. HSTS is emitted only for secure
+ * requests by Spring Security, which keeps local HTTP development usable while allowing a TLS
+ * terminating proxy in production.
  */
 @Configuration
 public class SecurityHeadersConfig {
@@ -27,20 +27,20 @@ public class SecurityHeadersConfig {
   }
 
   public void configure(HttpSecurity http) throws Exception {
-    http.headers(headers -> {
-      headers
-          .contentTypeOptions(Customizer.withDefaults())
-          .frameOptions(frame -> frame.deny())
-          .referrerPolicy(referrer -> referrer.policy(ReferrerPolicy.NO_REFERRER))
-          .contentSecurityPolicy(csp -> csp.policyDirectives(CONTENT_SECURITY_POLICY))
-          .permissionsPolicy(policy -> policy.policy(PERMISSIONS_POLICY));
-      if (hstsEnabled) {
-        headers.httpStrictTransportSecurity(hsts -> hsts
-            .maxAgeInSeconds(ONE_YEAR_SECONDS)
-            .includeSubDomains(true));
-      } else {
-        headers.httpStrictTransportSecurity(hsts -> hsts.disable());
-      }
-    });
+    http.headers(
+        headers -> {
+          headers
+              .contentTypeOptions(Customizer.withDefaults())
+              .frameOptions(frame -> frame.deny())
+              .referrerPolicy(referrer -> referrer.policy(ReferrerPolicy.NO_REFERRER))
+              .contentSecurityPolicy(csp -> csp.policyDirectives(CONTENT_SECURITY_POLICY))
+              .permissionsPolicy(policy -> policy.policy(PERMISSIONS_POLICY));
+          if (hstsEnabled) {
+            headers.httpStrictTransportSecurity(
+                hsts -> hsts.maxAgeInSeconds(ONE_YEAR_SECONDS).includeSubDomains(true));
+          } else {
+            headers.httpStrictTransportSecurity(hsts -> hsts.disable());
+          }
+        });
   }
 }

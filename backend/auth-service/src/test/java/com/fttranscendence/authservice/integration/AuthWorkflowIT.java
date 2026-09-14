@@ -1,5 +1,12 @@
 package com.fttranscendence.authservice.integration;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fttranscendence.authservice.model.User;
@@ -13,31 +20,25 @@ import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
 @SpringBootTest
 @AutoConfigureMockMvc
 class AuthWorkflowIT {
 
-    @Autowired private MockMvc mockMvc;
-    @Autowired private UserRepository userRepository;
-    @Autowired private PasswordEncoder passwordEncoder;
+  @Autowired private MockMvc mockMvc;
+  @Autowired private UserRepository userRepository;
+  @Autowired private PasswordEncoder passwordEncoder;
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+  private final ObjectMapper objectMapper = new ObjectMapper();
 
-    @BeforeEach
-    void clearUsers() {
-        userRepository.deleteAll();
-    }
+  @BeforeEach
+  void clearUsers() {
+    userRepository.deleteAll();
+  }
 
-    @Test
-    void registerThenLoginPersistsAHashedPasswordAndReturnsValidSessionData() throws Exception {
-        String registrationBody = """
+  @Test
+  void registerThenLoginPersistsAHashedPasswordAndReturnsValidSessionData() throws Exception {
+    String registrationBody =
+        """
             {
               "email": "student@example.com",
               "password": "StrongPassword1!",
@@ -46,9 +47,12 @@ class AuthWorkflowIT {
             }
             """;
 
-        String registrationResponse = mockMvc.perform(post("/api/auth/register")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(registrationBody))
+    String registrationResponse =
+        mockMvc
+            .perform(
+                post("/api/auth/register")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(registrationBody))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.email").value("student@example.com"))
             .andExpect(jsonPath("$.fullName").value("Test Student"))
@@ -58,35 +62,41 @@ class AuthWorkflowIT {
             .getResponse()
             .getContentAsString();
 
-        User persistedUser = userRepository.findByEmail("student@example.com").orElseThrow();
-        assertFalse(persistedUser.getPassword().equals("StrongPassword1!"));
-        assertTrue(passwordEncoder.matches("StrongPassword1!", persistedUser.getPassword()));
+    User persistedUser = userRepository.findByEmail("student@example.com").orElseThrow();
+    assertFalse(persistedUser.getPassword().equals("StrongPassword1!"));
+    assertTrue(passwordEncoder.matches("StrongPassword1!", persistedUser.getPassword()));
 
-        JsonNode registrationJson = objectMapper.readTree(registrationResponse);
-        String registrationToken = registrationJson.get("token").asText();
-        mockMvc.perform(get("/api/private-check")
-                .header("Authorization", "Bearer " + registrationToken))
-            .andExpect(status().isForbidden());
+    JsonNode registrationJson = objectMapper.readTree(registrationResponse);
+    String registrationToken = registrationJson.get("token").asText();
+    mockMvc
+        .perform(get("/api/private-check").header("Authorization", "Bearer " + registrationToken))
+        .andExpect(status().isForbidden());
 
-        mockMvc.perform(post("/api/auth/login")
+    mockMvc
+        .perform(
+            post("/api/auth/login")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""
+                .content(
+                    """
                     {
                       "email": "student@example.com",
                       "password": "StrongPassword1!"
                     }
                     """))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.email").value("student@example.com"))
-            .andExpect(jsonPath("$.role").value("STUDENT"))
-            .andExpect(jsonPath("$.token").isNotEmpty());
-    }
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.email").value("student@example.com"))
+        .andExpect(jsonPath("$.role").value("STUDENT"))
+        .andExpect(jsonPath("$.token").isNotEmpty());
+  }
 
-    @Test
-    void registrationRejectsInvalidAndDuplicateRequests() throws Exception {
-        mockMvc.perform(post("/api/auth/register")
+  @Test
+  void registrationRejectsInvalidAndDuplicateRequests() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/auth/register")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""
+                .content(
+                    """
                     {
                       "email": "not-an-email",
                       "password": "",
@@ -94,9 +104,10 @@ class AuthWorkflowIT {
                       "role": ""
                     }
                     """))
-            .andExpect(status().isBadRequest());
+        .andExpect(status().isBadRequest());
 
-        String validBody = """
+    String validBody =
+        """
             {
               "email": "student@example.com",
               "password": "StrongPassword1!",
@@ -104,25 +115,24 @@ class AuthWorkflowIT {
               "role": "STUDENT"
             }
             """;
-        mockMvc.perform(post("/api/auth/register")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(validBody))
-            .andExpect(status().isOk());
+    mockMvc
+        .perform(
+            post("/api/auth/register").contentType(MediaType.APPLICATION_JSON).content(validBody))
+        .andExpect(status().isOk());
 
-        mockMvc.perform(post("/api/auth/register")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(validBody))
-            .andExpect(status().isConflict())
-            .andExpect(jsonPath("$.message").value("Email already registered"));
-    }
+    mockMvc
+        .perform(
+            post("/api/auth/register").contentType(MediaType.APPLICATION_JSON).content(validBody))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.message").value("Email already registered"));
+  }
 
-    @Test
-    void protectedRoutesRejectMissingAndMalformedTokens() throws Exception {
-        mockMvc.perform(get("/api/private-check"))
-            .andExpect(status().isUnauthorized());
+  @Test
+  void protectedRoutesRejectMissingAndMalformedTokens() throws Exception {
+    mockMvc.perform(get("/api/private-check")).andExpect(status().isUnauthorized());
 
-        mockMvc.perform(get("/api/private-check")
-                .header("Authorization", "Bearer malformed-token"))
-            .andExpect(status().isUnauthorized());
-    }
+    mockMvc
+        .perform(get("/api/private-check").header("Authorization", "Bearer malformed-token"))
+        .andExpect(status().isUnauthorized());
+  }
 }

@@ -9,10 +9,6 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
 import jakarta.annotation.PostConstruct;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.stereotype.Service;
-
 import java.nio.charset.StandardCharsets;
 import java.security.Key;
 import java.util.Date;
@@ -20,6 +16,9 @@ import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.function.Function;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.stereotype.Service;
 
 @Service
 public class JwtService {
@@ -33,7 +32,8 @@ public class JwtService {
   void validateConfiguration() {
     boolean hasUsableSecret = isUsableSecret(secretKey);
     if (!hasUsableSecret) {
-      throw new IllegalArgumentException("JWT_SECRET must contain at least 32 non-placeholder bytes");
+      throw new IllegalArgumentException(
+          "JWT_SECRET must contain at least 32 non-placeholder bytes");
     }
 
     boolean hasPositiveExpiration = jwtExpiration != null && jwtExpiration > 0;
@@ -73,17 +73,20 @@ public class JwtService {
 
   public String generateToken(Map<String, Object> extraClaims, UserDetails userDetails) {
     if (!(userDetails instanceof User user)) {
-      throw new IllegalArgumentException("A persisted user identity and role are required to issue a token");
+      throw new IllegalArgumentException(
+          "A persisted user identity and role are required to issue a token");
     }
 
     boolean hasRole = user.getRole() != null;
     if (!hasRole) {
-      throw new IllegalArgumentException("A persisted user identity and role are required to issue a token");
+      throw new IllegalArgumentException(
+          "A persisted user identity and role are required to issue a token");
     }
 
     boolean hasPersistedId = user.getId() > 0;
     if (!hasPersistedId) {
-      throw new IllegalArgumentException("A persisted user identity and role are required to issue a token");
+      throw new IllegalArgumentException(
+          "A persisted user identity and role are required to issue a token");
     }
 
     Map<String, Object> claims = new HashMap<>(extraClaims);

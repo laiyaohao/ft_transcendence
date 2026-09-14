@@ -9,6 +9,8 @@ import com.fttranscendence.authservice.model.User;
 import com.fttranscendence.authservice.model.UserRole;
 import com.fttranscendence.authservice.repository.UserRepository;
 import com.fttranscendence.authservice.security.JwtService;
+import java.util.List;
+import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -19,17 +21,12 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.util.List;
-import java.util.Locale;
-
 @Service
 @RequiredArgsConstructor
 public class AuthService {
 
-  private static final String INVALID_CREDENTIALS_MESSAGE =
-      "Invalid email or password";
-  private static final String EMAIL_ALREADY_REGISTERED_MESSAGE =
-      "Email already registered";
+  private static final String INVALID_CREDENTIALS_MESSAGE = "Invalid email or password";
+  private static final String EMAIL_ALREADY_REGISTERED_MESSAGE = "Email already registered";
 
   private final UserRepository userRepository;
   private final PasswordEncoder passwordEncoder;
@@ -58,8 +55,8 @@ public class AuthService {
   }
 
   /**
-   * Account-role filtering remains in the service that owns identities. This
-   * intentionally exposes no credentials or broader user-directory fields.
+   * Account-role filtering remains in the service that owns identities. This intentionally exposes
+   * no credentials or broader user-directory fields.
    */
   public List<StudentDirectoryResponse> listStudentAccounts(String search) {
     String normalizedSearch = search == null ? "" : search.trim().toLowerCase(Locale.ROOT);
@@ -78,9 +75,7 @@ public class AuthService {
     }
 
     throw new ResponseStatusException(
-        HttpStatus.FORBIDDEN,
-        "Tutor accounts cannot be created through public registration"
-    );
+        HttpStatus.FORBIDDEN, "Tutor accounts cannot be created through public registration");
   }
 
   private void rejectExistingEmail(String normalizedEmail) {
@@ -111,17 +106,14 @@ public class AuthService {
 
   private void authenticateCredentials(String email, String password) {
     try {
-      authenticationManager.authenticate(
-          new UsernamePasswordAuthenticationToken(email, password)
-      );
+      authenticationManager.authenticate(new UsernamePasswordAuthenticationToken(email, password));
     } catch (AuthenticationException exception) {
       throw invalidCredentials();
     }
   }
 
   private User findAuthenticatedUser(String normalizedEmail) {
-    return userRepository.findByEmail(normalizedEmail)
-        .orElseThrow(this::invalidCredentials);
+    return userRepository.findByEmail(normalizedEmail).orElseThrow(this::invalidCredentials);
   }
 
   private AuthResponse createAuthenticationResponse(User user) {
@@ -140,30 +132,20 @@ public class AuthService {
       return true;
     }
 
-    boolean nameMatches = student.getFullName()
-        .toLowerCase(Locale.ROOT)
-        .contains(normalizedSearch);
+    boolean nameMatches = student.getFullName().toLowerCase(Locale.ROOT).contains(normalizedSearch);
     if (nameMatches) {
       return true;
     }
 
-    return student.getEmail()
-        .toLowerCase(Locale.ROOT)
-        .contains(normalizedSearch);
+    return student.getEmail().toLowerCase(Locale.ROOT).contains(normalizedSearch);
   }
 
   private ResponseStatusException emailAlreadyRegistered() {
-    return new ResponseStatusException(
-        HttpStatus.CONFLICT,
-        EMAIL_ALREADY_REGISTERED_MESSAGE
-    );
+    return new ResponseStatusException(HttpStatus.CONFLICT, EMAIL_ALREADY_REGISTERED_MESSAGE);
   }
 
   private ResponseStatusException invalidCredentials() {
-    return new ResponseStatusException(
-        HttpStatus.UNAUTHORIZED,
-        INVALID_CREDENTIALS_MESSAGE
-    );
+    return new ResponseStatusException(HttpStatus.UNAUTHORIZED, INVALID_CREDENTIALS_MESSAGE);
   }
 
   private String normalizeEmail(String email) {
