@@ -16,165 +16,153 @@ import jakarta.persistence.UniqueConstraint;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
-
 import java.time.LocalDateTime;
 
 @Entity
 @Table(
     name = "worksheet_assignments",
-    uniqueConstraints = @UniqueConstraint(
-        name = "uk_worksheet_assignments_target",
-        columnNames = {"worksheet_id", "assignment_type", "target_id"}
-    )
-)
+    uniqueConstraints =
+        @UniqueConstraint(
+            name = "uk_worksheet_assignments_target",
+            columnNames = {"worksheet_id", "assignment_type", "target_id"}))
 public class WorksheetAssignment {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+  @Id
+  @GeneratedValue(strategy = GenerationType.IDENTITY)
+  private Long id;
 
-    @NotNull
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "worksheet_id", nullable = false)
-    private Worksheet worksheet;
+  @NotNull
+  @ManyToOne(fetch = FetchType.LAZY, optional = false)
+  @JoinColumn(name = "worksheet_id", nullable = false)
+  private Worksheet worksheet;
 
-    @NotNull
-    @Positive
-    @Column(name = "tutor_id", nullable = false)
-    private Long tutorId;
+  @NotNull
+  @Positive
+  @Column(name = "tutor_id", nullable = false)
+  private Long tutorId;
 
-    @NotNull
-    @Enumerated(EnumType.STRING)
-    @Column(name = "assignment_type", nullable = false, length = 16)
-    private Worksheet.AudienceType assignmentType;
+  @NotNull
+  @Enumerated(EnumType.STRING)
+  @Column(name = "assignment_type", nullable = false, length = 16)
+  private Worksheet.AudienceType assignmentType;
 
-    @NotNull
-    @Positive
-    @Column(name = "target_id", nullable = false)
-    private Long targetId;
+  @NotNull
+  @Positive
+  @Column(name = "target_id", nullable = false)
+  private Long targetId;
 
-    @Positive
-    @Column(name = "class_id")
-    private Long classId;
+  @Positive
+  @Column(name = "class_id")
+  private Long classId;
 
-    @Positive
-    @Column(name = "student_profile_id")
-    private Long studentProfileId;
+  @Positive
+  @Column(name = "student_profile_id")
+  private Long studentProfileId;
 
-    @Column(name = "assigned_at", nullable = false, updatable = false)
-    private LocalDateTime assignedAt;
+  @Column(name = "assigned_at", nullable = false, updatable = false)
+  private LocalDateTime assignedAt;
 
-    @Column(name = "due_at")
-    private LocalDateTime dueAt;
+  @Column(name = "due_at")
+  private LocalDateTime dueAt;
 
-    protected WorksheetAssignment() {
+  protected WorksheetAssignment() {}
+
+  static WorksheetAssignment forClass(Worksheet worksheet, Long classId, LocalDateTime dueAt) {
+    WorksheetAssignment assignment = new WorksheetAssignment();
+    assignment.worksheet = worksheet;
+    assignment.assignmentType = Worksheet.AudienceType.CLASS;
+    assignment.targetId = classId;
+    assignment.classId = classId;
+    assignment.dueAt = dueAt;
+    assignment.alignTo(worksheet);
+    return assignment;
+  }
+
+  static WorksheetAssignment forStudent(
+      Worksheet worksheet, Long studentProfileId, LocalDateTime dueAt) {
+    WorksheetAssignment assignment = new WorksheetAssignment();
+    assignment.worksheet = worksheet;
+    assignment.assignmentType = Worksheet.AudienceType.STUDENT;
+    assignment.targetId = studentProfileId;
+    assignment.studentProfileId = studentProfileId;
+    assignment.dueAt = dueAt;
+    assignment.alignTo(worksheet);
+    return assignment;
+  }
+
+  @PrePersist
+  void prepareForInsert() {
+    alignTo(worksheet);
+    if (assignedAt == null) {
+      assignedAt = LocalDateTime.now();
     }
+  }
 
-    static WorksheetAssignment forClass(
-            Worksheet worksheet,
-            Long classId,
-            LocalDateTime dueAt) {
-        WorksheetAssignment assignment = new WorksheetAssignment();
-        assignment.worksheet = worksheet;
-        assignment.assignmentType = Worksheet.AudienceType.CLASS;
-        assignment.targetId = classId;
-        assignment.classId = classId;
-        assignment.dueAt = dueAt;
-        assignment.alignTo(worksheet);
-        return assignment;
+  void alignTo(Worksheet worksheet) {
+    this.worksheet = worksheet;
+    if (worksheet != null) {
+      tutorId = worksheet.getTutorId();
     }
+  }
 
-    static WorksheetAssignment forStudent(
-            Worksheet worksheet,
-            Long studentProfileId,
-            LocalDateTime dueAt) {
-        WorksheetAssignment assignment = new WorksheetAssignment();
-        assignment.worksheet = worksheet;
-        assignment.assignmentType = Worksheet.AudienceType.STUDENT;
-        assignment.targetId = studentProfileId;
-        assignment.studentProfileId = studentProfileId;
-        assignment.dueAt = dueAt;
-        assignment.alignTo(worksheet);
-        return assignment;
+  @AssertTrue(message = "assignment target must match its type")
+  public boolean isTargetConsistent() {
+    if (assignmentType == Worksheet.AudienceType.CLASS) {
+      return targetId != null && targetId.equals(classId) && studentProfileId == null;
     }
+    if (assignmentType == Worksheet.AudienceType.STUDENT) {
+      return targetId != null && targetId.equals(studentProfileId) && classId == null;
+    }
+    return false;
+  }
 
-    @PrePersist
-    void prepareForInsert() {
-        alignTo(worksheet);
-        if (assignedAt == null) {
-            assignedAt = LocalDateTime.now();
-        }
-    }
+  @AssertTrue(message = "assignment must match the worksheet audience and owner")
+  public boolean isWorksheetConsistent() {
+    return worksheet != null
+        && assignmentType == worksheet.getAudienceType()
+        && tutorId != null
+        && tutorId.equals(worksheet.getTutorId());
+  }
 
-    void alignTo(Worksheet worksheet) {
-        this.worksheet = worksheet;
-        if (worksheet != null) {
-            tutorId = worksheet.getTutorId();
-        }
-    }
+  @AssertTrue(message = "due date must be later than assignment date")
+  public boolean isDueDateValid() {
+    return dueAt == null || assignedAt == null || dueAt.isAfter(assignedAt);
+  }
 
-    @AssertTrue(message = "assignment target must match its type")
-    public boolean isTargetConsistent() {
-        if (assignmentType == Worksheet.AudienceType.CLASS) {
-            return targetId != null
-                && targetId.equals(classId)
-                && studentProfileId == null;
-        }
-        if (assignmentType == Worksheet.AudienceType.STUDENT) {
-            return targetId != null
-                && targetId.equals(studentProfileId)
-                && classId == null;
-        }
-        return false;
-    }
+  public Long getId() {
+    return id;
+  }
 
-    @AssertTrue(message = "assignment must match the worksheet audience and owner")
-    public boolean isWorksheetConsistent() {
-        return worksheet != null
-            && assignmentType == worksheet.getAudienceType()
-            && tutorId != null
-            && tutorId.equals(worksheet.getTutorId());
-    }
+  /** Identifier used for navigation to the assigned worksheet. */
+  public Long getWorksheetId() {
+    return worksheet == null ? null : worksheet.getId();
+  }
 
-    @AssertTrue(message = "due date must be later than assignment date")
-    public boolean isDueDateValid() {
-        return dueAt == null || assignedAt == null || dueAt.isAfter(assignedAt);
-    }
+  public Worksheet.AudienceType getAssignmentType() {
+    return assignmentType;
+  }
 
-    public Long getId() {
-        return id;
-    }
+  public Long getTargetId() {
+    return targetId;
+  }
 
-    /** Identifier used for navigation to the assigned worksheet. */
-    public Long getWorksheetId() {
-        return worksheet == null ? null : worksheet.getId();
-    }
+  public Long getClassId() {
+    return classId;
+  }
 
-    public Worksheet.AudienceType getAssignmentType() {
-        return assignmentType;
-    }
+  public Long getStudentProfileId() {
+    return studentProfileId;
+  }
 
-    public Long getTargetId() {
-        return targetId;
-    }
+  public Long getTutorId() {
+    return tutorId;
+  }
 
-    public Long getClassId() {
-        return classId;
-    }
+  public LocalDateTime getAssignedAt() {
+    return assignedAt;
+  }
 
-    public Long getStudentProfileId() {
-        return studentProfileId;
-    }
-
-    public Long getTutorId() {
-        return tutorId;
-    }
-
-    public LocalDateTime getAssignedAt() {
-        return assignedAt;
-    }
-
-    public LocalDateTime getDueAt() {
-        return dueAt;
-    }
+  public LocalDateTime getDueAt() {
+    return dueAt;
+  }
 }

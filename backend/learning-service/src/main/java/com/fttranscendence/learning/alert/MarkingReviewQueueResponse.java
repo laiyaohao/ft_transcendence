@@ -8,15 +8,13 @@ public record MarkingReviewQueueResponse(
     long studentId,
     String studentName,
     long worksheetId,
-    LocalDateTime requestedAt
-) {
-    static MarkingReviewQueueResponse from(MarkingReviewStatusProjection review) {
-        return new MarkingReviewQueueResponse(
-            review.getSourceSubmissionId(),
-            review.getStudentProfile().getId(),
-            review.getStudentProfile().getFullName(),
-            review.getWorksheetId(),
-            review.getRequestedAt()
-        );
-    }
+    LocalDateTime requestedAt) {
+  static MarkingReviewQueueResponse from(MarkingReviewStatusProjection review) {
+    return new MarkingReviewQueueResponse(
+        review.getSourceSubmissionId(),
+        review.getStudentProfile().getId(),
+        review.getStudentProfile().getFullName(),
+        review.getWorksheetId(),
+        review.getRequestedAt());
+  }
 }

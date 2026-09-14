@@ -1,16 +1,15 @@
 package com.fttranscendence.learning.report;
 
-import tools.jackson.databind.JsonNode;
-
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import tools.jackson.databind.JsonNode;
 
 /**
  * Read-only representation of a persisted progress-report snapshot.
  *
- * <p>The snapshot is deliberately returned as stored.  Consumers must not
- * combine it with current mastery or insight data: a final report is a record
- * of the evidence available for its reporting period.</p>
+ * <p>The snapshot is deliberately returned as stored. Consumers must not combine it with current
+ * mastery or insight data: a final report is a record of the evidence available for its reporting
+ * period.
  */
 public record ReportResponse(
     Long id,
@@ -22,5 +21,4 @@ public record ReportResponse(
     LocalDate periodEnd,
     JsonNode snapshot,
     LocalDateTime generatedAt,
-    LocalDateTime finalizedAt
-) { }
+    LocalDateTime finalizedAt) {}

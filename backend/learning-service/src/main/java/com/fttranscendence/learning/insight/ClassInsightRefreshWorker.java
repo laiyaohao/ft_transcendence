@@ -5,9 +5,18 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class ClassInsightRefreshWorker {
-    private final ClassInsightService insights;
-    public ClassInsightRefreshWorker(ClassInsightService insights) { this.insights = insights; }
-    @Scheduled(fixedDelayString = "${learning.insights.refresh-delay-ms:30000}")
-    public void scheduledRefresh() { insights.runOnce(); }
-    public int runOnce() { return insights.runOnce(); }
+  private final ClassInsightService insights;
+
+  public ClassInsightRefreshWorker(ClassInsightService insights) {
+    this.insights = insights;
+  }
+
+  @Scheduled(fixedDelayString = "${learning.insights.refresh-delay-ms:30000}")
+  public void scheduledRefresh() {
+    insights.runOnce();
+  }
+
+  public int runOnce() {
+    return insights.runOnce();
+  }
 }

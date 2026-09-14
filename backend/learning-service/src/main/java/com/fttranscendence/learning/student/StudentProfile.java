@@ -16,7 +16,6 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
-
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -24,116 +23,112 @@ import java.util.List;
 @Entity
 @Table(
     name = "student_profiles",
-    uniqueConstraints = @UniqueConstraint(
-        name = "uk_student_profiles_login",
-        columnNames = "login_user_id"
-    )
-)
+    uniqueConstraints =
+        @UniqueConstraint(name = "uk_student_profiles_login", columnNames = "login_user_id"))
 public class StudentProfile {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+  @Id
+  @GeneratedValue(strategy = GenerationType.IDENTITY)
+  private Long id;
 
-    @Positive
-    @Column(name = "tutor_id")
-    private Long tutorId;
+  @Positive
+  @Column(name = "tutor_id")
+  private Long tutorId;
 
-    @Positive
-    @Column(name = "login_user_id", unique = true)
-    private Long loginUserId;
+  @Positive
+  @Column(name = "login_user_id", unique = true)
+  private Long loginUserId;
 
-    @NotBlank
-    @Size(max = 120)
-    @Column(name = "full_name", nullable = false, length = 120)
-    private String fullName;
+  @NotBlank
+  @Size(max = 120)
+  @Column(name = "full_name", nullable = false, length = 120)
+  private String fullName;
 
-    @Valid
-    @OneToMany(
-        mappedBy = "studentProfile",
-        cascade = CascadeType.ALL,
-        orphanRemoval = true,
-        fetch = FetchType.LAZY
-    )
-    private List<ClassMembership> memberships = new ArrayList<>();
+  @Valid
+  @OneToMany(
+      mappedBy = "studentProfile",
+      cascade = CascadeType.ALL,
+      orphanRemoval = true,
+      fetch = FetchType.LAZY)
+  private List<ClassMembership> memberships = new ArrayList<>();
 
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
+  @Column(name = "created_at", nullable = false, updatable = false)
+  private LocalDateTime createdAt;
 
-    @Column(name = "updated_at", nullable = false)
-    private LocalDateTime updatedAt;
+  @Column(name = "updated_at", nullable = false)
+  private LocalDateTime updatedAt;
 
-    @PrePersist
-    void prepareForInsert() {
-        normalizeFields();
-        LocalDateTime now = LocalDateTime.now();
-        createdAt = now;
-        updatedAt = now;
+  @PrePersist
+  void prepareForInsert() {
+    normalizeFields();
+    LocalDateTime now = LocalDateTime.now();
+    createdAt = now;
+    updatedAt = now;
+  }
+
+  @PreUpdate
+  void prepareForUpdate() {
+    normalizeFields();
+    updatedAt = LocalDateTime.now();
+  }
+
+  private void normalizeFields() {
+    if (fullName != null) {
+      fullName = fullName.trim();
     }
+    memberships.forEach(membership -> membership.alignTutorId(tutorId));
+  }
 
-    @PreUpdate
-    void prepareForUpdate() {
-        normalizeFields();
-        updatedAt = LocalDateTime.now();
-    }
+  public ClassMembership addClassMembership(Long classId) {
+    ClassMembership membership = new ClassMembership(this, classId, tutorId);
+    memberships.add(membership);
+    return membership;
+  }
 
-    private void normalizeFields() {
-        if (fullName != null) {
-            fullName = fullName.trim();
-        }
-        memberships.forEach(membership -> membership.alignTutorId(tutorId));
+  public void removeClassMembership(ClassMembership membership) {
+    if (memberships.remove(membership)) {
+      membership.detach();
     }
+  }
 
-    public ClassMembership addClassMembership(Long classId) {
-        ClassMembership membership = new ClassMembership(this, classId, tutorId);
-        memberships.add(membership);
-        return membership;
-    }
+  public Long getId() {
+    return id;
+  }
 
-    public void removeClassMembership(ClassMembership membership) {
-        if (memberships.remove(membership)) {
-            membership.detach();
-        }
-    }
+  public Long getTutorId() {
+    return tutorId;
+  }
 
-    public Long getId() {
-        return id;
-    }
+  public void setTutorId(Long tutorId) {
+    this.tutorId = tutorId;
+    memberships.forEach(membership -> membership.alignTutorId(tutorId));
+  }
 
-    public Long getTutorId() {
-        return tutorId;
-    }
+  public Long getLoginUserId() {
+    return loginUserId;
+  }
 
-    public void setTutorId(Long tutorId) {
-        this.tutorId = tutorId;
-        memberships.forEach(membership -> membership.alignTutorId(tutorId));
-    }
+  public void setLoginUserId(Long loginUserId) {
+    this.loginUserId = loginUserId;
+  }
 
-    public Long getLoginUserId() {
-        return loginUserId;
-    }
+  public String getFullName() {
+    return fullName;
+  }
 
-    public void setLoginUserId(Long loginUserId) {
-        this.loginUserId = loginUserId;
-    }
+  public void setFullName(String fullName) {
+    this.fullName = fullName;
+  }
 
-    public String getFullName() {
-        return fullName;
-    }
+  public List<ClassMembership> getMemberships() {
+    return memberships;
+  }
 
-    public void setFullName(String fullName) {
-        this.fullName = fullName;
-    }
+  public LocalDateTime getCreatedAt() {
+    return createdAt;
+  }
 
-    public List<ClassMembership> getMemberships() {
-        return memberships;
-    }
-
-    public LocalDateTime getCreatedAt() {
-        return createdAt;
-    }
-
-    public LocalDateTime getUpdatedAt() {
-        return updatedAt;
-    }
+  public LocalDateTime getUpdatedAt() {
+    return updatedAt;
+  }
 }

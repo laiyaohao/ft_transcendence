@@ -1,8 +1,8 @@
 package com.fttranscendence.learning.worksheet;
 
 import com.fttranscendence.learning.question.Question;
-import jakarta.persistence.Column;
 import jakarta.persistence.CascadeType;
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
@@ -19,7 +19,6 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
-
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
@@ -28,115 +27,117 @@ import java.util.List;
 @Table(
     name = "worksheet_questions",
     uniqueConstraints = {
-        @UniqueConstraint(
-            name = "uk_worksheet_questions_question",
-            columnNames = {"worksheet_id", "question_id"}
-        ),
-        @UniqueConstraint(
-            name = "uk_worksheet_questions_position",
-            columnNames = {"worksheet_id", "position"}
-        )
-    }
-)
+      @UniqueConstraint(
+          name = "uk_worksheet_questions_question",
+          columnNames = {"worksheet_id", "question_id"}),
+      @UniqueConstraint(
+          name = "uk_worksheet_questions_position",
+          columnNames = {"worksheet_id", "position"})
+    })
 public class WorksheetQuestion {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+  @Id
+  @GeneratedValue(strategy = GenerationType.IDENTITY)
+  private Long id;
 
-    @NotNull
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "worksheet_id", nullable = false)
-    private Worksheet worksheet;
+  @NotNull
+  @ManyToOne(fetch = FetchType.LAZY, optional = false)
+  @JoinColumn(name = "worksheet_id", nullable = false)
+  private Worksheet worksheet;
 
-    @NotNull
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "question_id", nullable = false)
-    private Question question;
+  @NotNull
+  @ManyToOne(fetch = FetchType.LAZY, optional = false)
+  @JoinColumn(name = "question_id", nullable = false)
+  private Question question;
 
-    @Min(0)
-    @Column(nullable = false)
-    private int position;
+  @Min(0)
+  @Column(nullable = false)
+  private int position;
 
-    /** Immutable question-bank values captured when the question is added. */
-    @Size(max = 120)
-    @Column(name = "question_code_snapshot", length = 120)
-    private String questionCodeSnapshot;
+  /** Immutable question-bank values captured when the question is added. */
+  @Size(max = 120)
+  @Column(name = "question_code_snapshot", length = 120)
+  private String questionCodeSnapshot;
 
-    @Size(max = 4000)
-    @Column(name = "prompt_snapshot", length = 4000)
-    private String promptSnapshot;
+  @Size(max = 4000)
+  @Column(name = "prompt_snapshot", length = 4000)
+  private String promptSnapshot;
 
-    @Enumerated(jakarta.persistence.EnumType.STRING)
-    @Column(name = "question_type_snapshot", length = 32)
-    private Question.QuestionType questionTypeSnapshot;
+  @Enumerated(jakarta.persistence.EnumType.STRING)
+  @Column(name = "question_type_snapshot", length = 32)
+  private Question.QuestionType questionTypeSnapshot;
 
-    @DecimalMin(value = "0.01")
-    private BigDecimal totalMarksSnapshot;
+  @DecimalMin(value = "0.01")
+  private BigDecimal totalMarksSnapshot;
 
-    @OneToMany(mappedBy = "worksheetQuestion", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
-    @OrderBy("position ASC")
-    private List<WorksheetQuestionImage> images = new ArrayList<>();
+  @OneToMany(
+      mappedBy = "worksheetQuestion",
+      cascade = CascadeType.ALL,
+      orphanRemoval = true,
+      fetch = FetchType.LAZY)
+  @OrderBy("position ASC")
+  private List<WorksheetQuestionImage> images = new ArrayList<>();
 
-    protected WorksheetQuestion() {
-    }
+  protected WorksheetQuestion() {}
 
-    WorksheetQuestion(Worksheet worksheet, Question question, int position) {
-        this.worksheet = worksheet;
-        this.question = question;
-        this.position = position;
-        snapshot(question);
-    }
+  WorksheetQuestion(Worksheet worksheet, Question question, int position) {
+    this.worksheet = worksheet;
+    this.question = question;
+    this.position = position;
+    snapshot(question);
+  }
 
-    private void snapshot(Question source) {
-        questionCodeSnapshot = source.getCode();
-        promptSnapshot = source.getPrompt();
-        questionTypeSnapshot = source.getQuestionType();
-        totalMarksSnapshot = source.getTotalMarks();
-        source.getImages().forEach(image -> images.add(new WorksheetQuestionImage(this, images.size(), image)));
-    }
+  private void snapshot(Question source) {
+    questionCodeSnapshot = source.getCode();
+    promptSnapshot = source.getPrompt();
+    questionTypeSnapshot = source.getQuestionType();
+    totalMarksSnapshot = source.getTotalMarks();
+    source
+        .getImages()
+        .forEach(image -> images.add(new WorksheetQuestionImage(this, images.size(), image)));
+  }
 
-    void attachTo(Worksheet worksheet) {
-        this.worksheet = worksheet;
-    }
+  void attachTo(Worksheet worksheet) {
+    this.worksheet = worksheet;
+  }
 
-    void detach() {
-        worksheet = null;
-    }
+  void detach() {
+    worksheet = null;
+  }
 
-    void setPosition(int position) {
-        this.position = position;
-    }
+  void setPosition(int position) {
+    this.position = position;
+  }
 
-    public Long getId() {
-        return id;
-    }
+  public Long getId() {
+    return id;
+  }
 
-    public Question getQuestion() {
-        return question;
-    }
+  public Question getQuestion() {
+    return question;
+  }
 
-    public int getPosition() {
-        return position;
-    }
+  public int getPosition() {
+    return position;
+  }
 
-    public String getQuestionCodeSnapshot() {
-        return questionCodeSnapshot;
-    }
+  public String getQuestionCodeSnapshot() {
+    return questionCodeSnapshot;
+  }
 
-    public String getPromptSnapshot() {
-        return promptSnapshot;
-    }
+  public String getPromptSnapshot() {
+    return promptSnapshot;
+  }
 
-    public Question.QuestionType getQuestionTypeSnapshot() {
-        return questionTypeSnapshot;
-    }
+  public Question.QuestionType getQuestionTypeSnapshot() {
+    return questionTypeSnapshot;
+  }
 
-    public BigDecimal getTotalMarksSnapshot() {
-        return totalMarksSnapshot;
-    }
+  public BigDecimal getTotalMarksSnapshot() {
+    return totalMarksSnapshot;
+  }
 
-    public List<WorksheetQuestionImage> getImages() {
-        return List.copyOf(images);
-    }
+  public List<WorksheetQuestionImage> getImages() {
+    return List.copyOf(images);
+  }
 }

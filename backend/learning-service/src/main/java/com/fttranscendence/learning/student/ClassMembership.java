@@ -13,82 +13,78 @@ import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
-
 import java.time.LocalDateTime;
 
 @Entity
 @Table(
     name = "class_memberships",
-    uniqueConstraints = @UniqueConstraint(
-        name = "uk_class_memberships_student_class",
-        columnNames = {"student_profile_id", "class_id"}
-    )
-)
+    uniqueConstraints =
+        @UniqueConstraint(
+            name = "uk_class_memberships_student_class",
+            columnNames = {"student_profile_id", "class_id"}))
 public class ClassMembership {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+  @Id
+  @GeneratedValue(strategy = GenerationType.IDENTITY)
+  private Long id;
 
-    @NotNull
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "student_profile_id", nullable = false)
-    private StudentProfile studentProfile;
+  @NotNull
+  @ManyToOne(fetch = FetchType.LAZY, optional = false)
+  @JoinColumn(name = "student_profile_id", nullable = false)
+  private StudentProfile studentProfile;
 
-    @NotNull
-    @Positive
-    @Column(name = "class_id", nullable = false)
-    private Long classId;
+  @NotNull
+  @Positive
+  @Column(name = "class_id", nullable = false)
+  private Long classId;
 
-    @NotNull
-    @Positive
-    @Column(name = "tutor_id", nullable = false)
-    private Long tutorId;
+  @NotNull
+  @Positive
+  @Column(name = "tutor_id", nullable = false)
+  private Long tutorId;
 
-    @Column(name = "joined_at", nullable = false, updatable = false)
-    private LocalDateTime joinedAt;
+  @Column(name = "joined_at", nullable = false, updatable = false)
+  private LocalDateTime joinedAt;
 
-    protected ClassMembership() {
-    }
+  protected ClassMembership() {}
 
-    ClassMembership(StudentProfile studentProfile, Long classId, Long tutorId) {
-        this.studentProfile = studentProfile;
-        this.classId = classId;
-        this.tutorId = tutorId;
-    }
+  ClassMembership(StudentProfile studentProfile, Long classId, Long tutorId) {
+    this.studentProfile = studentProfile;
+    this.classId = classId;
+    this.tutorId = tutorId;
+  }
 
-    @PrePersist
-    void prepareForInsert() {
-        alignTutorId(studentProfile == null ? null : studentProfile.getTutorId());
-        joinedAt = LocalDateTime.now();
-    }
+  @PrePersist
+  void prepareForInsert() {
+    alignTutorId(studentProfile == null ? null : studentProfile.getTutorId());
+    joinedAt = LocalDateTime.now();
+  }
 
-    void alignTutorId(Long owningTutorId) {
-        tutorId = owningTutorId;
-    }
+  void alignTutorId(Long owningTutorId) {
+    tutorId = owningTutorId;
+  }
 
-    void detach() {
-        studentProfile = null;
-    }
+  void detach() {
+    studentProfile = null;
+  }
 
-    public Long getId() {
-        return id;
-    }
+  public Long getId() {
+    return id;
+  }
 
-    public Long getStudentProfileId() {
-        return studentProfile == null ? null : studentProfile.getId();
-    }
+  public Long getStudentProfileId() {
+    return studentProfile == null ? null : studentProfile.getId();
+  }
 
-    public Long getClassId() {
-        return classId;
-    }
+  public Long getClassId() {
+    return classId;
+  }
 
-    public Long getTutorId() {
-        return tutorId;
-    }
+  public Long getTutorId() {
+    return tutorId;
+  }
 
-    public LocalDateTime getJoinedAt() {
-        return joinedAt;
-    }
+  public LocalDateTime getJoinedAt() {
+    return joinedAt;
+  }
 }
-

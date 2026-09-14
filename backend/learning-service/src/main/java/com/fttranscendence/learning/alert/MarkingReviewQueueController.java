@@ -11,14 +11,14 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/learning/tutor/marking-reviews")
 public class MarkingReviewQueueController {
-    private final MarkingReviewQueueService queue;
+  private final MarkingReviewQueueService queue;
 
-    public MarkingReviewQueueController(MarkingReviewQueueService queue) {
-        this.queue = queue;
-    }
+  public MarkingReviewQueueController(MarkingReviewQueueService queue) {
+    this.queue = queue;
+  }
 
-    @GetMapping
-    public List<MarkingReviewQueueResponse> list(@AuthenticationPrincipal AuthenticatedUser user) {
-        return queue.pendingForTutor(user.userId());
-    }
+  @GetMapping
+  public List<MarkingReviewQueueResponse> list(@AuthenticationPrincipal AuthenticatedUser user) {
+    return queue.pendingForTutor(user.userId());
+  }
 }

@@ -1,39 +1,37 @@
 package com.fttranscendence.learning.worksheet;
 
+import java.util.List;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.query.Param;
 
-import java.util.List;
-import java.util.Optional;
-
 public interface WorksheetRepository extends Repository<Worksheet, Long> {
 
-    <S extends Worksheet> S save(S worksheet);
+  <S extends Worksheet> S save(S worksheet);
 
-    Optional<Worksheet> findById(Long id);
+  Optional<Worksheet> findById(Long id);
 
-    Optional<Worksheet> findByIdAndTutorId(Long id, Long tutorId);
+  Optional<Worksheet> findByIdAndTutorId(Long id, Long tutorId);
 
-    Optional<Worksheet> findByTutorIdAndCode(Long tutorId, String code);
+  Optional<Worksheet> findByTutorIdAndCode(Long tutorId, String code);
 
-    Optional<Worksheet> findByGenerationRequest_IdAndTutorId(Long generationRequestId, Long tutorId);
+  Optional<Worksheet> findByGenerationRequest_IdAndTutorId(Long generationRequestId, Long tutorId);
 
-    List<Worksheet> findAllByTutorIdAndStatusOrderByTitleAsc(
-        Long tutorId,
-        Worksheet.Status status
-    );
+  List<Worksheet> findAllByTutorIdAndStatusOrderByTitleAsc(Long tutorId, Worksheet.Status status);
 
-    @Query("""
+  @Query(
+      """
         SELECT DISTINCT worksheet
         FROM Worksheet worksheet
         LEFT JOIN FETCH worksheet.assignments
         WHERE worksheet.tutorId = :tutorId
         ORDER BY worksheet.title ASC, worksheet.id ASC
         """)
-    List<Worksheet> findAllByTutorIdWithAssignments(@Param("tutorId") Long tutorId);
+  List<Worksheet> findAllByTutorIdWithAssignments(@Param("tutorId") Long tutorId);
 
-    @Query("""
+  @Query(
+      """
         SELECT DISTINCT worksheet
         FROM Worksheet worksheet
         JOIN worksheet.assignments assignment
@@ -41,12 +39,12 @@ public interface WorksheetRepository extends Repository<Worksheet, Long> {
           AND assignment.targetId = :targetId
         ORDER BY worksheet.title ASC
         """)
-    List<Worksheet> findAssignedWorksheets(
-        @Param("assignmentType") Worksheet.AudienceType assignmentType,
-        @Param("targetId") Long targetId
-    );
+  List<Worksheet> findAssignedWorksheets(
+      @Param("assignmentType") Worksheet.AudienceType assignmentType,
+      @Param("targetId") Long targetId);
 
-    @Query("""
+  @Query(
+      """
         SELECT DISTINCT worksheet
         FROM Worksheet worksheet
         JOIN FETCH worksheet.assignments assignment
@@ -55,12 +53,11 @@ public interface WorksheetRepository extends Repository<Worksheet, Long> {
           AND assignment.targetId = :classId
         ORDER BY worksheet.title ASC, worksheet.id ASC
         """)
-    List<Worksheet> findClassAssignedWorksheetsByTutorId(
-        @Param("tutorId") Long tutorId,
-        @Param("classId") Long classId
-    );
+  List<Worksheet> findClassAssignedWorksheetsByTutorId(
+      @Param("tutorId") Long tutorId, @Param("classId") Long classId);
 
-    @Query("""
+  @Query(
+      """
         SELECT DISTINCT worksheet
         FROM Worksheet worksheet
         JOIN FETCH worksheet.assignments assignment
@@ -70,16 +67,15 @@ public interface WorksheetRepository extends Repository<Worksheet, Long> {
           AND assignment.studentProfileId = :studentProfileId
         ORDER BY worksheet.title ASC, worksheet.id ASC
         """)
-    List<Worksheet> findApprovedStudentAssignedWorksheetsByTutorId(
-        @Param("tutorId") Long tutorId,
-        @Param("studentProfileId") Long studentProfileId
-    );
+  List<Worksheet> findApprovedStudentAssignedWorksheetsByTutorId(
+      @Param("tutorId") Long tutorId, @Param("studentProfileId") Long studentProfileId);
 
-    /**
-     * Student visibility is derived from their own direct assignment or active
-     * class membership.  No caller-controlled profile identifier is involved.
-     */
-    @Query("""
+  /**
+   * Student visibility is derived from their own direct assignment or active class membership. No
+   * caller-controlled profile identifier is involved.
+   */
+  @Query(
+      """
         SELECT DISTINCT worksheet
         FROM Worksheet worksheet
         JOIN FETCH worksheet.questions worksheetQuestion
@@ -101,5 +97,6 @@ public interface WorksheetRepository extends Repository<Worksheet, Long> {
           )
         ORDER BY worksheet.approvedAt DESC, worksheet.id DESC
         """)
-    List<Worksheet> findApprovedAssignedToStudentWithQuestions(@Param("studentProfileId") Long studentProfileId);
+  List<Worksheet> findApprovedAssignedToStudentWithQuestions(
+      @Param("studentProfileId") Long studentProfileId);
 }

@@ -10,11 +10,25 @@ public record ClassInsightResponse(
     String message,
     LocalDateTime dataAsOf,
     List<Item> items,
-    List<Feedback> feedback
-) {
-    public enum Status { FRESH, STALE, REFRESHING, FAILED }
-    public record Item(Long topicId, String topicName, BigDecimal averageMasteryPercent,
-                       int activeStudentCount, int assessedStudentCount, int affectedStudentCount,
-                       boolean weak, String suggestedAction, Integer displayRank, String rankingNote) {}
-    public record Feedback(Long id, String feedback, LocalDateTime createdAt) {}
+    List<Feedback> feedback) {
+  public enum Status {
+    FRESH,
+    STALE,
+    REFRESHING,
+    FAILED
+  }
+
+  public record Item(
+      Long topicId,
+      String topicName,
+      BigDecimal averageMasteryPercent,
+      int activeStudentCount,
+      int assessedStudentCount,
+      int affectedStudentCount,
+      boolean weak,
+      String suggestedAction,
+      Integer displayRank,
+      String rankingNote) {}
+
+  public record Feedback(Long id, String feedback, LocalDateTime createdAt) {}
 }
