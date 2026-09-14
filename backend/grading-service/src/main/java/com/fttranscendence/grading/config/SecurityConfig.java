@@ -1,6 +1,8 @@
 package com.fttranscendence.grading.config;
 
 import com.fttranscendence.grading.security.JwtAuthenticationFilter;
+import java.util.Arrays;
+import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -19,9 +21,6 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
-import java.util.Arrays;
-import java.util.List;
-
 @Configuration
 public class SecurityConfig {
   private static final long ONE_YEAR_SECONDS = 31_536_000L;
@@ -29,79 +28,81 @@ public class SecurityConfig {
       "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'";
   private static final String PERMISSIONS_POLICY =
       "accelerometer=(), camera=(), geolocation=(), microphone=(), payment=(), usb=()";
-  private static final List<String> ALLOWED_METHODS = List.of(
-      "GET",
-      "POST",
-      "PUT",
-      "PATCH",
-      "DELETE",
-      "OPTIONS"
-  );
-  private static final List<String> ALLOWED_HEADERS = List.of(
-      HttpHeaders.AUTHORIZATION,
-      HttpHeaders.CONTENT_TYPE,
-      HttpHeaders.ACCEPT,
-      "X-Requested-With",
-      "Idempotency-Key"
-  );
+  private static final List<String> ALLOWED_METHODS =
+      List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS");
+  private static final List<String> ALLOWED_HEADERS =
+      List.of(
+          HttpHeaders.AUTHORIZATION,
+          HttpHeaders.CONTENT_TYPE,
+          HttpHeaders.ACCEPT,
+          "X-Requested-With",
+          "Idempotency-Key");
 
   @Bean
   SecurityFilterChain securityFilterChain(
       HttpSecurity http,
       JwtAuthenticationFilter jwtAuthenticationFilter,
-      @Value("${security.headers.hsts-enabled:false}") boolean hstsEnabled
-  ) throws Exception {
-    http
-        .cors(cors -> {})
+      @Value("${security.headers.hsts-enabled:false}") boolean hstsEnabled)
+      throws Exception {
+    http.cors(cors -> {})
         .csrf(AbstractHttpConfigurer::disable)
-        .headers(headers -> {
-          headers.contentTypeOptions(Customizer.withDefaults())
-              .frameOptions(frame -> frame.deny())
-              .referrerPolicy(referrer -> referrer.policy(ReferrerPolicy.NO_REFERRER))
-              .contentSecurityPolicy(csp -> csp.policyDirectives(CONTENT_SECURITY_POLICY))
-              .permissionsPolicy(policy -> policy.policy(PERMISSIONS_POLICY));
-          if (hstsEnabled) {
-            headers.httpStrictTransportSecurity(hsts -> hsts
-                .maxAgeInSeconds(ONE_YEAR_SECONDS)
-                .includeSubDomains(true));
-          } else {
-            headers.httpStrictTransportSecurity(hsts -> hsts.disable());
-          }
-        })
-        .exceptionHandling(exceptions -> exceptions
-            .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
-            .sessionManagement(session ->
-                session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-            .authorizeHttpRequests(authorize -> authorize
-                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
-                // Every domain API is explicitly role-scoped.  Do not fall back to
-                // "authenticated" here: new endpoints must opt into a policy.
-                .requestMatchers("/api/grading/tutor/**").hasRole("TUTOR")
-                .requestMatchers(HttpMethod.GET, "/api/grading/student/worksheets/*/results")
+        .headers(
+            headers -> {
+              headers
+                  .contentTypeOptions(Customizer.withDefaults())
+                  .frameOptions(frame -> frame.deny())
+                  .referrerPolicy(referrer -> referrer.policy(ReferrerPolicy.NO_REFERRER))
+                  .contentSecurityPolicy(csp -> csp.policyDirectives(CONTENT_SECURITY_POLICY))
+                  .permissionsPolicy(policy -> policy.policy(PERMISSIONS_POLICY));
+              if (hstsEnabled) {
+                headers.httpStrictTransportSecurity(
+                    hsts -> hsts.maxAgeInSeconds(ONE_YEAR_SECONDS).includeSubDomains(true));
+              } else {
+                headers.httpStrictTransportSecurity(hsts -> hsts.disable());
+              }
+            })
+        .exceptionHandling(
+            exceptions ->
+                exceptions.authenticationEntryPoint(
+                    new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
+        .sessionManagement(
+            session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+        .authorizeHttpRequests(
+            authorize ->
+                authorize
+                    .requestMatchers(HttpMethod.OPTIONS, "/**")
+                    .permitAll()
+                    .requestMatchers(HttpMethod.GET, "/actuator/health")
+                    .permitAll()
+                    // Every domain API is explicitly role-scoped.  Do not fall back to
+                    // "authenticated" here: new endpoints must opt into a policy.
+                    .requestMatchers("/api/grading/tutor/**")
+                    .hasRole("TUTOR")
+                    .requestMatchers(HttpMethod.GET, "/api/grading/student/worksheets/*/results")
                     .hasRole("STUDENT")
-                .requestMatchers(HttpMethod.GET, "/api/grading/student/mistakes")
+                    .requestMatchers(HttpMethod.GET, "/api/grading/student/mistakes")
                     .hasRole("STUDENT")
-                .requestMatchers(HttpMethod.GET, "/api/grading/mistakes/**")
+                    .requestMatchers(HttpMethod.GET, "/api/grading/mistakes/**")
                     .hasAnyRole("TUTOR", "STUDENT")
-                .requestMatchers(HttpMethod.PATCH, "/api/grading/ocr-extractions/**")
+                    .requestMatchers(HttpMethod.PATCH, "/api/grading/ocr-extractions/**")
                     .hasAnyRole("TUTOR", "STUDENT")
-                .requestMatchers(HttpMethod.GET, "/api/grading/submission-documents/*")
+                    .requestMatchers(HttpMethod.GET, "/api/grading/submission-documents/*")
                     .hasAnyRole("TUTOR", "STUDENT")
-                .requestMatchers(
-                    HttpMethod.POST,
-                    "/api/grading/submission-documents/*/submit-for-review"
-                )
+                    .requestMatchers(
+                        HttpMethod.POST, "/api/grading/submission-documents/*/submit-for-review")
                     .hasAnyRole("TUTOR", "STUDENT")
-                .requestMatchers(HttpMethod.GET, "/api/grading/submission-documents/manual-answers")
+                    .requestMatchers(
+                        HttpMethod.GET, "/api/grading/submission-documents/manual-answers")
                     .hasAnyRole("TUTOR", "STUDENT")
-                .requestMatchers(HttpMethod.POST, "/api/grading/submission-documents/manual-answers")
+                    .requestMatchers(
+                        HttpMethod.POST, "/api/grading/submission-documents/manual-answers")
                     .hasAnyRole("TUTOR", "STUDENT")
-                // The controller accepts only POST. Matching the canonical path
-                // here keeps its role boundary stable across multipart dispatch.
-                .requestMatchers("/api/grading/submission-documents")
+                    // The controller accepts only POST. Matching the canonical path
+                    // here keeps its role boundary stable across multipart dispatch.
+                    .requestMatchers("/api/grading/submission-documents")
                     .hasAnyRole("TUTOR", "STUDENT")
-                .anyRequest().denyAll())
+                    .anyRequest()
+                    .denyAll())
         // The JWT filter must run after Spring Security has loaded this request's
         // context; otherwise SecurityContextHolderFilter can replace the bearer
         // authentication with its empty stateless context later in the chain.
@@ -112,20 +113,18 @@ public class SecurityConfig {
 
   @Bean
   CorsConfigurationSource corsConfigurationSource(
-      @Value("${security.cors.allowed-origins:http://localhost:3000}")
-      String configuredOrigins
-  ) {
+      @Value("${security.cors.allowed-origins:http://localhost:3000}") String configuredOrigins) {
     CorsConfiguration configuration = new CorsConfiguration();
-    List<String> allowedOrigins = Arrays.stream(configuredOrigins.split(","))
-        .map(String::trim)
-        .filter(origin -> !origin.isEmpty())
-        .distinct()
-        .toList();
+    List<String> allowedOrigins =
+        Arrays.stream(configuredOrigins.split(","))
+            .map(String::trim)
+            .filter(origin -> !origin.isEmpty())
+            .distinct()
+            .toList();
 
     if (allowedOrigins.isEmpty()) {
       throw new IllegalStateException(
-          "security.cors.allowed-origins must contain at least one origin"
-      );
+          "security.cors.allowed-origins must contain at least one origin");
     }
 
     configuration.setAllowedOrigins(allowedOrigins);

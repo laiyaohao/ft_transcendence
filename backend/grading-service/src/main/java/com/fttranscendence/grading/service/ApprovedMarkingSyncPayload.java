@@ -1,7 +1,6 @@
 package com.fttranscendence.grading.service;
 
 import com.fttranscendence.grading.model.ApprovedDiagnosticEvidence;
-
 import java.math.BigDecimal;
 import java.util.List;
 
@@ -21,20 +20,20 @@ public record ApprovedMarkingSyncPayload(
     BigDecimal approvedMarks,
     BigDecimal maxMarks,
     String approvedAt,
-    List<DiagnosticEvidence> diagnosticEvidence
-) {
-    public record DiagnosticEvidence(
-        long syllabusTopicId,
-        String mistakeType,
-        String category,
-        String description,
-        List<String> missingKeywords
-    ) {
-        static DiagnosticEvidence from(ApprovedDiagnosticEvidence evidence) {
-            return new DiagnosticEvidence(
-                evidence.getSyllabusTopicId(), evidence.getMistakeType().name(), evidence.getCategory().name(),
-                evidence.getDescription(), evidence.getMissingKeywords()
-            );
-        }
+    List<DiagnosticEvidence> diagnosticEvidence) {
+  public record DiagnosticEvidence(
+      long syllabusTopicId,
+      String mistakeType,
+      String category,
+      String description,
+      List<String> missingKeywords) {
+    static DiagnosticEvidence from(ApprovedDiagnosticEvidence evidence) {
+      return new DiagnosticEvidence(
+          evidence.getSyllabusTopicId(),
+          evidence.getMistakeType().name(),
+          evidence.getCategory().name(),
+          evidence.getDescription(),
+          evidence.getMissingKeywords());
     }
+  }
 }

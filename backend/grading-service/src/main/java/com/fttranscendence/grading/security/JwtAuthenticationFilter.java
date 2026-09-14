@@ -7,6 +7,11 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -16,12 +21,6 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
-
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.util.List;
-import java.util.Locale;
-import java.util.Set;
 
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
@@ -35,8 +34,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
   public JwtAuthenticationFilter(@Value("${jwt.secret}") String secret) {
     if (isInvalidSigningSecret(secret)) {
       throw new IllegalArgumentException(
-          "JWT_SECRET must contain at least 32 non-placeholder bytes"
-      );
+          "JWT_SECRET must contain at least 32 non-placeholder bytes");
     }
 
     this.signingKey = secret.getBytes(StandardCharsets.UTF_8);
@@ -44,10 +42,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
   @Override
   protected void doFilterInternal(
-      HttpServletRequest request,
-      HttpServletResponse response,
-      FilterChain filterChain
-  ) throws ServletException, IOException {
+      HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+      throws ServletException, IOException {
     String bearerToken = extractBearerToken(request);
     if (bearerToken == null) {
       filterChain.doFilter(request, response);
@@ -90,21 +86,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     String role = claims.get("role", String.class);
     Number userIdClaim = claims.get("userId", Number.class);
 
-    if (!hasValidIdentity(email, role, userIdClaim)
-        || hasPriorAuthenticatedPrincipal()) {
+    if (!hasValidIdentity(email, role, userIdClaim) || hasPriorAuthenticatedPrincipal()) {
       return;
     }
 
-    AuthenticatedUser principal = new AuthenticatedUser(
-        userIdClaim.longValue(),
-        email,
-        role
-    );
-    Authentication authentication = new UsernamePasswordAuthenticationToken(
-        principal,
-        null,
-        List.of(new SimpleGrantedAuthority("ROLE_" + role))
-    );
+    AuthenticatedUser principal = new AuthenticatedUser(userIdClaim.longValue(), email, role);
+    Authentication authentication =
+        new UsernamePasswordAuthenticationToken(
+            principal, null, List.of(new SimpleGrantedAuthority("ROLE_" + role)));
     SecurityContextHolder.getContext().setAuthentication(authentication);
   }
 
@@ -116,11 +105,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         .getBody();
   }
 
-  private static boolean hasValidIdentity(
-      String email,
-      String role,
-      Number userIdClaim
-  ) {
+  private static boolean hasValidIdentity(String email, String role, Number userIdClaim) {
     return StringUtils.hasText(email)
         && ALLOWED_ROLES.contains(role)
         && userIdClaim != null
@@ -128,8 +113,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
   }
 
   private static boolean hasPriorAuthenticatedPrincipal() {
-    Authentication existingAuthentication =
-        SecurityContextHolder.getContext().getAuthentication();
+    Authentication existingAuthentication = SecurityContextHolder.getContext().getAuthentication();
 
     // Spring Security 7 may install an anonymous principal before this filter.
     // A valid bearer token replaces it, while a real prior authentication wins.
