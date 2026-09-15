@@ -1,34 +1,71 @@
 *This project was created as part of the 42 curriculum by lkoh, lwin, pzaw, tyingchu, and ylai.*
 
-# ft_transcendence — Lumina
+# ft_transcendence, Lumina
 
 ## Overview
 
-Lumina is a Tutor-and-Student learning platform. Tutors organise classes, enrol
-existing Student accounts, create taxonomy-backed questions and worksheets,
-review uploaded completed work, and approve marking outcomes. Students receive
-assigned work, upload it, correct low-confidence OCR text, and follow progress.
+Lumina is a role-based learning platform for Tutors and Students. Tutors create
+classes, manage existing Student accounts, build syllabus-backed questions and
+worksheets, import questions from source material, review submissions, and use
+mastery data to plan follow-up work. Students receive assigned worksheets,
+upload completed work, correct OCR extraction where needed, and view progress.
 
-The application uses a Next.js frontend, Spring Boot services, PostgreSQL, and
-Docker Compose. Live AI/OCR calls use an operator-provided OpenAI-compatible
-provider key; no provider key is committed.
+The application consists of a Next.js frontend, three Spring Boot services,
+PostgreSQL, and Docker Compose. AI marking and vision/OCR use an
+operator-provided OpenAI-compatible provider; no provider secret is committed.
+
+## Team roles and project management
+
+The complete ownership and defence plan is in [ROLES.md](ROLES.md). It maps
+each team member to a primary role, evidence-backed contribution, feature area,
+and required demonstration. It also records an identity-reconciliation gate:
+the README alias `tyingchu` must be confirmed against the `tyingchun` and
+`yingchun` Git identities before the evaluation.
+
+| Member | Primary role | Primary contribution and feature ownership |
+| --- | --- | --- |
+| `ylai` | Project Manager and Technical Lead | Repository architecture, frontend/Spring Boot foundation, authentication, security, CI, and technical decisions. |
+| `tyingchu` | Lead Integration Developer | Learning and grading integration, classes, worksheets, submission/OCR/marking workflow, deployment, tests, and final documentation. |
+| `lkoh` | Product Owner and AI/OCR Developer | Learning workflow scope, AI/OCR integration, provider limitations, and legal/product requirements. |
+| `lwin` | Tutor Experience Developer | Tutor dashboard, classes, Student management, worksheets, and marking experience. |
+| `pzaw` | Student Experience Developer | Student dashboard, worksheets, upload, profile, progress, navigation, and responsive behaviour. |
+
+Work is organised as issue-sized increments, feature branches and pull-request
+merges, followed by integration, security, documentation, and test hardening.
+The team should assign a primary owner and reviewer to each slice, run the
+relevant checks before merging, and have every member explain both their own
+feature and a cross-team technical decision. Git history, [ISSUES.md](ISSUES.md),
+and [.github/workflows/ci.yml](.github/workflows/ci.yml) are the repository
+evidence for this process; attendance and verbal participation must be checked
+live during the evaluation.
+
+### Technology choices
+
+| Technology | Reason |
+| --- | --- |
+| Next.js, React, and TypeScript | Component-based role-aware browser routes and typed frontend contracts. |
+| Material UI and Emotion | Responsive, accessible, themed UI components, rather than plain CSS alone. |
+| Spring Boot and Java 17 | Validated, secured, independently testable APIs. |
+| PostgreSQL and Flyway | Relational records with versioned, service-owned schema migrations. |
+| Docker Compose and Nginx | Repeatable local/E2E stack and a private production-shaped HTTPS edge. |
+| OpenAI-compatible provider | Optional OCR and marking assistance, always subject to Tutor approval. |
 
 ## Features and evidence
 
-| Capability | Implementation | Automated evidence |
+| Area | Delivered capability | Implementation and automated evidence |
 | --- | --- | --- |
-| Account registration, login, JWT roles, and Tutor bootstrap | [auth-service](backend/auth-service) | [AuthControllerIntegrationTest](backend/auth-service/src/test/java/com/fttranscendence/authservice/controller/AuthControllerIntegrationTest.java) |
-| Tutor classes, schedules, and existing-Student memberships | [classroom package](backend/learning-service/src/main/java/com/fttranscendence/learning/classroom) | [ClassStudentMembershipIntegrationTest](backend/learning-service/src/test/java/com/fttranscendence/learning/classroom/ClassStudentMembershipIntegrationTest.java) |
-| P5/P6 taxonomy-backed question bank and worksheets | [question package](backend/learning-service/src/main/java/com/fttranscendence/learning/question) | [P6ScienceQuestionBankSeedIntegrationTest](backend/learning-service/src/test/java/com/fttranscendence/learning/question/P6ScienceQuestionBankSeedIntegrationTest.java) |
-| Student worksheet library and PDF route | [worksheet pages](frontend/src/app/%28main%29/worksheets) | [StudentWorksheetLibraryIntegrationTest](backend/learning-service/src/test/java/com/fttranscendence/learning/worksheet/StudentWorksheetLibraryIntegrationTest.java) |
-| Submission pages, OCR correction, and Tutor review | [submission controller](backend/grading-service/src/main/java/com/fttranscendence/grading/controller/SubmissionDocumentController.java) | [OcrSubmissionFinalizationIntegrationTest](backend/grading-service/src/test/java/com/fttranscendence/grading/controller/OcrSubmissionFinalizationIntegrationTest.java) |
-| Mastery, subject-profile insight, reports, and alerts | [insight package](backend/learning-service/src/main/java/com/fttranscendence/learning/insight) | [SubjectProfileIntegrationTest](backend/learning-service/src/test/java/com/fttranscendence/learning/insight/SubjectProfileIntegrationTest.java) |
-| Responsive and keyboard-accessible browser UI | [shared UI components](frontend/src/components) | [responsive-accessibility.spec.ts](frontend/e2e/responsive-accessibility.spec.ts) |
-| Offline Compose browser checks | [fixture Compose overlay](compose.e2e.yaml) | [CI workflow](.github/workflows/ci.yml) |
+| Identity | Student registration, Tutor bootstrap, login, BCrypt passwords, JWT roles, and protected routes | [auth-service](backend/auth-service) and [auth integration tests](backend/auth-service/src/test/java/com/fttranscendence/authservice/controller/AuthControllerIntegrationTest.java) |
+| Class management | Tutor classes, schedules, Student enrolment, profiles, and Tutor notes | [classroom and student packages](backend/learning-service/src/main/java/com/fttranscendence/learning/classroom) and [membership tests](backend/learning-service/src/test/java/com/fttranscendence/learning/classroom/ClassStudentMembershipIntegrationTest.java) |
+| Curriculum and questions | P5/P6 syllabus taxonomy, question bank, image attachments, rule checks, and source-question import with review | [question package](backend/learning-service/src/main/java/com/fttranscendence/learning/question) and [question tests](backend/learning-service/src/test/java/com/fttranscendence/learning/question) |
+| Worksheets | Tutor worksheet creation, recommendations, assignments, images, PDF output, and Student worksheet library | [worksheet package](backend/learning-service/src/main/java/com/fttranscendence/learning/worksheet) and [worksheet tests](backend/learning-service/src/test/java/com/fttranscendence/learning/worksheet) |
+| Marking | Document upload, durable page storage, OCR correction, AI proposals, manual answers, Tutor approval/flag/reset, and mistake history | [grading controllers](backend/grading-service/src/main/java/com/fttranscendence/grading/controller) and [OCR finalization test](backend/grading-service/src/test/java/com/fttranscendence/grading/controller/OcrSubmissionFinalizationIntegrationTest.java) |
+| Learning insight | Tutor and Student dashboards, mastery maps, learning profiles, class insights, alerts, reports, and PDF reports | [insight package](backend/learning-service/src/main/java/com/fttranscendence/learning/insight) and [subject-profile test](backend/learning-service/src/test/java/com/fttranscendence/learning/insight/SubjectProfileIntegrationTest.java) |
+| Browser experience | Role-aware Tutor and Student pages, responsive layout, keyboard-accessible controls, and route guards | [frontend routes](frontend/src/app) and [accessibility E2E tests](frontend/e2e/responsive-accessibility.spec.ts) |
+| Verification | Unit, integration, offline Compose, and Playwright browser test paths | [Makefile](Makefile) and [CI workflow](.github/workflows/ci.yml) |
 
 ## Architecture
 
-The complete topology, trust boundaries, and core workflow are in
+The complete topology, data boundaries, and end-to-end workflow are in
 [docs/architecture.md](docs/architecture.md).
 
 ~~~mermaid
@@ -37,28 +74,46 @@ flowchart LR
   Frontend --> Auth[auth-service]
   Frontend --> Learning[learning-service]
   Frontend --> Grading[grading-service]
-  Auth --> PostgreSQL[(PostgreSQL / auth)]
-  Learning --> PostgreSQL2[(PostgreSQL / learning)]
-  Grading --> PostgreSQL3[(PostgreSQL / grading)]
+  Auth --> AuthDb[(PostgreSQL / auth)]
+  Learning --> LearningDb[(PostgreSQL / learning)]
+  Grading --> GradingDb[(PostgreSQL / grading)]
+  Grading --> Documents[(Submission volume)]
+  Grading -->|approved evidence| Learning
 ~~~
 
-Each application service owns its Flyway migrations. Cross-service identity
-references use stable user IDs rather than shared application tables.
+`auth-service` owns accounts and roles. `learning-service` owns learning data,
+while `grading-service` owns submitted documents and marking state. Each service
+owns its Flyway migrations in a separate PostgreSQL schema; services refer to
+accounts by stable user ID rather than sharing application tables.
 
 ## Database schema
 
-[docs/database-schema.md](docs/database-schema.md) diagrams the main entities,
-links them to executable migrations, and describes cross-schema boundaries.
-Migration integration tests remain the database source of truth.
+[docs/database-schema.md](docs/database-schema.md) maps the principal entities
+to executable Flyway migrations and explains the boundaries among the `auth`,
+`learning`, and `grading` schemas. Migration integration tests are the database
+source of truth.
+
+## Repository map
+
+| Path | Purpose |
+| --- | --- |
+| [frontend](frontend) | Next.js application, UI components, API clients, unit tests, and Playwright scenarios. |
+| [backend/auth-service](backend/auth-service) | Identity, JWT, roles, bootstrap Tutor, and auth migrations. |
+| [backend/learning-service](backend/learning-service) | Classes, Students, syllabus, questions, worksheets, mastery, insights, alerts, and reports. |
+| [backend/grading-service](backend/grading-service) | Uploads, OCR, marking, review workflow, document storage, and marking-to-learning outbox. |
+| [docker](docker) | Nginx production edge plus deterministic E2E AI mock and seed services. |
+| [docs](docs) | Architecture, schema, deployment transport, OCR observability, and validation runbooks. |
+| [scripts](scripts) | Documentation verification and development/production secret and TLS helpers. |
+| [compose.yaml](compose.yaml) | Development topology. [compose.e2e.yaml](compose.e2e.yaml) and [compose.production.yaml](compose.production.yaml) add disposable E2E and production-shaped overlays. |
 
 ## Prerequisites
 
 Install Docker Desktop/Engine with Compose v2 and Git for the container
 workflow. Direct local checks also need Node.js 20, npm, and a complete JDK 17
-with <code>javac</code>. The inventory and evaluator-facing dependency rationale
-are in [DEPENDENCIES.md](DEPENDENCIES.md).
+with `javac`. See [DEPENDENCIES.md](DEPENDENCIES.md) for the dependency
+inventory and evaluator-facing rationale.
 
-Commands that require a Docker daemon, hosted CI, provider key, or VM are
+Commands that need a Docker daemon, hosted CI, a real provider key, or a VM are
 recorded with expected output in
 [docs/SANDBOX-VALIDATION-RUNBOOK.md](docs/SANDBOX-VALIDATION-RUNBOOK.md).
 
@@ -70,10 +125,9 @@ cd ft_transcendence
 cp .env.example .env
 ~~~
 
-Before continuing, replace every <code>change-me</code> value in <code>.env</code>
-with a real local secret. Use the same database password in all database
-variables, a JWT secret of at least 32 random bytes, and a separate high-entropy
-<code>LEARNING_MARKING_SYNC_KEY</code>.
+Replace every `change-me` value in `.env` before starting. Use the same database
+password for the PostgreSQL variables, a JWT secret with at least 32 random
+bytes, and a separate high-entropy `LEARNING_MARKING_SYNC_KEY`.
 
 ~~~bash
 make deps
@@ -82,58 +136,65 @@ make compose-up
 make compose-ps
 ~~~
 
-Expected result: <code>postgres</code>, <code>auth-service</code>,
-<code>grading-service</code>, <code>learning-service</code>, and
-<code>frontend</code> become healthy. Open <http://localhost:3000>; Adminer is
-at <http://localhost:8080>. Use <code>make compose-logs</code> to investigate,
-<code>make compose-down</code> to preserve volumes, and
-<code>make compose-reset</code> only for disposable data.
+The default stack starts PostgreSQL, the three APIs, and the frontend. Open
+<http://localhost:3000>. `adminer` is optional and excluded from the default
+profile; start it at <http://localhost:8080> only when needed:
+
+~~~bash
+docker compose --env-file .env --profile admin-tools up --wait
+~~~
+
+Use `make compose-logs` to investigate, `make compose-down` to stop services
+while preserving data, and `make compose-reset` only for disposable data.
 
 ## Configuration
 
-[.env.example](.env.example) is the complete development variable template. It
-must never be committed as <code>.env</code>.
+[.env.example](.env.example) is the complete development template. Never commit
+the copied `.env` file or any secret file.
 
-| Variable | Purpose |
+| Setting | Purpose |
 | --- | --- |
-| <code>POSTGRES_*</code> | Local PostgreSQL account and database. |
-| <code>JWT_SECRET</code> | Server-side signing key shared by services. |
-| <code>LEARNING_MARKING_SYNC_KEY</code> | Private grading-to-learning hand-off key. |
-| <code>AI_ENGINE_URL</code>, <code>AI_ENGINE_MODEL</code>, <code>AI_VISION_MODEL</code>, <code>AI_ENGINE_API_KEY</code> | OpenAI-compatible marking and OCR provider settings. |
-| <code>NEXT_PUBLIC_*_API_URL</code> | Browser-visible development API origins. |
-| <code>FRONTEND_ALLOWED_ORIGINS</code> | Browser origins permitted by backend CORS. |
+| `POSTGRES_*` and `*_DB_SCHEMA` | Local PostgreSQL account, database, and service schema names. |
+| `JWT_SECRET`, `JWT_EXPIRATION_MS` | Shared JWT signing key and access-token lifetime. |
+| `BOOTSTRAP_TUTOR_*` | Optional one-time first Tutor on a clean startup. |
+| `LEARNING_MARKING_SYNC_KEY` | Private grading-to-learning service credential. |
+| `AI_ENGINE_*` | OpenAI-compatible AI marking endpoint, model, and key. |
+| `AI_VISION_*` | Learning-service vision/OCR provider, limits, retries, and worker timing. |
+| `NEXT_PUBLIC_*_API_URL` | Browser-visible local API origins. Never put provider credentials here. |
+| `FRONTEND_ALLOWED_ORIGINS`, `ENFORCE_HTTPS`, `SECURITY_HEADERS_HSTS_ENABLED` | CORS and HTTPS/header behaviour for the deployment environment. |
 
-Normal Compose is a development topology and publishes diagnostic service ports.
-The production-shaped overlay exposes only Nginx and reads secrets from
-<code>../secrets.txt</code>.
+Normal Compose publishes diagnostic service ports for development. The
+production-shaped overlay exposes only Nginx and reads secrets from
+`../secrets.txt`.
 
 ## Test accounts
 
-Ordinary local development has no committed credentials. Create a Student at
-<code>/signup</code>. To create the first Tutor, set all three
-<code>BOOTSTRAP_TUTOR_*</code> values for one clean startup; existing Tutor
-credentials are never reset.
+Normal development ships with no committed credentials. Create a Student at
+`/signup`. To create the first Tutor, set all three `BOOTSTRAP_TUTOR_*` values
+for one clean startup. Existing Tutor credentials are never reset.
 
-The disposable offline E2E environment seeds only these temporary accounts:
+The disposable offline E2E stack seeds only these accounts:
 
 | Role | Email | Password |
 | --- | --- | --- |
-| Tutor | <code>e2e.tutor@example.test</code> | <code>E2eTutor!Pass123</code> |
-| Student | <code>e2e.student@example.test</code> | <code>E2eStudent!Pass123</code> |
+| Tutor | `e2e.tutor@example.test` | `E2eTutor!Pass123` |
+| Student | `e2e.student@example.test` | `E2eStudent!Pass123` |
 
 ## Development commands
 
 | Command | Outcome |
 | --- | --- |
-| <code>make deps</code> | Installs locked root and frontend JavaScript dependencies. |
-| <code>make compose-config</code> | Validates <code>.env</code> and development Compose configuration. |
-| <code>make compose-up</code> / <code>make compose-down</code> | Starts / stops the development stack. |
-| <code>make compose-ps</code> / <code>make compose-logs</code> | Shows health status / follows logs. |
-| <code>make frontend-lint</code>, <code>make frontend-typecheck</code>, <code>make frontend-test</code> | Runs frontend checks. |
-| <code>make backend-test</code> | Runs Maven verification for all services. |
-| <code>make ci</code> | Runs the local pull-request-equivalent suite. |
+| `make deps` | Installs locked root and frontend JavaScript dependencies. |
+| `make compose-config` | Validates `.env` and the development Compose configuration. |
+| `make compose-up`, `make compose-down` | Starts / stops the development stack. |
+| `make compose-ps`, `make compose-logs` | Shows health status / follows logs. |
+| `make frontend-lint`, `make frontend-typecheck`, `make frontend-test`, `make frontend-build` | Runs frontend checks or production build. |
+| `make backend-auth-test`, `make backend-grading-test`, `make backend-learning-test` | Runs one backend Maven verification suite. |
+| `make test`, `make test-integration`, `make ci` | Runs all tests, integration tests, or local PR-equivalent validation. |
+| `make security-audit` | Fails on high or critical production dependency advisories. |
 
-Run <code>make help</code> for every target.
+Run `make help` for every target. `make fclean` performs a broad Docker prune
+and must be used deliberately.
 
 ## Testing and validation
 
@@ -146,15 +207,15 @@ make test
 make ci
 ~~~
 
-<code>npm run test:readme</code> tests the documentation verifier itself.
-<code>npm run verify:readme</code> validates headings, local evidence links,
-placeholder-free prose, module-table arithmetic, and quick-start command parity.
-It does not award module points. <code>make ci</code> needs Docker and registry
-access for its Compose stage. Use <code>git diff --check</code> before committing.
+`npm run test:readme` tests the README verifier. `npm run verify:readme`
+validates required sections, local evidence links, placeholder-free prose,
+module-scorecard arithmetic, and quick-start command parity. It does not award
+module points. `make ci` also needs Docker and registry access for its Compose
+stage. Run `git diff --check` before committing.
 
 ## Offline Compose browser tests
 
-The browser suite uses deterministic local AI/OCR mock and seed services; it
+The browser suite uses deterministic local AI/OCR mock and seed services, so it
 does not use an OpenAI or DeepSeek key.
 
 ~~~bash
@@ -163,16 +224,16 @@ make e2e-config
 make e2e
 ~~~
 
-On Linux use <code>make e2e-chrome-linux</code>. <code>make e2e</code> creates
-a clean fixture stack, waits for healthy services, runs Playwright, and removes
-its E2E containers and volume even after failure. Use <code>make e2e-up</code>,
-<code>make e2e-test</code>, and <code>make e2e-down</code> to inspect stages.
+On Linux use `make e2e-chrome-linux`. `make e2e` creates a clean fixture stack,
+waits for service health, runs Playwright, then removes its E2E containers and
+volume, including after failure. Use `make e2e-up`, `make e2e-test`, and
+`make e2e-down` to inspect the stages separately.
 
 ## Deployment
 
-The VM-only production-shaped deployment uses <code>lumina.sg</code> as a
-temporary hosts-file name and a self-signed certificate. It is not a public
-Internet deployment. Only the Nginx edge is published on ports 80 and 443.
+The production-shaped VM deployment uses `lumina.sg` as a temporary hosts-file
+name and a self-signed certificate. It is a private VM exercise, not a public
+Internet deployment. Only the Nginx edge publishes ports 80 and 443.
 
 ~~~bash
 cp .env.production.example .env.production
@@ -184,45 +245,46 @@ make production-up
 make production-ps
 ~~~
 
-Set the provider key only in <code>../secrets.txt</code>. OpenAI and DeepSeek
-use the same <code>AI_ENGINE_API_KEY</code> variable; choose their endpoint and
-model in <code>.env.production</code>. The complete VM-only procedure is in
-[docs/production-transport.md](docs/production-transport.md).
+Set the provider key only in `../secrets.txt`. OpenAI and DeepSeek use the same
+`AI_ENGINE_API_KEY`; choose the endpoint and model in `.env.production`. Follow
+the full [production transport runbook](docs/production-transport.md).
 
 ## Security and privacy
 
-- APIs enforce roles, resource ownership, validation, CORS, and response headers;
-  see [learning hardening tests](backend/learning-service/src/test/java/com/fttranscendence/learning/security/SecurityHardeningIntegrationTest.java).
-- Keep <code>.env</code>, <code>../secrets.txt</code>, provider keys, JWT
-  secrets, and TLS private keys outside version control.
-- Browser token storage remains a future hardening target; consider an HttpOnly,
-  Secure, SameSite-cookie session design before an Internet launch.
-- User-facing disclosures: [Privacy Policy](frontend/src/app/privacy/page.tsx)
-  and [Terms](frontend/src/app/terms/page.tsx). Review them against the
-  deployed provider and retention policy before public release.
+- APIs enforce JWT validation, role and resource ownership checks, input
+  validation, CORS, and security headers. See [learning hardening tests](backend/learning-service/src/test/java/com/fttranscendence/learning/security/SecurityHardeningIntegrationTest.java).
+- Grading validates the class, Student, and worksheet relationship with
+  `learning-service` before accepting a submission. Approved marking evidence
+  moves through a private authenticated service call, not the browser.
+- Keep `.env`, `../secrets.txt`, provider keys, JWT secrets, and TLS private
+  keys outside version control.
+- Browser token storage remains a future hardening target. Use an HttpOnly,
+  Secure, SameSite-cookie session design before a public Internet launch.
+- The user-facing disclosures are [Privacy Policy](frontend/src/app/privacy/page.tsx)
+  and [Terms](frontend/src/app/terms/page.tsx). Review them against the deployed
+  provider and retention policy before public release.
 
 ## Continuous integration
 
 [.github/workflows/ci.yml](.github/workflows/ci.yml) has two tiers:
 
-- Pull requests run <code>Frontend checks</code>, three <code>Backend checks</code>
-  matrix entries, and <code>Compose configuration and images</code>.
-- <code>main</code>, nightly, and manual runs execute <code>Offline E2E</code>,
-  retaining failure artefacts and Compose logs for 14 days.
+- Pull requests run `Frontend checks`, three `Backend checks` matrix entries,
+  and `Compose configuration and images`.
+- `main`, nightly, and manual runs execute `Offline E2E`, retaining failure
+  artefacts and Compose logs for 14 days.
 
 Make the first four check names branch-protection requirements only after they
-have successfully run. Keep <code>Offline E2E</code> post-merge until hosted
-runner timing and reliability are measured.
+have run successfully. Keep `Offline E2E` post-merge until hosted-runner timing
+and reliability are measured.
 
 ## Module evidence
 
 **Module catalogue status:** BLOCKED
 
-The exact official 42 subject/module catalogue for this evaluation is not
-checked into this repository. Therefore no point claim is made. This is a
-ready-to-map feature inventory, not an assertion that it earns a module in
-another subject version. See the
-[module catalogue blocker log](docs/module-catalogue-blocker.md).
+The exact official 42 subject/module catalogue for this evaluation is not in
+the repository, so Lumina makes no module-point claim. This is a ready-to-map
+feature inventory, not an assertion that it earns a module in another subject
+version. See the [module catalogue blocker log](docs/module-catalogue-blocker.md).
 
 <!-- MODULE_SCORECARD_START -->
 | Catalogue ID | Claim | Points | Implementation | Test | Status |
@@ -232,26 +294,26 @@ another subject version. See the
 
 **Verified module total:** 0 / 14
 
-After the official catalogue is added, replace the blocked row with one row per
-claim, cite the official ID and point value, link implementation and passing
-automated evidence, then run:
+Once the official catalogue is available, replace the blocked row with one row
+per claim, cite the official ID and point value, link implementation and
+passing automated evidence, then run:
 
 ~~~bash
 npm run verify:modules
 ~~~
 
-The command fails until the documented verified total is at least 14; it cannot
+The command fails until the documented verified total is at least 14. It cannot
 turn a feature inventory into evaluation points by itself.
 
 ## Known limitations
 
-- The official, versioned module catalogue is absent, so the requested 14-point
+- The official versioned module catalogue is absent, so the requested 14-point
   assessment cannot yet be verified.
-- VM-only TLS uses a self-signed certificate and temporary hosts-file entry.
-- Provider-dependent OCR/marking needs a real key and deployment smoke test;
-  offline E2E uses deterministic fixtures instead.
-- Development Compose publishes diagnostic ports; use the production overlay
-  for private service networking.
+- VM TLS uses a self-signed certificate and temporary hosts-file entry.
+- Provider-dependent OCR and marking require a real key and deployment smoke
+  test; offline E2E uses deterministic fixtures instead.
+- Development Compose exposes diagnostic ports. Use the production overlay for
+  private service networking.
 
 ## Contributors
 
@@ -261,5 +323,6 @@ feature documentation linked to implementation and tests.
 
 ## Licence
 
-The root package metadata currently declares the ISC licence. Confirm the
-team's intended distribution licence before publishing or public deployment.
+No licence file is currently included. Do not assume permission to reuse,
+redistribute, or deploy the project beyond the applicable 42 curriculum terms
+until the contributors add an explicit licence.
