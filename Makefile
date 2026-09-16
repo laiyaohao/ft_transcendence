@@ -5,6 +5,8 @@ TEMPLATE_ENV_FILE := ./.env.example
 COMPOSE := docker compose --env-file $(ENV_FILE) -f $(COMPOSE_FILE)
 TEMPLATE_COMPOSE := docker compose --env-file $(TEMPLATE_ENV_FILE) -f $(COMPOSE_FILE)
 COMPOSE_WAIT_TIMEOUT ?= 180
+LOCAL_TLS_DIRECTORY ?= ../tls-local
+LOCAL_HTTPS_COMPOSE := LOCAL_TLS_DIRECTORY="$(LOCAL_TLS_DIRECTORY)" $(COMPOSE) -f ./compose.local-https.yaml
 
 E2E_ENV_FILE := ./compose.e2e.env
 E2E_COMPOSE_FILES := -f ./compose.yaml -f ./compose.e2e.yaml
@@ -39,6 +41,13 @@ compose-logs:
 
 compose-down:
 	$(COMPOSE) down
+
+compose-https-up:
+	@sh ./scripts/generate-local-tls.sh "$(LOCAL_TLS_DIRECTORY)"
+	$(LOCAL_HTTPS_COMPOSE) up --build --wait --wait-timeout $(COMPOSE_WAIT_TIMEOUT)
+
+compose-https-down:
+	$(LOCAL_HTTPS_COMPOSE) down
 
 compose-restart:
 	$(COMPOSE) restart
@@ -210,6 +219,7 @@ help:
 	@echo "  compose-ps         Show development service status"
 	@echo "  compose-logs       Follow development service logs"
 	@echo "  compose-down       Stop development containers, preserving volumes"
+	@echo "  compose-https-up | compose-https-down  Local HTTPS on https://localhost:3000"
 	@echo "  compose-restart    Restart development containers"
 	@echo "  compose-reset      Delete disposable development containers and volumes"
 	@echo ""
@@ -239,6 +249,7 @@ help:
 .PHONY: all \
 	compose-config compose-build compose-up compose-ps compose-logs compose-down \
 	compose-restart compose-reset \
+	compose-https-up compose-https-down \
 	build up down clean re fclean \
 	deps frontend-deps frontend-lint frontend-typecheck frontend-test frontend-build \
 	backend-auth-test backend-grading-test backend-learning-test \

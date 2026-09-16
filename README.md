@@ -147,6 +147,27 @@ docker compose --env-file .env --profile admin-tools up --wait
 Use `make compose-logs` to investigate, `make compose-down` to stop services
 while preserving data, and `make compose-reset` only for disposable data.
 
+### Local HTTPS on port 3000
+
+With the same `.env`, run `make compose-https-up` and open
+<https://localhost:3000/login>. This adds a local Nginx proxy and routes the
+frontend and APIs through HTTPS on port 3000, so login has no mixed-content or
+CORS mismatch. Plain HTTP on that port redirects to HTTPS, preserving the URL.
+Only the loopback port 3000 is published; the database and APIs stay inside
+Docker. No public domain or production configuration is needed.
+
+The command requires OpenSSL and creates a one-year self-signed certificate in
+`../tls-local`, outside the checkout. Your browser will warn until you trust
+that local certificate (`fullchain.pem`) in your system certificate store.
+On macOS, open it in Keychain Access, add it to the login keychain, and set
+its Trust setting to **Always Trust**, then restart the browser.
+Alternatively, supply a trusted local-CA certificate for `localhost` as
+`fullchain.pem` and `privkey.pem` there. Existing certificates are preserved;
+replace them when expired. Override the location with `LOCAL_TLS_DIRECTORY`.
+
+Stop with `make compose-https-down`. To return to HTTP, run that command first,
+then `make compose-up`. Application data is preserved when switching.
+
 ## Configuration
 
 [.env.example](.env.example) is the complete development template. Never commit
