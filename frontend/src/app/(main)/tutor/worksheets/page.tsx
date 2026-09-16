@@ -51,8 +51,8 @@ export default function TutorWorksheetsPage() {
       );
     }
   }, [classId, validClassId]);
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- the async load owns its loading state.
   React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the async load owns its loading state.
     void load();
   }, [load]);
   React.useEffect(() => {

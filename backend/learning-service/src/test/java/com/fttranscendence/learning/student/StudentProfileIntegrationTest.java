@@ -300,21 +300,23 @@ class StudentProfileIntegrationTest {
             "SELECT id FROM worksheets WHERE tutor_id = ? AND code = ?", Long.class, tutorId, code);
     if ("CLASS".equals(audienceType)) {
       jdbcTemplate.update(
-          "INSERT INTO worksheet_assignments (worksheet_id, tutor_id, assignment_type, target_id, class_id, due_at) VALUES (?, ?, ?, ?, ?, ?)",
+          "INSERT INTO worksheet_assignments (worksheet_id, tutor_id, assignment_type, target_id, class_id, assigned_at, due_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
           worksheetId,
           tutorId,
           audienceType,
           targetId,
           classId,
+          dueAt.minusDays(7),
           dueAt);
     } else {
       jdbcTemplate.update(
-          "INSERT INTO worksheet_assignments (worksheet_id, tutor_id, assignment_type, target_id, student_profile_id, due_at) VALUES (?, ?, ?, ?, ?, ?)",
+          "INSERT INTO worksheet_assignments (worksheet_id, tutor_id, assignment_type, target_id, student_profile_id, assigned_at, due_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
           worksheetId,
           tutorId,
           audienceType,
           targetId,
           targetId,
+          dueAt.minusDays(7),
           dueAt);
     }
     return worksheetId;

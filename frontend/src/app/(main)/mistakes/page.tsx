@@ -144,8 +144,8 @@ export default function Page() {
     }
   }, [request]);
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- filters intentionally refetch their persisted server-side view.
   React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- filters intentionally refetch their persisted server-side view.
     void load();
   }, [load]);
 

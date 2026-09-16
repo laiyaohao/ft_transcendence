@@ -90,8 +90,8 @@ class MigrationIntegrationTest {
     assertEquals(1, tableCount("class_insight_refresh_queue"));
     assertEquals(1, tableCount("tutor_notes"));
     assertEquals(1, tableCount("question_import_diagram_crops"));
-    assertEquals("28", flyway.info().current().getVersion().getVersion());
-    assertEquals(28, versionedMigrationCount());
+    assertEquals("30", flyway.info().current().getVersion().getVersion());
+    assertEquals(30, versionedMigrationCount());
     assertEquals(
         1,
         jdbcTemplate.queryForObject(

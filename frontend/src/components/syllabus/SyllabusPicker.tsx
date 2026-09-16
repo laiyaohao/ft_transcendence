@@ -121,12 +121,12 @@ export default function SyllabusPicker({
     }
   }, [loadSyllabus]);
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- the async load owns its loading state.
   React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the async load owns its loading state.
     void load();
   }, [load]);
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- selection is derived from the loaded tree and controlled value.
   React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- selection is derived from the loaded tree and controlled value.
     setSelection(selectionFor(tree, value));
   }, [tree, value]);
 

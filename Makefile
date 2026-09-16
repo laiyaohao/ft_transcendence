@@ -153,7 +153,7 @@ e2e: e2e-config
 	$(E2E_COMPOSE) up --build --wait --wait-timeout 180; \
 	npm --prefix frontend run test:e2e:ci
 
-## VM-only production-shaped Compose commands
+## Production HTTPS Compose commands
 production-config:
 	@test -f ../secrets.txt || (echo "Missing external secrets file: ../secrets.txt"; exit 1)
 	@test -f ./.env.production || (echo "Missing production config: ./.env.production"; exit 1)
@@ -164,6 +164,18 @@ production-secrets:
 
 vm-tls:
 	@./scripts/generate-vm-tls.sh ../tls
+
+# Initial issuance requires port 80 to be free. Renewals use the running edge.
+production-cert: production-config
+	$(PRODUCTION_COMPOSE) run --rm --no-deps -p 80:80 --entrypoint sh certbot -c 'exec certbot certonly --standalone --non-interactive --agree-tos --email "$${ACME_EMAIL:?Set ACME_EMAIL}" --cert-name "$$PUBLIC_APP_DOMAIN" -d "$$PUBLIC_APP_DOMAIN"'
+
+production-renew: production-config
+	$(PRODUCTION_COMPOSE) run --rm --no-deps certbot renew --webroot -w /var/www/certbot --non-interactive
+	$(PRODUCTION_COMPOSE) exec -T nginx nginx -t
+	$(PRODUCTION_COMPOSE) exec -T nginx nginx -s reload
+
+production-renew-test: production-config
+	$(PRODUCTION_COMPOSE) run --rm --no-deps certbot renew --webroot -w /var/www/certbot --non-interactive --dry-run
 
 production-build: production-config
 	$(PRODUCTION_COMPOSE) build
@@ -215,10 +227,11 @@ help:
 	@echo "  e2e-config | e2e-build | e2e-up | e2e-test | e2e-chrome | e2e-chrome-linux | e2e-down | e2e-reset"
 	@echo "  e2e               Start, test, and remove the fixture stack"
 	@echo ""
-	@echo "VM-only HTTPS stack:"
-	@echo "  production-secrets | vm-tls | production-config | production-build"
+	@echo "Production HTTPS stack:"
+	@echo "  production-secrets | production-cert | production-config | production-build"
 	@echo "  production-up | production-ps | production-logs | production-down"
-	@echo "  production-restart | production-reset"
+	@echo "  production-restart | production-reset | production-renew | production-renew-test"
+	@echo "  vm-tls            Optional self-signed certificate for private VM tests only"
 	@echo ""
 	@echo "Compatibility aliases: build, up, down, clean, re."
 	@echo "fclean also runs a broad Docker system prune; use it deliberately."
@@ -234,6 +247,6 @@ help:
 	ci-frontend ci-backend security-audit ci-compose ci \
 	e2e-config e2e-build e2e-up e2e-test e2e-chrome e2e-chrome-linux e2e-down \
 	e2e-reset e2e \
-	production-config production-secrets vm-tls production-build production-up \
+	production-config production-secrets vm-tls production-cert production-renew production-renew-test production-build production-up \
 	production-ps production-logs production-down production-restart production-reset \
 	help

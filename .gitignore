@@ -25,3 +25,11 @@ SKILL.md
 **/SKILL.md
 skills.md
 **/skills.md
+
+# TLS material belongs outside the checkout.
+*.pem
+*.key
+*.crt
+letsencrypt/
+tls/
+secrets.txt

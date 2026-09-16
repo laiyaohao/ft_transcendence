@@ -25,6 +25,9 @@ const PROTECTED_PATHS = [
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  // The production edge uses internal HTTP. A configured public origin keeps
+  // redirects on HTTPS without trusting client-supplied forwarding headers.
+  const redirectOrigin = process.env.PUBLIC_APP_ORIGIN || request.url;
   const token = request.cookies.get("auth_token")?.value;
   // Middleware performs navigation hygiene; backend services still verify the signature.
   const session = token ? parseAuthToken(token) : null;
@@ -38,18 +41,18 @@ export function proxy(request: NextRequest) {
   );
 
   if (isProtectedPath && !session) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    return NextResponse.redirect(new URL("/login", redirectOrigin));
   }
 
   if (isPublicPath && session) {
     return NextResponse.redirect(
-      new URL(getRoleHome(session.role), request.url),
+      new URL(getRoleHome(session.role), redirectOrigin),
     );
   }
 
   if (isProtectedPath && session && !isPathAllowed(session.role, pathname)) {
     return NextResponse.redirect(
-      new URL(getRoleHome(session.role), request.url),
+      new URL(getRoleHome(session.role), redirectOrigin),
     );
   }
 

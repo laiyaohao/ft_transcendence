@@ -64,6 +64,30 @@ describe("authentication sessions", () => {
     expect(document.cookie).not.toContain("auth_token=");
   });
 
+  it.each([
+    ["https:", true],
+    ["http:", false],
+  ])("sets Secure only for %s sessions", (protocol, secure) => {
+    const cookie = vi.spyOn(document, "cookie", "set");
+    vi.stubGlobal("window", { location: { protocol }, localStorage });
+    try {
+      saveAuthSession({
+        token: token("STUDENT", Math.floor(Date.now() / 1000) + 3600),
+        email: "user@example.com",
+        role: "STUDENT",
+      });
+      const value = cookie.mock.calls.at(-1)?.[0] ?? "";
+      expect(value).toContain("SameSite=Lax");
+      expect(value.includes("; Secure")).toBe(secure);
+      clearAuthSession();
+      expect(getBrowserSession()).toBeNull();
+      expect(document.cookie).not.toContain("auth_token=");
+    } finally {
+      cookie.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("rejects a response whose role does not match its token claim", () => {
     const jwt = token("STUDENT", Math.floor(Date.now() / 1000) + 3600);
 

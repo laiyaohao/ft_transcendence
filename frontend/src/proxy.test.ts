@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { proxy } from "./proxy";
 
@@ -19,6 +19,37 @@ function request(pathname: string, role?: "TUTOR" | "STUDENT") {
 }
 
 describe("route proxy", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("keeps production redirects on the configured HTTPS origin behind the proxy", () => {
+    vi.stubEnv("PUBLIC_APP_ORIGIN", "https://school.example");
+    const internal = new NextRequest("http://frontend:3000/classes", {
+      headers: {
+        "x-forwarded-host": "attacker.example",
+        "x-forwarded-proto": "http",
+      },
+    });
+    expect(proxy(internal).headers.get("location")).toBe(
+      "https://school.example/login",
+    );
+    expect(proxy(request("/login", "TUTOR")).headers.get("location")).toBe(
+      "https://school.example/tutor/dashboard",
+    );
+    expect(proxy(request("/classes", "STUDENT")).headers.get("location")).toBe(
+      "https://school.example/student/dashboard",
+    );
+  });
+
+  it("keeps local HTTP redirects independent of untrusted forwarded headers", () => {
+    vi.stubEnv("PUBLIC_APP_ORIGIN", "");
+    const local = new NextRequest("http://localhost:3000/classes", {
+      headers: { "x-forwarded-host": "attacker.example" },
+    });
+    expect(proxy(local).headers.get("location")).toBe(
+      "http://localhost:3000/login",
+    );
+  });
+
   it("allows a Tutor to open the dashboard and redirects a Student home", () => {
     expect(proxy(request("/tutor/dashboard", "TUTOR")).status).toBe(200);
     const response = proxy(request("/tutor/dashboard", "STUDENT"));

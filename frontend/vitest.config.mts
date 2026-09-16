@@ -15,8 +15,9 @@ export default defineConfig({
     // Vitest to source tests so it does not collect browser specs or dependency
     // fixture tests during the PR unit suite.
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
-    // MUI interaction tests run concurrently and can exceed Vitest's five-second
-    // default on developer and container hosts without indicating a deadlock.
+    // Bound jsdom/MUI workers to avoid CPU contention and interaction timeouts
+    // when the suite runs alongside backend checks or on small CI runners.
+    maxWorkers: 2,
     testTimeout: 15_000,
     setupFiles: ["./src/test/setup.ts"],
     server: {

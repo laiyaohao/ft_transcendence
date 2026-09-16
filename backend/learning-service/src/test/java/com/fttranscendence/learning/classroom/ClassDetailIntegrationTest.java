@@ -203,12 +203,13 @@ class ClassDetailIntegrationTest {
         jdbcTemplate.queryForObject(
             "SELECT id FROM worksheets WHERE tutor_id = ? AND code = ?", Long.class, tutorId, code);
     jdbcTemplate.update(
-        "INSERT INTO worksheet_assignments (worksheet_id, tutor_id, assignment_type, target_id, class_id, due_at) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO worksheet_assignments (worksheet_id, tutor_id, assignment_type, target_id, class_id, assigned_at, due_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
         worksheetId,
         tutorId,
         "CLASS",
         classId,
         classId,
+        dueAt.minusDays(7),
         dueAt);
   }
 

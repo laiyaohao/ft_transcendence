@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -83,7 +83,8 @@ async function choose(
   option: string,
 ) {
   await user.click(await screen.findByLabelText(label));
-  await user.click(await screen.findByRole("option", { name: option }));
+  const listbox = await screen.findByRole("listbox");
+  await user.click(within(listbox).getByRole("option", { name: option }));
 }
 
 async function fillValidForm(user: ReturnType<typeof userEvent.setup>) {
@@ -146,7 +147,7 @@ describe("QuestionForm", () => {
       ),
     );
     expect(onComplete).toHaveBeenCalledWith(savedQuestion);
-  }, 15_000);
+  });
 
   it("stops required and unequal-mark submissions before calling the service", async () => {
     const user = userEvent.setup();
@@ -182,9 +183,9 @@ describe("QuestionForm", () => {
         "Enter marks greater than zero with up to two decimal places.",
       ),
     ).toBeVisible();
-  }, 15_000);
+  });
 
-  it("renders server rejection fields and blocks a duplicate click while saving", async () => {
+  it("blocks a duplicate submission while saving", async () => {
     const user = userEvent.setup();
     let resolve!: (question: TutorQuestion) => void;
     const submitQuestion = vi.fn(
@@ -193,7 +194,7 @@ describe("QuestionForm", () => {
           resolve = complete;
         }),
     );
-    const firstForm = render(
+    render(
       <QuestionForm
         mode="create"
         submitQuestion={submitQuestion}
@@ -206,6 +207,9 @@ describe("QuestionForm", () => {
     expect(
       screen.getByRole("button", { name: "Creating question…" }),
     ).toBeDisabled();
+    fireEvent.submit(
+      screen.getByRole("button", { name: "Creating question…" }).closest("form")!,
+    );
     expect(submitQuestion).toHaveBeenCalledTimes(1);
     resolve(savedQuestion);
     await waitFor(() =>
@@ -213,8 +217,10 @@ describe("QuestionForm", () => {
         screen.getByRole("button", { name: "Create question" }),
       ).toBeEnabled(),
     );
-    firstForm.unmount();
+  });
 
+  it("renders server rejection fields", async () => {
+    const user = userEvent.setup();
     const rejected = vi
       .fn()
       .mockRejectedValue(
@@ -235,7 +241,7 @@ describe("QuestionForm", () => {
     expect(
       await screen.findAllByText("This code is already in use."),
     ).not.toHaveLength(0);
-  }, 15_000);
+  });
 
   it("explains the manual reference code and existing taxonomy path", async () => {
     render(

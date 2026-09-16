@@ -316,8 +316,8 @@ export default function StudentList({
     };
   }, [classId, loadStudents]);
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- the selected filter follows the route parameter.
   React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the selected filter follows the route parameter.
     setClassFilter(classId ? String(classId) : "ALL");
   }, [classId]);
 

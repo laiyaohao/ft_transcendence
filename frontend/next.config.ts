@@ -34,6 +34,7 @@ const contentSecurityPolicy = [
 ].join("; ");
 
 const nextConfig: NextConfig = {
+  agentRules: false,
   output: "standalone",
   poweredByHeader: false,
   async headers() {

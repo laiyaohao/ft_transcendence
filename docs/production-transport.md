@@ -1,111 +1,150 @@
-# Production transport and headers
+# Production HTTPS
 
-The production topology is an overlay, not a replacement for local development.
-It is configured for the public hostname `lumina.sg`:
+## Architecture
 
-```bash
-cp .env.production.example .env.production
-# Keep ../secrets.txt outside the repository. This creates it once with mode
-# 600 and refuses to overwrite it. Replace the AI-provider key afterwards.
-make production-secrets
-make vm-tls
-make production-config
-make production-up
+Docker Compose runs Next.js (3000), three Spring Boot APIs (8081–8083), and
+PostgreSQL (5432). `compose.production.yaml` removes their host port mappings.
+Only Nginx publishes **80/443**, terminating TLS and proxying private HTTP:
+
+```text
+Internet HTTPS :443 → Nginx → frontend / auth / learning / grading
+Internet HTTP  :80  → 308 HTTPS redirect (except ACME HTTP-01 challenges)
 ```
 
-`make production-up` invokes Docker Compose with `--env-file .env.production`
-and `--env-file ../secrets.txt`. Docker Compose reads the external file only at
-container start and supplies its values as runtime environment variables; the
-Dockerfiles do not copy or bake secrets into an image. `../secrets.txt` is
-resolved from the repository root, so it belongs beside the repository folder.
+Browser APIs use same-origin `/auth`, `/learning`, and `/grading` prefixes;
+Nginx strips those prefixes. Production CORS and `PUBLIC_APP_ORIGIN` are derived
+from `PUBLIC_APP_DOMAIN`. The latter keeps Next.js login/role redirects on the
+public HTTPS origin even though the upstream connection is HTTP.
+Nginx replaces incoming forwarding headers with the actual client IP, validated
+host, port 443 and HTTPS scheme, and removes `Forwarded`. It is the direct
+Internet edge: do not put another proxy in front without configuring its exact
+trusted addresses. Spring's stateless APIs do not require forwarded-header trust.
 
-## VM-only hostname and TLS
+There are no application WebSockets, OAuth callbacks, Telegram integrations, or
+external incoming webhooks. The proxy supports WebSocket upgrades for future
+same-origin `wss://` clients. AI provider endpoints already use HTTPS; internal
+service URLs and health probes intentionally remain HTTP.
 
-`make vm-tls` creates `../tls/fullchain.pem` and `../tls/privkey.pem`: a
-30-day self-signed certificate for `lumina.sg`. It is only for a VM test and
-refuses to overwrite existing files. On the browser machine, map the VM's IP
-address to `lumina.sg` in the hosts file, then explicitly trust this local
-certificate in the OS/browser before opening `https://lumina.sg`. HSTS remains
-off in this profile to avoid pinning an untrusted test certificate. Do not use
-this generated certificate on the public Internet.
+## First deployment
 
-## External secrets file
+Use Docker Engine with Compose **2.24.4+** (the overlay uses `!reset`). On a Linux
+host with systemd, Docker and Make installed:
 
-Generate the initial file once from the repository root:
+1. Point the domain's **A** record at the host. Publish **AAAA** only if IPv6
+   reaches the same host. Permit inbound TCP **80 and 443** in the host/cloud
+   firewall and any NAT; leave them open for redirects and ACME renewal.
+   Do not expose 3000, 5432, 8080, or 8081–8083. Allow outbound DNS and HTTPS to
+   Let's Encrypt, image registries, and the configured AI provider.
+2. Configure the deployment:
 
-```bash
-make production-secrets
-```
+   ```bash
+   cp .env.production.example .env.production
+   make production-secrets
+   # Edit .env.production and ../secrets.txt before continuing.
+   make production-config
+   make production-cert
+   make production-up
+   make production-ps
+   ```
 
-The generated `../secrets.txt` contains the database password, JWT signing
-secret, marking-sync credential, and an initial Tutor password. It also has an
-`AI_ENGINE_API_KEY` entry that must be replaced with a real key from the
-approved AI provider before marking or OCR can work. That credential cannot be
-generated locally because it is issued by the provider.
+   Set `PUBLIC_APP_DOMAIN` to a hostname you control (no scheme, port or path),
+   `ACME_EMAIL` to your certificate-account email, and `TLS_DIRECTORY` to a
+   persistent directory **outside the repository** (default `../letsencrypt`).
+   Set the AI provider key and bootstrap Tutor credentials in `../secrets.txt`,
+   retaining mode 600. Existing files are never overwritten by the secret generator.
 
-There is only one OpenAI API key; it is not split into OCR and response keys.
-Paste it after `AI_ENGINE_API_KEY=` in `../secrets.txt`, without quotes or
-spaces, and leave it server-side. The current implementation sends
-OpenAI-compatible Chat Completions requests for both text marking and
-base64-image OCR. The default `.env.production` profile uses OpenAI's endpoint
-and an image-capable model for both paths. To use DeepSeek instead, change only
-the endpoint and two model values to the commented DeepSeek profile, then paste
-the DeepSeek key into the same `AI_ENGINE_API_KEY` field. A DeepSeek text-only
-model cannot perform OCR; its configured vision model is required for that
-path.
+3. `production-cert` uses Certbot's standalone HTTP-01 listener, so port **80
+   must be free** during initial issuance. On an existing deployment, stop only
+   the edge first using the Compose command below with `stop nginx`; then run
+   `make production-cert` and `make production-up`. This incurs a brief outage.
+   Issuance requires real public DNS; a hosts-file entry is insufficient.
+4. Install automatic renewal, after editing `WorkingDirectory` in the service
+   file to the absolute repository path on this host:
 
-For a VM-only test, make the browser machine resolve `lumina.sg` to the VM
-(for example, by a temporary hosts-file entry). HTTPS still needs a certificate
-whose subject/SAN covers `lumina.sg`; a self-signed certificate is suitable
-only when its issuing certificate is explicitly trusted by that test browser.
+   ```bash
+   sudo install -m 644 docker/systemd/lumina-cert-renew.service /etc/systemd/system/
+   sudo install -m 644 docker/systemd/lumina-cert-renew.timer /etc/systemd/system/
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now lumina-cert-renew.timer
+   make production-renew-test
+   systemctl list-timers lumina-cert-renew.timer
+   ```
 
-Only Nginx publishes host ports 80 and 443. HTTP redirects to HTTPS. PostgreSQL,
-Adminer, the frontend, and all three application services have no production
-host-port mapping. Adminer is also disabled by default; it can only be started
-for a controlled maintenance session with `--profile maintenance` and remains
-unpublished.
+   The timer checks twice daily with up to one hour of jitter and catches missed
+   runs after reboot. `make production-renew` uses HTTP-01 webroot validation
+   through the running Nginx, then validates and gracefully reloads Nginx.
+   Certificate files and the ACME account persist in `TLS_DIRECTORY`; Nginx
+   mounts the entire tree read-only so `live/` → `archive/` symlinks and renewed
+   files remain visible. No Docker socket is mounted in Certbot. Monitor failures
+   with `journalctl -u lumina-cert-renew.service` and external expiry monitoring.
+   On non-systemd hosts, schedule `make production-renew` twice daily from the
+   checkout using the host scheduler and monitor its exit status.
 
-Nginx terminates TLS using the PEM certificate chain and private key mounted
-from `TLS_CERT_PATH` and `TLS_KEY_PATH`. It accepts only `PUBLIC_APP_DOMAIN`,
-adds HSTS after successful TLS negotiation, and forwards the original host,
-client address chain, and HTTPS scheme to upstream services. It proxies the
-same-origin browser prefixes as follows:
-
-| Browser prefix | Service path after proxying |
-| --- | --- |
-| `/auth/` | auth-service `/` |
-| `/learning/` | learning-service `/` |
-| `/grading/` | grading-service `/` |
-
-The production frontend is built with those relative prefixes, so no browser
-request needs a direct backend origin. `FRONTEND_ALLOWED_ORIGINS` is still set
-to exactly `https://PUBLIC_APP_DOMAIN` as defence in depth for backend CORS.
-Do not add wildcard CORS or CSP entries. Add third-party origins only after an
-approved and tested integration.
-
-## Deployment smoke test
-
-After real DNS and certificates are installed, verify the edge from outside the
-Docker host:
+Production Make targets use:
 
 ```bash
-curl -I http://PUBLIC_APP_DOMAIN/
-curl -I https://PUBLIC_APP_DOMAIN/login
-curl -fsS https://PUBLIC_APP_DOMAIN/healthz
-curl -I https://PUBLIC_APP_DOMAIN/auth/api/auth/login
+docker compose --env-file .env.production --env-file ../secrets.txt \
+  -f compose.yaml -f compose.production.yaml <command>
 ```
 
-The first response must be a 301 HTTPS redirect. The HTTPS response must expose
-`Strict-Transport-Security`, `Content-Security-Policy`, `X-Content-Type-Options`,
-and `Referrer-Policy`; the API process ports must not be reachable from the
-Internet. Use an actual login and upload flow to prove forwarded HTTPS headers,
-upload limits, and certificates in the target environment. Do not preload HSTS
-until the selected domain and TLS operation have been stable.
+Back up the external certificate directory and secrets securely. Never commit
+keys or certificates. `production-reset` deletes application data and is only
+for disposable environments.
 
-## Deliberate boundary
+## Existing certificates and private VM tests
 
-The `application` Docker network is not marked `internal: true`: grading needs
-outbound access to its configured AI/OCR provider. It remains private in the
-important sense that no application service has a host-port mapping. Restrict
-that egress at the host/firewall layer to the approved provider when the
-deployment platform supports it.
+Externally managed certificates are also supported: set `TLS_DIRECTORY` to a
+certificate directory, and `TLS_CERT_FILE` / `TLS_KEY_FILE` to relative PEM paths
+inside it. Defaults are `live/PUBLIC_APP_DOMAIN/fullchain.pem` and
+`live/PUBLIC_APP_DOMAIN/privkey.pem`. The chain must match the hostname and key.
+After external renewal, validate and reload Nginx using the Compose command
+above with `exec -T nginx nginx -t` and then `exec -T nginx nginx -s reload`.
+Use the external issuer's renewal scheduler instead of the Certbot timer.
+
+When upgrading the old VM configuration, replace `TLS_CERT_PATH` / `TLS_KEY_PATH`
+with `TLS_DIRECTORY=../tls`, `TLS_CERT_FILE=fullchain.pem`, and
+`TLS_KEY_FILE=privkey.pem`. `make vm-tls` still generates a 30-day self-signed
+certificate for the existing `lumina.sg` VM test. Trust it explicitly on the
+private test client; it is **not a public production certificate**. A public
+deployment should use the Let's Encrypt workflow above instead.
+
+## Security and local development
+
+`compose.yaml`, `.env.example`, and `npm run dev` retain local HTTP without
+certificates. Production builds use relative API URLs, avoiding mixed content.
+The existing browser auth cookie uses `Secure` on HTTPS and `SameSite=Lax`;
+JWT bearer authentication remains unchanged. Tokens are still accessible to
+JavaScript/localStorage, an existing limitation documented in the README.
+
+HSTS defaults off. After trusted HTTPS and renewal have been verified, set
+`SECURITY_HEADERS_HSTS_ENABLED=true` and run `make production-up`. Nginx sends
+`max-age=31536000` for this host only, with no subdomain policy or preload.
+Keep it off for private VM tests. The edge hides upstream HSTS policies.
+
+## Verification on the deployment host
+
+Replace `your-domain.example` below with the configured hostname. Never bypass
+certificate verification with `-k`:
+
+```bash
+curl -sS -D - -o /dev/null 'http://your-domain.example/login?next=%2Fclasses'
+# 308; Location: https://your-domain.example/login?next=%2Fclasses
+curl -fsS https://your-domain.example/healthz
+curl -fsS https://your-domain.example/auth/actuator/health
+curl -fsS https://your-domain.example/learning/actuator/health
+curl -fsS https://your-domain.example/grading/actuator/health
+curl -sS -D - -o /dev/null https://your-domain.example/
+# Login redirect stays on the public HTTPS hostname, with no internal port.
+make production-ps
+make production-renew-test
+```
+
+Log in as each role, navigate, upload and log out in a browser. Check that all
+API requests use HTTPS, the console has no mixed-content errors, and the auth
+cookie has Secure/SameSite=Lax. Confirm backend/database ports are unreachable
+from outside the host. The local Nginx health probe uses `127.0.0.1/healthz`;
+public HTTP `/healthz` redirects like every non-ACME path.
+
+References: [Certbot Docker installation](https://eff-certbot.readthedocs.io/en/stable/install.html#running-with-docker),
+[Certbot renewal](https://eff-certbot.readthedocs.io/en/stable/using.html#renewing-certificates),
+[Nginx proxy headers](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_set_header).

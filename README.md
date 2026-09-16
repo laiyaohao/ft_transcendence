@@ -231,23 +231,25 @@ volume, including after failure. Use `make e2e-up`, `make e2e-test`, and
 
 ## Deployment
 
-The production-shaped VM deployment uses `lumina.sg` as a temporary hosts-file
-name and a self-signed certificate. It is a private VM exercise, not a public
-Internet deployment. Only the Nginx edge publishes ports 80 and 443.
+Production HTTPS terminates at the existing Nginx reverse proxy. Only ports
+**80 and 443** are published; the frontend, APIs, and database stay private.
+HTTP redirects permanently to HTTPS, preserving paths and query strings.
 
 ~~~bash
 cp .env.production.example .env.production
 make production-secrets
-chmod 600 ../secrets.txt
-make vm-tls
-make production-config
+# Set PUBLIC_APP_DOMAIN, ACME_EMAIL, and the external provider/bootstrap secrets.
+# Point public DNS at this host and allow TCP 80/443; port 80 must be free initially.
+make production-cert
 make production-up
 make production-ps
 ~~~
 
-Set the provider key only in `../secrets.txt`. OpenAI and DeepSeek use the same
-`AI_ENGINE_API_KEY`; choose the endpoint and model in `.env.production`. Follow
-the full [production transport runbook](docs/production-transport.md).
+Certificates use Let's Encrypt. **Install the included twice-daily renewal timer**
+and run the renewal dry-run as described in the
+[production transport runbook](docs/production-transport.md). It also covers
+firewalls, external certificate paths, smoke tests, and optional private VM TLS.
+Local development continues to use HTTP without certificates.
 
 ## Security and privacy
 
