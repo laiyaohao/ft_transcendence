@@ -177,7 +177,7 @@ the copied `.env` file or any secret file.
 | --- | --- |
 | `POSTGRES_*` and `*_DB_SCHEMA` | Local PostgreSQL account, database, and service schema names. |
 | `JWT_SECRET`, `JWT_EXPIRATION_MS` | Shared JWT signing key and access-token lifetime. |
-| `BOOTSTRAP_TUTOR_*` | Optional one-time first Tutor on a clean startup. |
+| `BOOTSTRAP_TUTOR_*` | Optional Tutor creation at startup; existing accounts are preserved. |
 | `LEARNING_MARKING_SYNC_KEY` | Private grading-to-learning service credential. |
 | `AI_ENGINE_*` | OpenAI-compatible AI marking endpoint, model, and key. |
 | `AI_VISION_*` | Learning-service vision/OCR provider, limits, retries, and worker timing. |
@@ -191,10 +191,14 @@ production-shaped overlay exposes only Nginx and reads secrets from
 ## Test accounts
 
 Normal development ships with no committed credentials. Create a Student at
-`/signup`. To create the first Tutor, set all three `BOOTSTRAP_TUTOR_*` values
-for one clean startup. Existing Tutor credentials are never reset.
+`/signup`. To create a Tutor, set all three `BOOTSTRAP_TUTOR_*` values and
+recreate `auth-service`. No database reset is needed; existing Tutor credentials
+are never reset.
 
 The disposable offline E2E stack seeds only these accounts:
+
+`make compose-up` and `make compose-https-up` do not create these accounts
+automatically. They must already exist in your local database to sign in there.
 
 | Role | Email | Password |
 | --- | --- | --- |
